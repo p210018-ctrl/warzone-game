@@ -14,42 +14,27 @@
     <title>CODWZM 戰區手遊 - 戰術行動</title>
 
     <!-- ============================================================
-         🚨 依賴庫載入 (Three.js 多 CDN 備援)
+         🚨 核心依賴：Three.js (多 CDN 備援，確保萬無一失)
          ============================================================ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
+        // 如果 cdnjs 被牆，嘗試 jsdelivr
         if (typeof THREE === 'undefined') {
             document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>');
         }
+        // 如果還是失敗，嘗試 unpkg
         if (typeof THREE === 'undefined') {
             document.write('<script src="https://unpkg.com/three@0.128.0/build/three.min.js"><\/script>');
         }
     </script>
 
     <!-- ============================================================
-         全局防護與預設 Logger
-         ============================================================ -->
-    <script>
-        window.global = window;
-        window.WZ = window.WZ || {};
-        window.WZ.Utils = window.WZ.Utils || {
-            Logger: {
-                system: function() { console.log.apply(console, ["[SYSTEM]"].concat([].slice.call(arguments))); },
-                info:   function() { console.log.apply(console, ["[INFO]"].concat([].slice.call(arguments))); },
-                warn:   function() { console.warn.apply(console, ["[WARN]"].concat([].slice.call(arguments))); },
-                error:  function() { console.error.apply(console, ["[ERROR]"].concat([].slice.call(arguments))); },
-                debug:  function() { console.log.apply(console, ["[DEBUG]"].concat([].slice.call(arguments))); }
-            }
-        };
-    </script>
-
-    <!-- ============================================================
          核心樣式：現代戰爭戰術風格 UI + 絕對隔離
          ============================================================ -->
     <style>
-        /* ============================================================
-           1. CSS 變數與全局重置
-           ============================================================ */
+        /* ------------------------------------------------------------
+           1. 全局變數與重置
+           ------------------------------------------------------------ */
         :root {
             --bg-dark: #0a0b0e;
             --bg-panel: rgba(18, 20, 24, 0.85);
@@ -68,7 +53,11 @@
             --safe-bottom: env(safe-area-inset-bottom, 0px);
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+        * {
+            margin: 0; padding: 0; box-sizing: border-box;
+            user-select: none; -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
 
         html, body {
             width: 100%; height: 100%;
@@ -78,9 +67,9 @@
             position: fixed; top: 0; left: 0;
         }
 
-        /* ============================================================
-           2. 3D 畫布
-           ============================================================ */
+        /* ------------------------------------------------------------
+           2. 3D 渲染畫布
+           ------------------------------------------------------------ */
         #game-canvas {
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
@@ -88,65 +77,141 @@
             transition: opacity 0.5s ease;
             outline: none;
         }
-
-        /* ============================================================
-           3. 超暴力 UI 隔離防護罩
-           ============================================================ */
-        /* 在大廳狀態下，強制隱藏所有可能亂入的戰鬥 UI */
-        body[data-state="lobby"] #master-combat-ui,
-        body[data-state="lobby"] [class*="hud-"],
-        body[data-state="lobby"] [id*="HUD"],
-        body[data-state="lobby"] [id^="btn-"]:not(#btn-deploy):not(#btn-loadout):not(#btn-settings):not(#btn-customize-ui) {
-            display: none !important;
-            pointer-events: none !important;
+        
+        /* 當進入戰鬥時，畫布變為可見 */
+        body[data-state="combat"] #game-canvas {
+            visibility: visible;
+            opacity: 1;
         }
 
-        /* 在戰鬥狀態下，強制隱藏所有可能亂入的大廳 UI */
-        body[data-state="combat"] #master-lobby-ui,
-        body[data-state="combat"] .modal-overlay {
-            display: none !important;
-            pointer-events: none !important;
-        }
+        /* ------------------------------------------------------------
+           3. UI 狀態切換（利用 data-state 屬性）
+           ------------------------------------------------------------ */
+        /* 默認狀態隱藏 */
+        #lobby-screen { display: none; }
+        #hud-screen { display: none; }
+        
+        /* 根據狀態顯示 */
+        body[data-state="lobby"] #lobby-screen { display: flex; }
+        body[data-state="combat"] #hud-screen { display: block; }
 
-        /* ============================================================
-           4. 大廳畫面 (Lobby Screen)
-           ============================================================ */
-        #master-lobby-ui {
+        /* ------------------------------------------------------------
+           4. 大廳 UI (Lobby)
+           ------------------------------------------------------------ */
+        #lobby-screen {
             position: absolute; inset: 0; z-index: 100;
+            flex-direction: column;
             background: linear-gradient(135deg, rgba(10, 11, 14, 0.95) 0%, rgba(10, 11, 14, 0.6) 100%);
-            display: flex; flex-direction: column;
             padding: calc(20px + var(--safe-top)) 40px calc(20px + var(--safe-bottom)) 40px;
-            pointer-events: auto;
         }
 
-        .lobby-header { display: flex; justify-content: space-between; align-items: center; height: 70px; }
-        .player-profile { display: flex; align-items: center; gap: 15px; background: var(--bg-glass); border: var(--border-glass); border-radius: 50px; padding: 5px 25px 5px 5px; }
-        .player-avatar { width: 56px; height: 56px; border-radius: 50%; background: #222; border: 2px solid var(--primary-gold); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; color: var(--primary-gold); box-shadow: 0 0 15px var(--primary-glow); }
+        .lobby-header {
+            display: flex; justify-content: space-between; align-items: center;
+            height: 70px; width: 100%;
+        }
+
+        .player-profile {
+            display: flex; align-items: center; gap: 15px;
+            background: var(--bg-glass); border: var(--border-glass);
+            border-radius: 50px; padding: 5px 25px 5px 5px;
+        }
+
+        .player-avatar {
+            width: 56px; height: 56px; border-radius: 50%;
+            background: #222; border: 2px solid var(--primary-gold);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 24px; font-weight: 900; color: var(--primary-gold);
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+
         .player-info { display: flex; flex-direction: column; }
         .player-name { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: 1px; }
         .player-level { font-size: 12px; color: var(--primary-gold); font-family: var(--font-mono); }
 
-        .lobby-content { flex: 1; display: flex; justify-content: space-between; align-items: center; padding: 0 5%; }
-        .operator-title { font-size: 90px; font-weight: 900; color: transparent; -webkit-text-stroke: 2px rgba(255, 255, 255, 0.15); letter-spacing: 15px; }
-        .lobby-menu { display: flex; flex-direction: column; gap: 15px; width: 340px; }
-        
-        .btn-menu { background: var(--bg-glass); border: 1px solid rgba(255, 255, 255, 0.2); color: #ddd; padding: 16px 24px; font-size: 16px; font-weight: 700; text-align: left; cursor: pointer; clip-path: polygon(0 0, 100% 0, 96% 100%, 0% 100%); transition: 0.2s; }
-        .btn-menu:hover { background: rgba(255, 255, 255, 0.15); border-color: var(--primary-gold); }
-        .btn-deploy-main { background: linear-gradient(90deg, rgba(212, 175, 55, 0.25) 0%, rgba(212, 175, 55, 0.05) 100%); border: 2px solid var(--primary-gold); color: var(--primary-gold); font-size: 22px; font-weight: 900; padding: 20px 30px; box-shadow: 0 0 20px rgba(212, 175, 55, 0.2); clip-path: polygon(0 0, 100% 0, 95% 100%, 0% 100%); }
-
-        /* ============================================================
-           5. 戰鬥 HUD 畫面 (絕對由這裡控制)
-           ============================================================ */
-        #master-combat-ui {
-            position: absolute; inset: 0; z-index: 100;
-            pointer-events: none; display: none;
+        .lobby-currencies { display: flex; gap: 15px; }
+        .currency-item {
+            display: flex; align-items: center; gap: 8px;
+            background: rgba(0, 0, 0, 0.6); border: var(--border-glass);
+            border-radius: 8px; padding: 8px 18px;
+            font-family: var(--font-mono); font-size: 15px; font-weight: 700;
         }
-        body[data-state="combat"] #master-combat-ui { display: block; }
+        .currency-icon { width: 16px; height: 16px; border-radius: 3px; }
+        .currency-icon.gold { background: var(--primary-gold); }
+        .currency-icon.blue { background: var(--cyan-blue); }
 
-        .hud-top { display: flex; justify-content: center; padding: calc(20px + var(--safe-top)) 30px 0 30px; }
-        .hud-score { display: flex; gap: 20px; align-items: center; background: var(--bg-panel); border-top: 2px solid var(--primary-gold); padding: 10px 30px; border-radius: 4px; }
+        .lobby-main {
+            flex: 1; display: flex; justify-content: space-between; align-items: center;
+            width: 100%; padding: 0 5%;
+        }
 
-        .hud-crosshair { position: absolute; top: 50%; left: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); }
+        .operator-showcase { display: flex; flex-direction: column; gap: 10px; }
+        .operator-title {
+            font-size: 90px; font-weight: 900; line-height: 0.9;
+            color: transparent; -webkit-text-stroke: 2px rgba(255, 255, 255, 0.15);
+            letter-spacing: 15px; text-transform: uppercase;
+        }
+        .operator-tagline {
+            font-size: 14px; color: var(--primary-gold);
+            letter-spacing: 4px; font-family: var(--font-mono); text-transform: uppercase;
+        }
+
+        .lobby-menu { display: flex; flex-direction: column; gap: 15px; width: 340px; }
+
+        .btn-menu {
+            background: var(--bg-glass);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ddd; padding: 16px 24px;
+            font-size: 16px; font-weight: 700; letter-spacing: 1px;
+            text-align: left; cursor: pointer; position: relative;
+            clip-path: polygon(0 0, 100% 0, 96% 100%, 0% 100%);
+            transition: all 0.2s ease; overflow: hidden;
+        }
+        .btn-menu:hover, .btn-menu:active {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: var(--primary-gold);
+        }
+
+        .btn-deploy-main {
+            background: linear-gradient(90deg, rgba(212, 175, 55, 0.25) 0%, rgba(212, 175, 55, 0.05) 100%);
+            border: 2px solid var(--primary-gold);
+            color: var(--primary-gold); font-size: 22px; font-weight: 900;
+            padding: 20px 30px; text-transform: uppercase;
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.2);
+            clip-path: polygon(0 0, 100% 0, 95% 100%, 0% 100%);
+            transition: all 0.2s ease; text-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
+        }
+        .btn-deploy-main:hover, .btn-deploy-main:active {
+            background: linear-gradient(90deg, rgba(212, 175, 55, 0.4) 0%, rgba(212, 175, 55, 0.1) 100%);
+            box-shadow: 0 0 30px rgba(212, 175, 55, 0.5);
+        }
+
+        /* ------------------------------------------------------------
+           5. 戰鬥 HUD (Combat HUD)
+           ------------------------------------------------------------ */
+        #hud-screen {
+            position: absolute; inset: 0; z-index: 50; pointer-events: none;
+        }
+
+        .hud-top {
+            display: flex; justify-content: center;
+            padding: calc(20px + var(--safe-top)) 30px 0 30px;
+        }
+
+        .hud-score {
+            display: flex; gap: 20px; align-items: center;
+            background: var(--bg-panel); border-top: 2px solid var(--primary-gold);
+            padding: 10px 30px; border-radius: 4px;
+        }
+        .score-num { font-size: 28px; font-weight: 900; font-family: var(--font-mono); }
+        .score-num.blue { color: #3498db; }
+        .score-num.red { color: #e74c3c; }
+        .score-time { font-size: 20px; font-weight: 700; color: #fff; font-family: var(--font-mono); }
+
+        /* 準心 */
+        .hud-crosshair {
+            position: absolute; top: 50%; left: 50%;
+            width: 30px; height: 30px; transform: translate(-50%, -50%);
+        }
         .hud-crosshair .line { position: absolute; background: #eee; box-shadow: 0 0 3px #000; }
         .hud-crosshair .l-top { width: 2px; height: 8px; left: 14px; top: 0; }
         .hud-crosshair .l-bottom { width: 2px; height: 8px; left: 14px; bottom: 0; }
@@ -154,38 +219,80 @@
         .hud-crosshair .l-right { width: 8px; height: 2px; top: 14px; right: 0; }
         .hud-crosshair .dot { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: var(--primary-gold); left: 13px; top: 13px; }
 
-        .hud-bottom-left { position: absolute; left: 30px; bottom: calc(30px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 8px; width: 280px; }
+        /* 左下角狀態 */
+        .hud-bottom-left {
+            position: absolute; left: 30px; bottom: calc(30px + var(--safe-bottom));
+            display: flex; flex-direction: column; gap: 8px; width: 280px;
+        }
         .armor-bar { display: flex; gap: 4px; height: 24px; }
-        .armor-plate { flex: 1; border: 1px solid rgba(52, 152, 219, 0.6); background: rgba(52, 152, 219, 0.4); }
+        .armor-plate {
+            flex: 1; border: 1px solid rgba(52, 152, 219, 0.6);
+            background: rgba(52, 152, 219, 0.4); position: relative; overflow: hidden;
+        }
         .health-bar { height: 18px; background: rgba(46, 204, 113, 0.8); border: 1px solid #2ecc71; display: flex; justify-content: flex-end; align-items: center; padding-right: 8px; }
-        .health-text { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: #fff; }
+        .health-text { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; }
 
-        .hud-bottom-right { position: absolute; right: 30px; bottom: calc(30px + var(--safe-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-        .weapon-info { display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.6); padding: 8px 20px; border: 1px solid var(--primary-gold); border-radius: 4px; }
-        .weapon-name { font-size: 18px; font-weight: 800; color: #fff; }
-        .ammo-counter { display: flex; align-items: baseline; gap: 5px; font-family: var(--font-mono); }
+        /* 右下角武器與彈藥 */
+        .hud-bottom-right {
+            position: absolute; right: 30px; bottom: calc(30px + var(--safe-bottom));
+            display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+        }
+        .weapon-info {
+            display: flex; align-items: center; gap: 12px;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
+            padding: 8px 20px; border: 1px solid var(--primary-gold); border-radius: 4px;
+        }
+        .weapon-name { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: 1px; }
+        .weapon-slot { font-size: 10px; font-weight: 700; color: var(--primary-gold); border: 1px solid var(--primary-gold); padding: 2px 6px; border-radius: 2px; }
+
+        .ammo-counter { display: flex; align-items: baseline; gap: 5px; font-family: var(--font-mono); text-shadow: 0 2px 5px #000; }
         .ammo-mag { font-size: 48px; font-weight: 900; color: #fff; line-height: 1; }
         .ammo-reserve { font-size: 20px; font-weight: 700; color: #888; }
 
-        .hud-controls { position: absolute; right: 30px; bottom: calc(150px + var(--safe-bottom)); display: grid; grid-template-columns: 1fr 1fr; gap: 15px; pointer-events: auto; }
-        .ctrl-btn { width: 70px; height: 70px; border-radius: 50%; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: 0.1s; pointer-events: auto; }
+        /* 右側控制按鈕 */
+        .hud-controls {
+            position: absolute; right: 30px; bottom: calc(150px + var(--safe-bottom));
+            display: grid; grid-template-columns: 1fr 1fr; gap: 15px; pointer-events: auto;
+        }
+
+        .ctrl-btn {
+            width: 70px; height: 70px; border-radius: 50%;
+            background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3);
+            color: #fff; font-size: 12px; font-weight: 700; display: flex;
+            align-items: center; justify-content: center; backdrop-filter: blur(4px);
+            transition: all 0.1s; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            pointer-events: auto;
+        }
         .ctrl-btn:active { background: rgba(255,255,255,0.3); transform: scale(0.95); }
-        .ctrl-btn.fire { width: 90px; height: 90px; font-size: 16px; background: rgba(231, 76, 60, 0.3); border-color: rgba(231, 76, 60, 0.8); grid-column: span 2; justify-self: center; margin-top: 10px; pointer-events: auto; }
+        .ctrl-btn.fire {
+            width: 90px; height: 90px; font-size: 16px;
+            background: rgba(231, 76, 60, 0.3); border-color: rgba(231, 76, 60, 0.8);
+            grid-column: span 2; justify-self: center; margin-top: 10px;
+            pointer-events: auto;
+        }
         .ctrl-btn.fire:active { background: rgba(231, 76, 60, 0.6); }
 
-        .hud-joystick { position: absolute; left: 50px; bottom: calc(50px + var(--safe-bottom)); width: 130px; height: 130px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); pointer-events: auto; display: flex; align-items: center; justify-content: center; }
-        .joystick-knob { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.6); }
+        /* 虛擬搖桿 */
+        .hud-joystick {
+            position: absolute; left: 50px; bottom: calc(50px + var(--safe-bottom));
+            width: 130px; height: 130px; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05);
+            pointer-events: auto; display: flex; align-items: center; justify-content: center;
+        }
+        .joystick-knob {
+            width: 50px; height: 50px; border-radius: 50%;
+            background: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.6);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
 
-        /* ============================================================
-           6. 彈出式選單 (Modals)
-           ============================================================ */
-        .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 500; display: none; justify-content: center; align-items: center; pointer-events: auto; }
-        .modal-overlay.active { display: flex; }
-        .modal-panel { width: 600px; background: var(--bg-panel); border: 1px solid var(--primary-gold); border-radius: 8px; display: flex; flex-direction: column; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 30px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .modal-title { font-size: 20px; font-weight: 800; color: var(--primary-gold); }
-        .modal-close { background: transparent; border: none; color: #888; font-size: 24px; cursor: pointer; }
-        .modal-body { padding: 30px; display: flex; flex-direction: column; gap: 20px; }
+        /* 傷害紅屏特效 */
+        #damage-vignette {
+            position: absolute; inset: 0; pointer-events: none;
+            background: radial-gradient(circle at center, transparent 40%, rgba(255, 0, 0, 0.4) 100%);
+            opacity: 0; transition: opacity 0.2s;
+            z-index: 60;
+        }
+
     </style>
 </head>
 <body data-state="lobby">
@@ -195,10 +302,13 @@
          ============================================================ -->
     <canvas id="game-canvas"></canvas>
 
+    <!-- 傷害紅屏 -->
+    <div id="damage-vignette"></div>
+
     <!-- ============================================================
-         大廳畫面 (由 index.html 完全掌控)
+         大廳畫面
          ============================================================ -->
-    <div id="master-lobby-ui">
+    <div id="lobby-screen">
         <div class="lobby-header">
             <div class="player-profile">
                 <div class="player-avatar">G</div>
@@ -207,32 +317,35 @@
                     <div class="player-level">LVL. 55 • 上尉</div>
                 </div>
             </div>
-            <div style="color:var(--primary-gold); font-weight:bold;">💰 12,450 | 💎 850</div>
+            <div class="lobby-currencies">
+                <div class="currency-item"><div class="currency-icon gold"></div><span>12,450</span></div>
+                <div class="currency-item"><div class="currency-icon blue"></div><span>850</span></div>
+            </div>
         </div>
 
-        <div class="lobby-content">
-            <div>
+        <div class="lobby-main">
+            <div class="operator-showcase">
                 <div class="operator-title">GHOST</div>
-                <div style="font-size:14px; color:var(--primary-gold); margin-top:20px;">// SIMON "GHOST" RILEY</div>
+                <div class="operator-tagline">// SIMON "GHOST" RILEY</div>
             </div>
+
             <div class="lobby-menu">
                 <button class="btn-menu btn-deploy-main" id="btn-deploy">進入戰區 / DEPLOY</button>
                 <button class="btn-menu" id="btn-loadout">武器配置 / LOADOUT</button>
-                <button class="btn-menu" id="btn-customize-ui">自定義按鍵 / CUSTOMIZE UI</button>
                 <button class="btn-menu" id="btn-settings">系統設置 / SETTINGS</button>
             </div>
         </div>
     </div>
 
     <!-- ============================================================
-         戰鬥 HUD (由 index.html 完全掌控)
+         戰鬥 HUD 畫面
          ============================================================ -->
-    <div id="master-combat-ui">
+    <div id="hud-screen">
         <div class="hud-top">
             <div class="hud-score">
-                <div style="color:#3498db; font-size:28px; font-weight:900; font-family:monospace;">75</div>
-                <div style="color:#fff; font-size:20px; font-family:monospace;">10:00</div>
-                <div style="color:#e74c3c; font-size:28px; font-weight:900; font-family:monospace;">68</div>
+                <div class="score-num blue">75</div>
+                <div class="score-time">10:00</div>
+                <div class="score-num red">68</div>
             </div>
         </div>
 
@@ -246,16 +359,21 @@
 
         <div class="hud-bottom-left">
             <div class="armor-bar">
-                <div class="armor-plate"></div><div class="armor-plate"></div><div class="armor-plate"></div>
+                <div class="armor-plate"></div>
+                <div class="armor-plate"></div>
+                <div class="armor-plate"></div>
             </div>
-            <div class="health-bar"><div class="health-text">150</div></div>
+            <div class="health-bar"><div class="health-text" id="ui-health">150</div></div>
         </div>
 
         <div class="hud-bottom-right">
-            <div class="weapon-info"><div class="weapon-name">M4A1</div></div>
+            <div class="weapon-info">
+                <div class="weapon-name">M4A1</div>
+                <div class="weapon-slot">PRIMARY</div>
+            </div>
             <div class="ammo-counter">
-                <div class="ammo-mag" id="hud-ammo-mag">30</div>
-                <div class="ammo-reserve">/ <span id="hud-ammo-reserve">120</span></div>
+                <div class="ammo-mag" id="ui-ammo-mag">30</div>
+                <div class="ammo-reserve">/ <span id="ui-ammo-res">120</span></div>
             </div>
         </div>
 
@@ -273,261 +391,545 @@
     </div>
 
     <!-- ============================================================
-         彈出視窗
-         ============================================================ -->
-    <div id="modal-loadout" class="modal-overlay">
-        <div class="modal-panel">
-            <div class="modal-header"><div class="modal-title">武器配置</div><button class="modal-close" data-close="modal-loadout">✕</button></div>
-            <div class="modal-body"><p>武器配置選單建設中...</p></div>
-        </div>
-    </div>
-    <div id="modal-settings" class="modal-overlay">
-        <div class="modal-panel">
-            <div class="modal-header"><div class="modal-title">系統設置</div><button class="modal-close" data-close="modal-settings">✕</button></div>
-            <div class="modal-body"><p>系統設置選單建設中...</p></div>
-        </div>
-    </div>
-    <div id="modal-customizer" class="modal-overlay">
-        <div class="modal-panel">
-            <div class="modal-header"><div class="modal-title">按鍵自定義</div><button class="modal-close" data-close="modal-customizer">✕</button></div>
-            <div class="modal-body"><p>按鍵自定義選單建設中...</p></div>
-        </div>
-    </div>
-
-    <!-- ============================================================
-         終極啟動與核心控制邏輯
+         核心 JavaScript：完整的 3D 引擎與遊戲邏輯
          ============================================================ -->
     <script>
         (function() {
             'use strict';
 
             // ============================================================
-            // 1. 狀態切換與暴力清場
+            // 全局變數與狀態
             // ============================================================
-            function switchToCombat() {
-                console.log('[系統] 切換至戰鬥狀態，執行暴力清場...');
-                
-                // 切換 body 狀態，觸發 CSS 隔離
-                document.body.setAttribute('data-state', 'combat');
-                
-                // 顯示畫布
-                const canvas = document.getElementById('game-canvas');
-                if (canvas) {
-                    canvas.style.visibility = 'visible';
-                    canvas.style.opacity = '1';
+            const GameState = {
+                state: 'LOBBY', // LOBBY, COMBAT
+                ammo: 30,
+                maxAmmo: 30,
+                reserve: 120,
+                health: 150,
+                isFiring: false,
+                isReloading: false,
+                moveInput: { x: 0, y: 0 },
+                lookInput: { x: 0, y: 0 },
+                playerSpeed: 5.0,
+                isGrounded: true,
+                velocityY: 0
+            };
+
+            // ============================================================
+            // 1. 初始化 Three.js 環境
+            // ============================================================
+            let scene, camera, renderer, clock;
+            let playerGroup, weaponGroup;
+            let enemies = [];
+            let bullets = [];
+            
+            // 射線追蹤器
+            const raycaster = new THREE.Raycaster();
+
+            // 初始化
+            function initThreeJS() {
+                if (typeof THREE === 'undefined') {
+                    alert('致命錯誤: Three.js 未載入，請檢查網絡。');
+                    return;
                 }
 
-                // 🚨 暴力清場：把除了畫布和我們的主 UI 以外的所有 DOM 元素全部幹掉
-                const bodyChildren = Array.from(document.body.children);
-                bodyChildren.forEach(child => {
-                    if (child.tagName === 'CANVAS' || 
-                        child.id === 'master-lobby-ui' || 
-                        child.id === 'master-combat-ui' || 
-                        child.classList.contains('modal-overlay') ||
-                        child.tagName === 'SCRIPT') {
-                        return; // 保留這些元素
-                    }
-                    // 其他所有由未知模組生成的 UI，直接移除
-                    console.warn(`[暴力清場] 移除殘留元素: <${child.tagName} id="${child.id}">`);
-                    child.remove();
+                const canvas = document.getElementById('game-canvas');
+                
+                // 1. 創建渲染器
+                renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = 1.05;
+
+                // 2. 創建場景
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x1a1c22); // 深戰術灰
+                scene.fog = new THREE.Fog(0x1a1c22, 20, 100); // 戰術霧效
+
+                // 3. 創建相機
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(0, 1.6, 10); // 眼睛高度 1.6m
+
+                // 4. 時鐘
+                clock = new THREE.Clock();
+
+                // 構建環境
+                buildEnvironment();
+                buildPlayerWeapon();
+
+                // 啟動主循環
+                animate();
+
+                // 處理窗口縮放
+                window.addEventListener('resize', onWindowResize);
+            }
+
+            // ============================================================
+            // 2. 構建環境 (地面、掩體、光照)
+            // ============================================================
+            function buildEnvironment() {
+                // 2.1 光照
+                const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+                hemiLight.position.set(0, 20, 0);
+                scene.add(hemiLight);
+
+                const dirLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+                dirLight.position.set(10, 20, 10);
+                dirLight.castShadow = true;
+                dirLight.shadow.mapSize.width = 2048;
+                dirLight.shadow.mapSize.height = 2048;
+                dirLight.shadow.camera.left = -50;
+                dirLight.shadow.camera.right = 50;
+                dirLight.shadow.camera.top = 50;
+                dirLight.shadow.camera.bottom = -50;
+                scene.add(dirLight);
+
+                // 2.2 地面
+                const groundGeo = new THREE.PlaneGeometry(200, 200);
+                const groundMat = new THREE.MeshStandardMaterial({ 
+                    color: 0x333333, 
+                    roughness: 0.9,
+                    metalness: 0.1
+                });
+                const ground = new THREE.Mesh(groundGeo, groundMat);
+                ground.rotation.x = -Math.PI / 2;
+                ground.receiveShadow = true;
+                scene.add(ground);
+
+                // 地面網格線
+                const gridHelper = new THREE.GridHelper(200, 100, 0x555555, 0x222222);
+                gridHelper.position.y = 0.01;
+                scene.add(gridHelper);
+
+                // 2.3 掩體 (隨機生成箱子)
+                const boxGeo = new THREE.BoxGeometry(2, 2, 2);
+                const boxMat = new THREE.MeshStandardMaterial({ color: 0x556b2f, roughness: 0.7 });
+                
+                for (let i = 0; i < 20; i++) {
+                    const box = new THREE.Mesh(boxGeo, boxMat);
+                    box.position.set(
+                        (Math.random() - 0.5) * 60,
+                        1,
+                        (Math.random() - 0.5) * 60
+                    );
+                    box.castShadow = true;
+                    box.receiveShadow = true;
+                    scene.add(box);
+                }
+
+                // 2.4 生成敵人 (靜態目標)
+                const enemyGeo = new THREE.CapsuleGeometry(0.4, 0.8, 4, 8);
+                const enemyMat = new THREE.MeshStandardMaterial({ color: 0xcc2222 });
+                
+                for (let i = 0; i < 5; i++) {
+                    const enemy = new THREE.Mesh(enemyGeo, enemyMat);
+                    enemy.position.set(
+                        (Math.random() - 0.5) * 30,
+                        0.8,
+                        (Math.random() - 0.5) * 30
+                    );
+                    enemy.castShadow = true;
+                    enemy.userData.isEnemy = true;
+                    scene.add(enemy);
+                    enemies.push(enemy);
+                }
+            }
+
+            // ============================================================
+            // 3. 構建第一人稱武器模型
+            // ============================================================
+            function buildPlayerWeapon() {
+                weaponGroup = new THREE.Group();
+                
+                // 槍身 (黑色方塊)
+                const bodyGeo = new THREE.BoxGeometry(0.08, 0.12, 0.5);
+                const bodyMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.3 });
+                const body = new THREE.Mesh(bodyGeo, bodyMat);
+                body.position.set(0, 0, -0.2);
+                weaponGroup.add(body);
+
+                // 槍管
+                const barrelGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.3, 8);
+                const barrelMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+                const barrel = new THREE.Mesh(barrelGeo, barrelMat);
+                barrel.rotation.x = Math.PI / 2;
+                barrel.position.set(0, 0, -0.55);
+                weaponGroup.add(barrel);
+
+                // 彈匣
+                const magGeo = new THREE.BoxGeometry(0.06, 0.15, 0.08);
+                const mag = new THREE.Mesh(magGeo, new THREE.MeshStandardMaterial({ color: 0x222222 }));
+                mag.position.set(0, -0.12, -0.1);
+                weaponGroup.add(mag);
+
+                // 瞄準鏡
+                const scopeGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.1, 8);
+                const scope = new THREE.Mesh(scopeGeo, new THREE.MeshStandardMaterial({ color: 0x111111 }));
+                scope.rotation.x = Math.PI / 2;
+                scope.position.set(0, 0.1, -0.1);
+                weaponGroup.add(scope);
+
+                // 將武器放置在相機前方偏右下角
+                weaponGroup.position.set(0.2, -0.2, -0.4);
+                
+                // 將武器加到相機上，讓它跟著相機移動
+                camera.add(weaponGroup);
+                scene.add(camera);
+            }
+
+            // ============================================================
+            // 4. 觸控與滑鼠輸入系統
+            // ============================================================
+            let isLooking = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            let yaw = 0, pitch = 0;
+
+            function initInput() {
+                const canvas = document.getElementById('game-canvas');
+
+                // 4.1 滑鼠視角控制 (PC 測試用)
+                canvas.addEventListener('mousedown', (e) => {
+                    isLooking = true;
+                    previousMousePosition = { x: e.clientX, y: e.clientY };
+                });
+                window.addEventListener('mouseup', () => isLooking = false);
+                window.addEventListener('mousemove', (e) => {
+                    if (!isLooking) return;
+                    const deltaX = e.clientX - previousMousePosition.x;
+                    const deltaY = e.clientY - previousMousePosition.y;
+                    updateLook(deltaX, deltaY);
+                    previousMousePosition = { x: e.clientX, y: e.clientY };
                 });
 
-                // 啟動渲染器或兜底引擎
-                if (window.WZ && window.WZ.Bootstrap && window.WZ.Bootstrap.startFallbackEngine) {
-                    window.WZ.Bootstrap.startFallbackEngine();
-                }
-                if (window.WZ && window.WZ.Renderer && window.WZ.Renderer.start) {
-                    try { window.WZ.Renderer.start(); } catch(e){}
-                }
+                // 4.2 觸控視角控制 (iPad 測試用)
+                let touchLookId = null;
+                let touchStartX = 0, touchStartY = 0;
 
-                // 觸發全局事件
-                if (window.WZ && window.WZ.bus) {
-                    window.WZ.bus.emit('GAME_START');
-                }
+                canvas.addEventListener('touchstart', (e) => {
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        const touch = e.changedTouches[i];
+                        // 如果觸控發生在畫布右半邊，則視為轉向
+                        if (touch.clientX > window.innerWidth / 2 && touchLookId === null) {
+                            touchLookId = touch.identifier;
+                            touchStartX = touch.clientX;
+                            touchStartY = touch.clientY;
+                        }
+                    }
+                }, { passive: false });
+
+                canvas.addEventListener('touchmove', (e) => {
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        const touch = e.changedTouches[i];
+                        if (touch.identifier === touchLookId) {
+                            const deltaX = touch.clientX - touchStartX;
+                            const deltaY = touch.clientY - touchStartY;
+                            updateLook(deltaX, deltaY);
+                            touchStartX = touch.clientX;
+                            touchStartY = touch.clientY;
+                        }
+                    }
+                }, { passive: false });
+
+                canvas.addEventListener('touchend', (e) => {
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        const touch = e.changedTouches[i];
+                        if (touch.identifier === touchLookId) {
+                            touchLookId = null;
+                        }
+                    }
+                });
+
+                // 4.3 虛擬搖桿 (左半邊移動)
+                const joystickArea = document.getElementById('joystick-area');
+                const joystickKnob = document.getElementById('joystick-knob');
+                let joystickId = null;
+                let joystickCenter = { x: 0, y: 0 };
+
+                joystickArea.addEventListener('touchstart', (e) => {
+                    e.stopPropagation();
+                    const touch = e.changedTouches[0];
+                    joystickId = touch.identifier;
+                    const rect = joystickArea.getBoundingClientRect();
+                    joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+                }, { passive: false });
+
+                joystickArea.addEventListener('touchmove', (e) => {
+                    e.stopPropagation();
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        const touch = e.changedTouches[i];
+                        if (touch.identifier === joystickId) {
+                            let dx = touch.clientX - joystickCenter.x;
+                            let dy = touch.clientY - joystickCenter.y;
+                            const maxDist = 40;
+                            const dist = Math.sqrt(dx*dx + dy*dy);
+                            if (dist > maxDist) {
+                                dx = (dx / dist) * maxDist;
+                                dy = (dy / dist) * maxDist;
+                            }
+                            joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+                            
+                            // 映射到移動輸入 (-1 到 1)
+                            GameState.moveInput.x = dx / maxDist;
+                            GameState.moveInput.y = dy / maxDist;
+                        }
+                    }
+                }, { passive: false });
+
+                joystickArea.addEventListener('touchend', (e) => {
+                    for (let i = 0; i < e.changedTouches.length; i++) {
+                        if (e.changedTouches[i].identifier === joystickId) {
+                            joystickId = null;
+                            joystickKnob.style.transform = 'translate(0px, 0px)';
+                            GameState.moveInput.x = 0;
+                            GameState.moveInput.y = 0;
+                        }
+                    }
+                });
             }
 
-            function switchToLobby() {
-                console.log('[系統] 切換至大廳狀態');
-                document.body.setAttribute('data-state', 'lobby');
+            function updateLook(deltaX, deltaY) {
+                const sensitivity = 0.003;
+                yaw -= deltaX * sensitivity;
+                pitch -= deltaY * sensitivity;
                 
-                const canvas = document.getElementById('game-canvas');
-                if (canvas) {
-                    canvas.style.visibility = 'hidden';
-                    canvas.style.opacity = '0';
+                // 限制上下看的角度
+                pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, pitch));
+
+                // 更新相機旋轉 (YXZ 順序適合第一人稱)
+                camera.rotation.order = 'YXZ';
+                camera.rotation.y = yaw;
+                camera.rotation.x = pitch;
+            }
+
+            // ============================================================
+            // 5. 玩家控制器 (移動與物理)
+            // ============================================================
+            function updatePlayer(dt) {
+                if (GameState.state !== 'COMBAT') return;
+
+                // 5.1 處理移動輸入
+                const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+                forward.y = 0;
+                forward.normalize();
+
+                const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                right.y = 0;
+                right.normalize();
+
+                const moveDir = new THREE.Vector3();
+                moveDir.addScaledVector(forward, -GameState.moveInput.y);
+                moveDir.addScaledVector(right, GameState.moveInput.x);
+                
+                if (moveDir.lengthSq() > 0) {
+                    moveDir.normalize();
+                }
+
+                // 5.2 更新位置
+                const speed = GameState.playerSpeed * dt;
+                camera.position.x += moveDir.x * speed;
+                camera.position.z += moveDir.z * speed;
+
+                // 5.3 處理重力與跳躍
+                if (!GameState.isGrounded) {
+                    GameState.velocityY -= 9.8 * dt;
+                    camera.position.y += GameState.velocityY * dt;
+                    
+                    if (camera.position.y <= 1.6) {
+                        camera.position.y = 1.6;
+                        GameState.velocityY = 0;
+                        GameState.isGrounded = true;
+                    }
                 }
             }
 
             // ============================================================
-            // 2. UI 按鈕綁定
+            // 6. 射擊與彈道系統
             // ============================================================
-            function bindEvents() {
+            function shoot() {
+                if (GameState.state !== 'COMBAT' || GameState.isReloading) return;
+                if (GameState.ammo <= 0) {
+                    console.log('沒子彈了！');
+                    return;
+                }
+
+                // 扣子彈
+                GameState.ammo--;
+                updateHUD();
+
+                // 槍口火光特效 (簡單實現)
+                const flash = new THREE.PointLight(0xffaa00, 5, 5);
+                flash.position.set(0, 0, -0.6);
+                weaponGroup.add(flash);
+                setTimeout(() => weaponGroup.remove(flash), 50);
+
+                // 後座力動畫
+                weaponGroup.position.z += 0.05;
+                weaponGroup.rotation.x += 0.1;
+                setTimeout(() => {
+                    weaponGroup.position.z -= 0.05;
+                    weaponGroup.rotation.x -= 0.1;
+                }, 50);
+
+                // 射線檢測
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                
+                // 檢查是否打中敵人
+                const intersects = raycaster.intersectObjects(enemies);
+                
+                if (intersects.length > 0) {
+                    const hitEnemy = intersects[0].object;
+                    console.log('打中敵人了！');
+                    
+                    // 敵人受擊反饋
+                    hitEnemy.material.color.setHex(0xffffff);
+                    setTimeout(() => hitEnemy.material.color.setHex(0xcc2222), 100);
+
+                    // 簡單擊退
+                    hitEnemy.position.y += 0.5;
+                    setTimeout(() => hitEnemy.position.y -= 0.5, 100);
+                }
+            }
+
+            // 換彈邏輯
+            function reload() {
+                if (GameState.isReloading || GameState.ammo === GameState.maxAmmo) return;
+                if (GameState.reserve <= 0) return;
+
+                GameState.isReloading = true;
+                console.log('開始換彈...');
+
+                // 播放換彈動畫 (將武器往下沉)
+                weaponGroup.position.y -= 0.2;
+                weaponGroup.rotation.x -= 0.5;
+
+                setTimeout(() => {
+                    const needed = GameState.maxAmmo - GameState.ammo;
+                    const take = Math.min(needed, GameState.reserve);
+                    
+                    GameState.ammo += take;
+                    GameState.reserve -= take;
+                    
+                    GameState.isReloading = false;
+                    updateHUD();
+
+                    // 恢復武器位置
+                    weaponGroup.position.y += 0.2;
+                    weaponGroup.rotation.x += 0.5;
+                    
+                    console.log('換彈完成！');
+                }, 1500); // 1.5秒換彈
+            }
+
+            // ============================================================
+            // 7. 更新 UI
+            // ============================================================
+            function updateHUD() {
+                document.getElementById('ui-ammo-mag').innerText = GameState.ammo;
+                document.getElementById('ui-ammo-res').innerText = GameState.reserve;
+                document.getElementById('ui-health').innerText = GameState.health;
+            }
+
+            // ============================================================
+            // 8. 主循環 (Game Loop)
+            // ============================================================
+            function animate() {
+                requestAnimationFrame(animate);
+
+                const dt = clock.getDelta();
+
+                if (GameState.state === 'COMBAT') {
+                    updatePlayer(dt);
+                    
+                    // 敵人隨機移動 (簡單 AI)
+                    enemies.forEach(enemy => {
+                        enemy.rotation.y += dt * 0.5;
+                    });
+                }
+
+                if (renderer && scene && camera) {
+                    renderer.render(scene, camera);
+                }
+            }
+
+            // 處理窗口縮放
+            function onWindowResize() {
+                if (!camera || !renderer) return;
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            // ============================================================
+            // 9. UI 事件綁定與狀態切換
+            // ============================================================
+            function initUI() {
                 // 進入戰區
                 document.getElementById('btn-deploy').addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    switchToCombat();
+                    console.log('[UI] 進入戰區...');
+                    
+                    // 1. 切換狀態
+                    document.body.setAttribute('data-state', 'combat');
+                    GameState.state = 'COMBAT';
+                    
+                    // 2. 初始化 3D 環境 (如果還沒初始化)
+                    if (!renderer) {
+                        initThreeJS();
+                        initInput();
+                    }
+                    
+                    // 3. 將玩家放在出生點
+                    camera.position.set(0, 1.6, 15);
+                    yaw = 0; pitch = 0;
+                    camera.rotation.set(0, 0, 0);
+                    
+                    // 4. 鎖定鼠標 (PC 測試用)
+                    const canvas = document.getElementById('game-canvas');
+                    if (canvas.requestPointerLock) {
+                        canvas.requestPointerLock();
+                    }
+
+                    updateHUD();
                 });
 
-                // 打開彈窗
-                document.getElementById('btn-loadout').addEventListener('pointerdown', (e) => {
-                    e.preventDefault();
-                    document.getElementById('modal-loadout').classList.add('active');
-                });
-                document.getElementById('btn-settings').addEventListener('pointerdown', (e) => {
-                    e.preventDefault();
-                    document.getElementById('modal-settings').classList.add('active');
-                });
-                document.getElementById('btn-customize-ui').addEventListener('pointerdown', (e) => {
-                    e.preventDefault();
-                    document.getElementById('modal-customizer').classList.add('active');
-                });
-
-                // 關閉彈窗
-                document.querySelectorAll('.modal-close').forEach(btn => {
-                    btn.addEventListener('pointerdown', (e) => {
-                        const targetId = btn.getAttribute('data-close');
-                        if (targetId) {
-                            document.getElementById(targetId).classList.remove('active');
-                        }
-                    });
-                });
-
-                // 模擬開火
+                // 開火按鈕
                 document.getElementById('btn-fire').addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    const magEl = document.getElementById('hud-ammo-mag');
-                    if (magEl) {
-                        let mag = parseInt(magEl.innerText);
-                        if (mag > 0) {
-                            mag--;
-                            magEl.innerText = mag;
-                            if (window.WZ && window.WZ.bus) {
-                                window.WZ.bus.emit('WEAPON_FIRED', {});
-                            }
-                        }
-                    }
+                    shoot();
                 });
-            }
 
-            // ============================================================
-            // 3. 模擬虛擬搖桿拖拽
-            // ============================================================
-            function initJoystick() {
-                const area = document.getElementById('joystick-area');
-                const knob = document.getElementById('joystick-knob');
-                let isDragging = false;
-                let startX, startY;
-
-                area.addEventListener('pointerdown', (e) => {
-                    isDragging = true;
-                    startX = e.clientX;
-                    startY = e.clientY;
-                    knob.style.transition = 'none';
+                // 換彈按鈕
+                document.getElementById('btn-reload').addEventListener('pointerdown', (e) => {
                     e.preventDefault();
+                    reload();
                 });
 
-                window.addEventListener('pointermove', (e) => {
-                    if (!isDragging) return;
-                    let dx = e.clientX - startX;
-                    let dy = e.clientY - startY;
-                    const maxDist = 40;
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist > maxDist) {
-                        dx = (dx / dist) * maxDist;
-                        dy = (dy / dist) * maxDist;
+                // 跳躍按鈕
+                document.getElementById('btn-jump').addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    if (GameState.isGrounded) {
+                        GameState.isGrounded = false;
+                        GameState.velocityY = 5.0;
                     }
-                    knob.style.transform = `translate(${dx}px, ${dy}px)`;
                 });
 
-                window.addEventListener('pointerup', () => {
-                    isDragging = false;
-                    knob.style.transition = 'transform 0.2s ease-out';
-                    knob.style.transform = 'translate(0px, 0px)';
+                // 大廳其他按鈕 (僅提示)
+                document.getElementById('btn-loadout').addEventListener('pointerdown', () => {
+                    alert('武器配置功能開發中...');
                 });
-            }
-
-            // ============================================================
-            // 4. 加載 37 個底層模組
-            // ============================================================
-            const scriptFiles = [
-                '01_event_bus_state.js', '02_renderer_core.js', '03_multitouch_controller.js',
-                '04_camera_rig_shake.js', '05_physics_collision.js', '06_player_health_armor.js',
-                '07_pbr_texture_factory.js', '08_lighting_atmosphere.js', '09_map_terrain_ground.js',
-                '10_map_buildings.js', '11_map_props_covers.js', '12_decals_bullet_holes.js',
-                '13_fp_hands_anatomy.js', '14_weapon_m4_urgi.js', '15_weapon_smg_mp5.js',
-                '16_weapon_sniper_ax50.js', '17_weapon_pistol_x16.js', '18_weapon_optics_laser.js',
-                '19_fp_locomotion_anim.js', '20_fp_reload_inspect.js', '21_ballistics_recoil.js',
-                '22_vfx_particle_engine.js', '23_audio_procedural.js', '24_audio_foley_env.js',
-                '25_player_movement.js', '26_enemy_soldier_mesh.js', '27_enemy_upper_lower_ik.js',
-                '28_enemy_warzone_locomotion.js', '29_ragdoll_physics.js', '30_enemy_tactical_ai.js',
-                '31_ui_lobby_3d.js', '32_ui_hud_customizer.js', '33_ui_settings_modal.js',
-                '34_ui_combat_hud.js', '35_ui_killfeed_score.js', '36_gamemode_manager.js',
-                '37_main_bootstrap.js'
-            ];
-
-            let loadedCount = 0;
-            const total = scriptFiles.length;
-
-            function loadNext(index) {
-                if (index >= total) {
-                    onAllLoaded();
-                    return;
-                }
-                const script = document.createElement('script');
-                script.src = `js/${scriptFiles[index]}`;
-                script.async = false;
-                script.onload = () => {
-                    loadedCount++;
-                    loadNext(index + 1);
-                };
-                script.onerror = () => {
-                    console.error(`[加載失敗] ${scriptFiles[index]}`);
-                    loadedCount++;
-                    loadNext(index + 1);
-                };
-                document.body.appendChild(script);
-            }
-
-            function onAllLoaded() {
-                console.log('[系統] 所有模組加載完畢，準備清理殘留 UI...');
-                
-                // 確保大廳狀態
-                switchToLobby();
-
-                // 再次清理可能在大廳狀態下亂跑的 UI
-                const bodyChildren = Array.from(document.body.children);
-                bodyChildren.forEach(child => {
-                    if (child.tagName === 'CANVAS' || 
-                        child.id === 'master-lobby-ui' || 
-                        child.id === 'master-combat-ui' || 
-                        child.classList.contains('modal-overlay') || 
-                        child.tagName === 'SCRIPT') {
-                        return;
-                    }
-                    child.remove();
+                document.getElementById('btn-settings').addEventListener('pointerdown', () => {
+                    alert('系統設置功能開發中...');
                 });
-
-                // 啟動 Bootstrap (如果有)
-                if (window.WZ && window.WZ.Bootstrap && window.WZ.Bootstrap.boot) {
-                    try { window.WZ.Bootstrap.boot(); } catch(e){}
-                }
-            }
-
-            // ============================================================
-            // 5. 初始化
-            // ============================================================
-            function init() {
-                console.log('[系統] 初始化大廳與 HUD...');
-                bindEvents();
-                initJoystick();
-                loadNext(0);
             }
 
             // 頁面加載完成後執行
-            if (document.readyState === 'complete' || document.readyState === 'interactive') {
-                setTimeout(init, 50);
-            } else {
-                document.addEventListener('DOMContentLoaded', () => setTimeout(init, 50));
-            }
+            window.addEventListener('DOMContentLoaded', () => {
+                console.log('[系統] 頁面加載完成，初始化 UI...');
+                initUI();
+            });
 
         })();
     </script>
