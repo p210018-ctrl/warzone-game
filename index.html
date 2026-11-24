@@ -1642,58 +1642,89 @@ window.onerror = function(msg, url, line) {
             /* --------------------------------------------------------
                3. 非同步依賴加載器 (按 01 到 37 順序載入)
                -------------------------------------------------------- */
-            const totalScripts = 37;
+            const moduleFiles = [
+                "01_event_bus_state.js",
+                "02_renderer_core.js",
+                "03_multitouch_controller.js",
+                "04_camera_rig_shake.js",
+                "05_physics_collision.js",
+                "06_player_health_armor.js",
+                "07_pbr_texture_factory.js",
+                "08_lighting_atmosphere.js",
+                "09_map_terrain_ground.js",
+                "10_map_buildings.js",
+                "11_map_props_covers.js",
+                "12_decals_bullet_holes.js",
+                "13_fp_hands_anatomy.js",
+                "14_weapon_m4_urgi.js",
+                "15_weapon_smg_mp5.js",
+                "16_weapon_sniper_ax50.js",
+                "17_weapon_pistol_x16.js",
+                "18_weapon_optics_laser.js",
+                "19_fp_locomotion_anim.js",
+                "20_fp_reload_inspect.js",
+                "21_ballistics_recoil.js",
+                "22_vfx_particle_engine.js",
+                "23_audio_procedural.js",
+                "24_audio_foley_env.js",
+                "25_player_movement.js",
+                "26_enemy_soldier_mesh.js",
+                "27_enemy_upper_lower_ik.js",
+                "28_enemy_warzone_locomotion.js",
+                "29_ragdoll_physics.js",
+                "30_enemy_tactical_ai.js",
+                "31_ui_lobby_3d.js",
+                "32_ui_hud_customizer.js",
+                "33_ui_settings_modal.js",
+                "34_ui_combat_hud.js",
+                "35_ui_killfeed_score.js",
+                "36_gamemode_manager.js",
+                "37_main_bootstrap.js"
+            ];
+
+            const totalScripts = moduleFiles.length + 1;
             let loadedCount = 0;
-            
+
             const progressBar = document.getElementById('load-progress-bar');
             const progressGlow = document.getElementById('load-glow-head');
             const progressText = document.getElementById('load-percentage');
             const loadingLayer = document.getElementById('loading-layer');
 
-            // 更新進度條 UI
             function updateProgress() {
                 const percent = Math.round((loadedCount / totalScripts) * 100);
-                progressBar.style.width = percent + '%';
-                progressGlow.style.left = percent + '%';
-                progressText.textContent = percent + '%';
+                if (progressBar) progressBar.style.width = percent + '%';
+                if (progressGlow) progressGlow.style.left = percent + '%';
+                if (progressText) progressText.textContent = percent + '%';
             }
 
-            // 依序加載腳本的函數
             function loadNextScript(index) {
-                if (index > totalScripts) {
-                    // 全部加載完成
+                if (index >= moduleFiles.length) {
                     setTimeout(() => {
-                        loadingLayer.classList.add('fade-out');
-                        setTimeout(() => {
-                            loadingLayer.style.display = 'none';
-                            // 加載完成後，顯示大廳層
-                            lobbyLayer.classList.add('active');
-                            // 觸發全局事件，通知腳本系統已就緒
-                            window.dispatchEvent(new CustomEvent('WZM_SCRIPTS_LOADED'));
-                        }, 500); // 等待淡出動畫
+                        if (loadingLayer) {
+                            loadingLayer.classList.add('fade-out');
+                            setTimeout(() => {
+                                loadingLayer.style.display = 'none';
+                                if (typeof lobbyLayer !== 'undefined' && lobbyLayer) lobbyLayer.classList.add('active');
+                                window.dispatchEvent(new CustomEvent('WZM_SCRIPTS_LOADED'));
+                            }, 500);
+                        }
                     }, 300);
                     return;
                 }
 
-                // 格式化索引 (例如 1 -> "01", 37 -> "37")
-                const numStr = index.toString().padStart(2, '0');
-                const scriptSrc = `js/${numStr}.js`;
-
-                // 創建 script 標籤
+                const scriptSrc = "js/" + moduleFiles[index];
                 const script = document.createElement('script');
                 script.src = scriptSrc;
-                script.async = false; // 確保按順序執行
-                
+                script.async = false;
+
                 script.onload = () => {
                     loadedCount++;
                     updateProgress();
-                    // 遞迴加載下一個
                     loadNextScript(index + 1);
                 };
 
                 script.onerror = () => {
-                    console.error(`[WZM] 無法加載腳本: ${scriptSrc}`);
-                    // 即使失敗也繼續加載下一個，防止卡死，但 UI 可以標記錯誤
+                    console.error('[WZM] 載入失敗: ' + scriptSrc);
                     loadedCount++;
                     updateProgress();
                     loadNextScript(index + 1);
@@ -1702,43 +1733,27 @@ window.onerror = function(msg, url, line) {
                 document.body.appendChild(script);
             }
 
-            // 啟動加載過程 (延遲 100ms 確保 DOM 渲染完畢)
+            // 優先載入 Three.js 0.128.0 引擎，成功後立刻啟動 37 個模組載入
             setTimeout(() => {
                 updateProgress();
-                loadNextScript(1);
+                const threeScript = document.createElement('script');
+                threeScript.src = "https://jsdelivr.net";
+                threeScript.onload = () => {
+                    loadedCount++;
+                    updateProgress();
+                    loadNextScript(0);
+                };
+                threeScript.onerror = () => {
+                    // 備用 CDN
+                    const backupThree = document.createElement('script');
+                    backupThree.src = "https://cloudflare.com";
+                    backupThree.onload = () => { loadedCount++; updateProgress(); loadNextScript(0); };
+                    document.body.appendChild(backupThree);
+                };
+                document.body.appendChild(threeScript);
             }, 100);
 
         })();
     </script>
-    <script>
-// 強制喚醒 3D 畫布並接管「進入戰區」按鈕
-window.addEventListener('load', function() {
-  var c = document.getElementById('game-canvas') || document.querySelector('canvas');
-  if (c) {
-    c.style.visibility = 'visible';
-    c.style.opacity = '1';
-    c.style.zIndex = '2';
-  }
-  // 讓大廳背景變透明，露出背後的 3D 特種兵
-  var lobby = document.getElementById('lobby-layer');
-  if (lobby) lobby.style.background = 'transparent';
-
-  // 強制綁定「進入戰區 / DEPLOY」按鈕點擊事件
-  document.querySelectorAll('button, .btn, div').forEach(function(el) {
-    if (el.textContent && el.textContent.indexOf('DEPLOY') !== -1 && el.children.length === 0) {
-      el.parentElement.style.pointerEvents = 'auto';
-      el.style.pointerEvents = 'auto';
-      el.addEventListener('click', function() {
-        if (lobby) lobby.style.display = 'none';
-        var hud = document.getElementById('hud-layer');
-        if (hud) { hud.style.display = 'flex'; hud.classList.add('active'); }
-        if (window.WZ && WZ.bus) WZ.bus.emit('game:start');
-        if (window.WZ && WZ.State && WZ.State.setState) WZ.State.setState('PLAYING');
-      });
-    }
-  });
-});
-</script>
-
 </body>
 </html>
