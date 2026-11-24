@@ -152,7 +152,6 @@ function mp(){
 }
 function mpReset(){ MI=0; }
 
-/* 彈性阻尼 (Spring) */
 function spring(cur, tgt, vel, stiff, damp, dt){
   var force = (tgt - cur) * stiff;
   vel += force * dt;
@@ -372,7 +371,7 @@ gl.enable(gl.DEPTH_TEST);
 gl.depthFunc(gl.LEQUAL);
 gl.enable(gl.CULL_FACE);
 gl.cullFace(gl.BACK);
-gl.clearColor(0.05,0.08,0.12,1); // 深沉夜幕
+gl.clearColor(0.05,0.08,0.12,1);
 
 /* ============================================================
    幾何網格庫
@@ -702,7 +701,7 @@ var M_SHADOW   = makeMat([0.00,0.00,0.00],0.00,1.00,null,null,0.5,2,true);
 var M_TRACER   = makeMat([1.00,0.80,0.40],0.00,0.45,null,null,1.0,1,true);
 var M_FLASH    = makeMat([1.00,0.85,0.50],0.00,0.35,null,null,1.0,1,true);
 var M_RED_DOT  = makeMat([1.00,0.10,0.05],0.00,0.20,null,null,1.0,1,true);
-var M_GLASS    = makeMat([0.30,0.60,0.80],0.80,0.10,null,null,0.12,2,true);
+var M_GLASS    = makeMat([0.30,0.60,0.80],0.80,0.10,null,null,0.15,2,true);
 var M_SHELL    = makeMat([0.80,0.65,0.20],0.80,0.30,null,null);
 var M_BULLET_HOLE = makeMat([0.02,0.02,0.02],0.00,0.90,null,null,0.9,2,true);
 
@@ -940,7 +939,8 @@ var player = {
   sliding:false, slideT:0,
   ads:0, adsVel:0,
   sprintProg:0, sprintVel:0,
-  bob:0, shake:0
+  bob:0, shake:0,
+  radius:0.45
 };
 
 var gun = {
@@ -951,7 +951,7 @@ var gun = {
   boltTimer:0
 };
 
-var reload = { active:false, t:0, dur:2.2, phase:0 };
+var reload = { active:false, t:0, dur:1.9, phase:0 };
 
 var stickX=0, stickY=0, stickId=null;
 var lookId=null, lookLX=0, lookLY=0;
@@ -1076,12 +1076,12 @@ function spawnShell(x,y,z){
 }
 function spawnBulletHole(x,y,z,nx,ny,nz){
   var m = new Float32Array(16);
-  // 簡單對齊法線
-  var yaw = Math.atan2(nx, nz);
-  var pitch = -Math.asin(ny);
-  setTRS(m, x+nx*0.01, y+ny*0.01, z+nz*0.01, pitch, yaw, 0, 0.08, 0.08, 0.08);
+  // 精確對齊法線
+  var ry = Math.atan2(nx, nz);
+  var rx = -Math.asin(ny);
+  setTRS(m, x+nx*0.005, y+ny*0.005, z+nz*0.005, rx, ry, 0, 0.08, 0.08, 0.08);
   bulletHoles.push({m:m, life:5.0});
-  if(bulletHoles.length > 40) bulletHoles.shift();
+  if(bulletHoles.length > 60) bulletHoles.shift();
 }
 
 function updateParticles(dt){
@@ -1401,8 +1401,9 @@ function buildSoldier(e){
   drawPart(mPelvis, 0,0.045,0, 0,0,0, 0.158, 0.055, 0.122, MESH_CYL, M_VEST);
 
   /* 脊椎 */
+  // 反向旋轉骨盆以確保上半身鎖定瞄準玩家
   var mSpine = mp();
-  setTRS(tL, 0, 0.06, 0, a.spinePitch, 0, a.spineRoll, 1,1,1);
+  setTRS(tL, 0, 0.06, 0, a.spinePitch, -a.pelvisYaw, a.spineRoll, 1,1,1);
   m4mul(mSpine, mPelvis, tL);
 
   drawPart(mSpine, 0,0.13,0, 0,0,0, 0.148, 0.30, 0.104, MESH_CYL, M_CAMO);
@@ -1607,12 +1608,20 @@ function playerShoot(){
     if(t !== null && t < bestT){
       bestT = t; bestE = null; hitWall = true;
       hitX = ox + fx*t; hitY = oy + fy*t; hitZ = oz + fz*t;
-      // 簡易法線推斷
-      if(Math.abs(hitX - (o.x - o.hw)) < 0.1) nx = -1;
-      else if(Math.abs(hitX - (o.x + o.hw)) < 0.1) nx = 1;
-      else if(Math.abs(hitZ - (o.z - o.hd)) < 0.1) nz = -1;
-      else if(Math.abs(hitZ - (o.z + o.hd)) < 0.1) nz = 1;
-      else ny = 1;
+
+      // 精確法線計算
+      var d1 = Math.abs(hitX - (o.x - o.hw));
+      var d2 = Math.abs(hitX - (o.x + o.hw));
+      var d3 = Math.abs(hitZ - (o.z - o.hd));
+      var d4 = Math.abs(hitZ - (o.z + o.hd));
+      var d5 = Math.abs(hitY - o.h);
+      var minD = Math.min(d1, d2, d3, d4, d5);
+
+      if(minD === d1){ nx = -1; ny = 0; nz = 0; }
+      else if(minD === d2){ nx = 1; ny = 0; nz = 0; }
+      else if(minD === d3){ nx = 0; ny = 0; nz = -1; }
+      else if(minD === d4){ nx = 0; ny = 0; nz = 1; }
+      else if(minD === d5){ nx = 0; ny = 1; nz = 0; }
     }
   }
 
@@ -1672,17 +1681,20 @@ function updateReload(dt){
     reloadTxtEl.style.display = 'none';
     return;
   }
-  if(reload.phase === 0 && p >= 0.35){
+  if(reload.phase === 0 && p >= 0.28){
     reload.phase = 1;
-    sMagIn();
-  } else if(reload.phase === 1 && p >= 0.75){
+    sMagOut();
+  } else if(reload.phase === 1 && p >= 0.58){
     reload.phase = 2;
+    sMagIn();
+  } else if(reload.phase === 2 && p >= 0.71){
+    reload.phase = 3;
     sBolt();
   }
 }
 
 /* ============================================================
-   第一人稱武器（僅手臂與槍枝，無身體穿模）
+   第一人稱武器（精準 ADS 與換彈動畫，僅手臂與槍枝）
    ============================================================ */
 var mCam = new Float32Array(16);
 var mLocal = new Float32Array(16);
@@ -1694,30 +1706,35 @@ function buildPlayerGun(eyeY){
   var sprint = player.sprintProg;
   var p = reload.active ? (reload.t / reload.dur) : 0;
 
-  var rlTiltZ = 0, rlTiltX = 0, rlDownY = 0;
+  var rlTiltZ = 0, rlTiltX = 0, rlDownY = 0, rlRightX = 0;
   var magDrop = 0, magTilt = 0;
   var handOffsetY = 0, handOffsetZ = 0;
   var boltKick = gun.boltTimer > 0 ? Math.sin((1 - gun.boltTimer/0.08) * Math.PI) * 0.06 : 0;
 
   if(reload.active){
-    if(p < 0.35){
-      var mp1 = p / 0.35;
-      magDrop = mp1 * 0.42;
+    if(p < 0.28){
+      var mp1 = p / 0.28;
+      rlTiltZ = mp1 * -0.61; // 向左傾斜 35 度
+      rlTiltX = mp1 * -0.2;
+      rlDownY = mp1 * -0.08;
+      magDrop = mp1 * 0.15;
       magTilt = mp1 * 0.35;
-      rlTiltZ = mp1 * 0.25;
-    } else if(p < 0.55){
-      var mp2 = 1 - (p - 0.35) / 0.20;
-      magDrop = mp2 * 0.42;
-      magTilt = mp2 * 0.35;
-      rlTiltZ = mp2 * 0.25;
-      // 新彈匣拍入震動
-      rlDownY = Math.sin((p - 0.35) / 0.20 * Math.PI) * 0.05;
+    } else if(p < 0.58){
+      var mp2 = (p - 0.28) / 0.30;
+      rlTiltZ = -0.61;
+      rlTiltX = -0.2;
+      rlDownY = -0.08;
+      magDrop = 0.15 - mp2 * 0.15;
+      magTilt = 0.35 - mp2 * 0.35;
+      if(p > 0.5) rlDownY += Math.sin((p - 0.5)/0.08 * Math.PI) * 0.04; // 清脆撞擊震動
     } else {
-      magDrop = 0; magTilt = 0;
-      var rp = (p - 0.55) / 0.45;
-      if(rp < 0.4){
-        // 槍身清脆橫向震動
-        rlTiltZ = Math.sin(rp / 0.4 * Math.PI) * -0.12;
+      var mp3 = (p - 0.58) / 0.42;
+      rlTiltZ = -0.61 * (1 - mp3);
+      rlTiltX = -0.2 * (1 - mp3);
+      rlDownY = -0.08 * (1 - mp3);
+      if(mp3 < 0.2) {
+        rlTiltX += Math.sin(mp3 / 0.2 * Math.PI) * 0.1; // 向右下猛烈震動
+        rlRightX += Math.sin(mp3 / 0.2 * Math.PI) * 0.05;
       }
     }
   }
@@ -1726,12 +1743,12 @@ function buildPlayerGun(eyeY){
   var rz = gun.recoilZ * 0.05;
   var rx = gun.recoilPitch * 0.05;
 
-  /* 開鏡目標位置 */
-  var targetGx = 0.18 * (1-ads) + 0.0 * ads;
-  var targetGy = -0.20 * (1-ads) - 0.05 * ads;
-  var targetGz = -0.45 + 0.15 * ads;
-  var targetRz = 0.0 * (1-ads) + 0.0 * ads;
-  var targetRx = 0.0 * (1-ads) + 0.0 * ads;
+  /* ADS 精準座標 */
+  var targetGx = 0.175 * (1-ads) + 0.000 * ads;
+  var targetGy = -0.195 * (1-ads) - 0.085 * ads;
+  var targetGz = -0.45 + 0.13 * ads;
+  var targetRz = 0.0;
+  var targetRx = 0.0;
 
   /* 戰術衝刺覆蓋 */
   var sGx = -0.1 * sprint;
@@ -1739,12 +1756,12 @@ function buildPlayerGun(eyeY){
   var sRz = 0.73 * sprint; // 42度
   var sRx = -0.26 * sprint; // 15度
 
-  var gx = targetGx + sGx;
+  var gx = targetGx + sGx + rlRightX;
   var gy = targetGy + sGy + rlDownY;
   var gz = targetGz + rz + boltKick;
 
   var yawRot = 0.0;
-  var pitchRot = targetRx + rx + sRx;
+  var pitchRot = targetRx + rx + sRx + rlTiltX;
   var rollRot = targetRz + rlTiltZ + sRz + rz*0.2;
 
   /* 走路晃動 */
@@ -1825,54 +1842,51 @@ function buildPlayerGun(eyeY){
   /* === 全息瞄準鏡（絕對無遮擋） === */
   // 底座
   m = mp();
-  setTRS(tL, 0, 0.092, -0.045, 0,0,0, 0.052, 0.028, 0.11);
+  setTRS(tL, 0, 0.092, -0.25, 0,0,0, 0.052, 0.028, 0.11);
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_BOX, M_GUN_POLY);
 
   // U型外框 (左、右、上) - 細薄金屬
   // 左
   m = mp();
-  setTRS(tL, -0.042, 0.126, -0.045, 0,0,0, 0.008, 0.05, 0.06);
+  setTRS(tL, -0.042, 0.126, -0.25, 0,0,0, 0.008, 0.05, 0.06);
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_BOX, M_GUN_BLK);
   // 右
   m = mp();
-  setTRS(tL, 0.042, 0.126, -0.045, 0,0,0, 0.008, 0.05, 0.06);
+  setTRS(tL, 0.042, 0.126, -0.25, 0,0,0, 0.008, 0.05, 0.06);
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_BOX, M_GUN_BLK);
   // 上
   m = mp();
-  setTRS(tL, 0, 0.150, -0.045, 0,0,0, 0.09, 0.008, 0.06);
+  setTRS(tL, 0, 0.150, -0.25, 0,0,0, 0.09, 0.008, 0.06);
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_BOX, M_GUN_BLK);
 
   // 玻璃 (完全透明)
   m = mp();
-  setTRS(tL, 0, 0.126, -0.095, 0,0,0, 0.08, 0.045, 0.002);
+  setTRS(tL, 0, 0.126, -0.30, 0,0,0, 0.08, 0.045, 0.002);
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_BOX, M_GLASS);
 
   // 發光紅色全息圓環與紅點
-  // 我們將其放置在玻璃正中央，永遠面向鏡頭 (Billboard)
-  // 在本地座標系計算朝向
   var rdx = mGunW[12] - player.x, rdy = mGunW[13] - eyeY, rdz = mGunW[14] - player.z;
   var ryaw = Math.atan2(rdx, rdz);
   var rpitch = -Math.asin(rdy / Math.sqrt(rdx*rdx+rdy*rdy+rdz*rdz));
   
   // 紅點
   m = mp();
-  // 放置在玻璃前方
-  setTRS(mBillboard, 0, 0.126, -0.098, rpitch, ryaw, 0, 0.006, 0.006, 0.006);
+  setTRS(mBillboard, 0, 0.126, -0.302, rpitch, ryaw, 0, 0.006, 0.006, 0.006);
   m4mul(m, mGunW, mBillboard);
   pushDraw(m, MESH_SPH, M_RED_DOT);
 
-  // 紅色外環 (用八個小面片拼湊)
+  // 紅色外環
   for(var i=0; i<8; i++){
     var ang = i/8 * Math.PI*2;
-    var rx = Math.cos(ang)*0.018;
-    var ry = Math.sin(ang)*0.018;
+    var rx2 = Math.cos(ang)*0.018;
+    var ry2 = Math.sin(ang)*0.018;
     m = mp();
-    setTRS(mBillboard, rx, 0.126+ry, -0.098, rpitch, ryaw, 0, 0.004, 0.004, 0.004);
+    setTRS(mBillboard, rx2, 0.126+ry2, -0.302, rpitch, ryaw, 0, 0.004, 0.004, 0.004);
     m4mul(m, mGunW, mBillboard);
     pushDraw(m, MESH_SPH, M_RED_DOT);
   }
@@ -1895,20 +1909,48 @@ function buildPlayerGun(eyeY){
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_CYL, M_CAMO);
 
-  // 左手 (護木)
+  // 左手 (護木) - 帶換彈動畫
+  var handLX = -0.008;
+  var handLY = -0.086;
+  var handLZ = -0.225;
+  
+  if(reload.active){
+    if(p < 0.28){
+      var hp1 = p / 0.28;
+      handLX += hp1 * 0.05;
+      handLY -= hp1 * 0.15;
+      handLZ += hp1 * 0.1;
+    } else if(p < 0.58){
+      var hp2 = (p - 0.28) / 0.30;
+      handLX = 0.042;
+      handLY = -0.236 + hp2 * 0.15;
+      handLZ = -0.125;
+    } else {
+      var hp3 = (p - 0.58) / 0.42;
+      handLX = 0.042 - hp3 * 0.05;
+      handLY = -0.086 - hp3 * 0.15; // 拍擊動作
+      handLZ = -0.125 - hp3 * 0.1;
+      if(hp3 > 0.3) {
+        handLX = -0.008;
+        handLY = -0.086;
+        handLZ = -0.225;
+      }
+    }
+  }
+
   m = mp();
-  setTRS(tL, -0.008, -0.086 + handOffsetY, -0.225 + handOffsetZ, 0.16, 0.22, 0, 0.068, 0.090, 0.095);
+  setTRS(tL, handLX, handLY, handLZ, 0.16, 0.22, 0, 0.068, 0.090, 0.095);
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_SPH, M_GLOVE);
 
   m = mp();
-  setTRS(tL, -0.05, -0.07 + handOffsetY, -0.225 + handOffsetZ, 0.4, 0, 0, 0.026, 0.052, 0.048);
+  setTRS(tL, handLX - 0.042, handLY + 0.016, handLZ, 0.4, 0, 0, 0.026, 0.052, 0.048);
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_BOX, M_GLOVE);
 
   // 左前臂
   m = mp();
-  setTRS(tL, -0.16, -0.16 + handOffsetY, -0.06 + handOffsetZ, -0.2, 0.4, -0.4, 0.055, 0.25, 0.055);
+  setTRS(tL, handLX - 0.15, handLY - 0.07, handLZ + 0.15, -0.2, 0.4, -0.4, 0.055, 0.25, 0.055);
   m4mul(m, mGunW, tL);
   pushDraw(m, MESH_CYL, M_CAMO);
 
@@ -2010,7 +2052,7 @@ function buildScene(){
 }
 
 /* ============================================================
-   玩家更新
+   玩家更新與防穿牆
    ============================================================ */
 function updatePlayer(dt){
   var adsTarget = (adsHold && !reload.active && !player.sliding && player.sprintProg < 0.1) ? 1 : 0;
@@ -2080,25 +2122,38 @@ function updatePlayer(dt){
   player.x += player.vx * dt;
   player.z += player.vz * dt;
 
+  /* 玩家防穿牆碰撞檢測 (半徑 0.45) */
+  var r = player.radius;
+  for(var i=0;i<obstacles.length;i++){
+    var o = obstacles[i];
+    if(o.flat) continue;
+    
+    var ox = clamp(player.x, o.x - o.hw, o.x + o.hw);
+    var oz = clamp(player.z, o.z - o.hd, o.z + o.hd);
+    var dx = player.x - ox;
+    var dz = player.z - oz;
+    var distSq = dx*dx + dz*dz;
+
+    if(distSq < r*r){
+      var dist = Math.sqrt(distSq);
+      if(dist > 0.0001){
+        player.x += (dx / dist) * (r - dist);
+        player.z += (dz / dist) * (r - dist);
+      } else {
+        var pushX = (o.hw + r) - Math.abs(player.x - o.x);
+        var pushZ = (o.hd + r) - Math.abs(player.z - o.z);
+        if(pushX < pushZ) player.x += (player.x > o.x ? 1 : -1) * pushX;
+        else player.z += (player.z > o.z ? 1 : -1) * pushZ;
+      }
+    }
+  }
+
   if(!player.grounded){
     player.vy -= 18 * dt;
     player.y += player.vy * dt;
     if(player.y <= 0){ player.y = 0; player.vy = 0; player.grounded = true; }
   }
 
-  var r = 0.36;
-  for(var i=0;i<obstacles.length;i++){
-    var o = obstacles[i];
-    if(o.flat) continue;
-    if(player.y + 0.1 > o.h) continue;
-    var dx = player.x - o.x, dz = player.z - o.z;
-    var ox = o.hw + r - Math.abs(dx);
-    var oz = o.hd + r - Math.abs(dz);
-    if(ox>0 && oz>0){
-      if(ox<oz) player.x += (dx>=0?1:-1)*ox;
-      else      player.z += (dz>=0?1:-1)*oz;
-    }
-  }
   if(player.x < -BOUND+r) player.x = -BOUND+r;
   if(player.x >  BOUND-r) player.x =  BOUND-r;
   if(player.z < -BOUND+r) player.z = -BOUND+r;
@@ -2217,8 +2272,8 @@ function render(eyeY){
   gl.uniformMatrix4fv(uVP, false, vpM);
   gl.uniformMatrix4fv(uLightVPm, false, lightVP);
   gl.uniform3f(uLightDir, LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_DIR[2]);
-  gl.uniform3f(uLightCol, 1.0, 0.72, 0.42); // 溫暖夕陽
-  gl.uniform3f(uAmbient, 0.12, 0.15, 0.20); // 深藍灰環境光
+  gl.uniform3f(uLightCol, 1.0, 0.72, 0.42);
+  gl.uniform3f(uAmbient, 0.12, 0.15, 0.20);
   gl.uniform3f(uCam, player.x, eyeY, player.z);
   gl.uniform3f(uFogCol, 0.12, 0.16, 0.22);
   gl.uniform1f(uFogNear, 40.0);
@@ -2242,7 +2297,7 @@ function render(eyeY){
   var lastMesh = null;
   for(var i=0;i<drawCount;i++){
     var d = drawList[i];
-    if(d.mat.blend !== 0) continue; // 跳過透明
+    if(d.mat.blend !== 0) continue;
     if(d.mesh !== lastMesh){
       gl.bindBuffer(gl.ARRAY_BUFFER, d.mesh.vbo);
       gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
@@ -2275,8 +2330,8 @@ function render(eyeY){
   for(var i=0;i<drawCount;i++){
     var d = drawList[i];
     if(d.mat.blend === 0) continue;
-    if(d.mat.blend === 1) gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive
-    else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // Alpha
+    if(d.mat.blend === 1) gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
     if(d.mesh !== lastMesh){
       gl.bindBuffer(gl.ARRAY_BUFFER, d.mesh.vbo);
@@ -2305,9 +2360,8 @@ function render(eyeY){
   gl.depthMask(true);
   gl.disable(gl.BLEND);
 
-  // 3. 粒子與彈殼 (簡化渲染為方塊/球體)
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // 火星發光
-
+  // 3. 粒子與彈殼
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   gl.bindBuffer(gl.ARRAY_BUFFER, MESH_BOX.vbo);
   gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
   gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12);
@@ -2324,15 +2378,11 @@ function render(eyeY){
     var pm = new Float32Array(16);
     setTRS(pm, p.x, p.y, p.z, 0,0,0, p.size, p.size, p.size);
     gl.uniformMatrix4fv(uModel, false, pm);
-    if(p.type === 1){ // spark
-      gl.uniform3f(uColor, 1.0, 0.6, 0.1);
-    } else { // dust
-      gl.uniform3f(uColor, 0.3, 0.3, 0.3);
-    }
+    if(p.type === 1) gl.uniform3f(uColor, 1.0, 0.6, 0.1);
+    else gl.uniform3f(uColor, 0.3, 0.3, 0.3);
     gl.drawElements(gl.TRIANGLES, MESH_BOX.count, gl.UNSIGNED_SHORT, 0);
   }
 
-  // 彈殼
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindBuffer(gl.ARRAY_BUFFER, MESH_CYL.vbo);
   gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
@@ -2349,7 +2399,7 @@ function render(eyeY){
     gl.drawElements(gl.TRIANGLES, MESH_CYL.count, gl.UNSIGNED_SHORT, 0);
   }
 
-  // 彈孔
+  // 4. 彈孔
   gl.disable(gl.DEPTH_TEST);
   gl.bindBuffer(gl.ARRAY_BUFFER, MESH_PLANE.vbo);
   gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
@@ -2364,7 +2414,7 @@ function render(eyeY){
   }
   gl.enable(gl.DEPTH_TEST);
 
-  // 曳光彈
+  // 5. 曳光彈
   gl.enable(gl.BLEND);
   gl.depthMask(false);
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
