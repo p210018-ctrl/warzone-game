@@ -1,519 +1,1705 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>WZ 戰術 · 現代戰爭 · 沙黑雙色 M4A1 次世代版</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background-color: #000000; touch-action: none; overscroll-behavior: none; position: fixed; }
-  canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; font-family: -apple-system, "SF Pro", sans-serif; }
-  #hud { position: fixed; top: calc(10px + env(safe-area-inset-top)); left: calc(12px + env(safe-area-inset-left)); display: flex; gap: 10px; align-items: center; color: #8f8; font-size: 12px; font-weight: 700; text-shadow: 0 0 6px #000; }
-  .hud-btn { pointer-events: auto; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.25); color: #ddd; border-radius: 6px; padding: 6px 10px; font-size: 11px; cursor: pointer; transition: all 0.15s ease; backdrop-filter: blur(4px); }
-  .hud-btn:hover { background: rgba(255, 255, 255, 0.18); border-color: rgba(255, 255, 255, 0.5); }
-  #err { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; background: rgba(120, 0, 0, 0.94); color: #fff; font: 12px/1.5 monospace; padding: 10px 14px; white-space: pre-wrap; display: none; max-height: 40%; overflow: auto; }
-  #rotate { position: fixed; inset: 0; z-index: 999; background: #0b0b0d; color: #ddd; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; font-size: 18px; text-align: center; padding: 30px; }
-  @media (orientation: portrait) { #rotate { display: flex; } }
-  #cross { position: fixed; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; opacity: 0.9; transition: opacity 0.1s, transform 0.06s; pointer-events: none; }
-  #cross i { position: absolute; background: #eee; box-shadow: 0 0 3px #000; border-radius: 1px; }
-  #cross .h { width: 8px; height: 2px; top: 14px; } #cross .hl { left: 0; } #cross .hr { right: 0; }
-  #cross .v { width: 2px; height: 8px; left: 14px; } #cross .vt { top: 0; } #cross .vb { bottom: 0; }
-  #cross .d { position: absolute; left: 13px; top: 13px; width: 4px; height: 4px; border-radius: 50%; background: #eee; box-shadow: 0 0 4px #000; }
-  #cross.hit i { background: #ff3b3b; box-shadow: 0 0 8px #ff3b3b; }
-  #stick { position: fixed; left: calc(24px + env(safe-area-inset-left)); bottom: calc(30px + env(safe-area-inset-bottom)); width: 118px; height: 118px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.05); pointer-events: auto; opacity: 0.75; backdrop-filter: blur(2px); }
-  #knob { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(255, 255, 255, 0.3); border: 1px solid rgba(255, 255, 255, 0.45); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
-  #btns { position: fixed; right: calc(18px + env(safe-area-inset-right)); bottom: calc(20px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-  .row { display: flex; gap: 8px; align-items: center; }
-  .b { pointer-events: auto; width: 56px; height: 56px; border-radius: 50%; background: rgba(255, 255, 255, 0.10); border: 1.5px solid rgba(255, 255, 255, 0.30); color: #eee; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; touch-action: manipulation; transition: all 0.1s ease; backdrop-filter: blur(4px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); }
-  .b.on { background: rgba(255, 255, 255, 0.32); }
-  .b.fire { width: 74px; height: 74px; font-size: 12px; border-color: rgba(255, 70, 70, 0.6); background: rgba(255, 40, 40, 0.14); }
-  .b.fire.on { background: rgba(255, 60, 60, 0.42); }
-  .b.ads.on { border-color: rgba(120, 200, 255, 0.8); background: rgba(80, 160, 255, 0.24); }
-  .b.reload { border-color: rgba(255, 200, 80, 0.55); background: rgba(255, 180, 40, 0.12); font-size: 11px; }
-  .b.reload.on { background: rgba(255, 180, 40, 0.30); }
-  .b.sprint { border-color: rgba(100, 255, 150, 0.55); background: rgba(40, 255, 100, 0.12); font-size: 11px; }
-  .b.sprint.on { background: rgba(40, 255, 100, 0.30); }
-  #ammo { pointer-events: none; color: #fff; font: 700 16px/1 monospace; text-shadow: 0 0 8px #000, 0 0 3px #000; letter-spacing: 0.03em; background: rgba(0, 0, 0, 0.35); padding: 7px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.15); }
-  #ammo.low { color: #ff3b3b; animation: pulse 0.5s infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-  #reloadTxt { position: fixed; left: 50%; bottom: calc(120px + env(safe-area-inset-bottom)); transform: translateX(-50%); color: #ffc850; font: 800 14px/1 -apple-system, sans-serif; text-shadow: 0 0 8px #000; display: none; letter-spacing: 0.1em; z-index: 11; }
-</style>
+    <!-- ============================================================
+         Meta 標籤：全方位行動端與 iOS 防護設定
+         ============================================================ -->
+    <meta charset="UTF-8">
+    <!-- 強制全螢幕且禁止縮放，適配瀏海螢幕 (viewport-fit=cover) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- iOS Safari 專用 PWA 標籤 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-touch-fullscreen" content="yes">
+    
+    <!-- 防止電話號碼被自動識別為連結 -->
+    <meta name="format-detection" content="telephone=no">
+    
+    <!-- 主題顏色 (深炭灰) -->
+    <meta name="theme-color" content="#0a0a0c">
+
+    <!-- 標題 -->
+    <title>CODWZM 戰區手遊 - 戰術行動</title>
+
+    <!-- ============================================================
+         CSS 核心樣式：全局變數與重置
+         ============================================================ -->
+    <style>
+        /* --------------------------------------------------------
+           1. 全局 CSS 變數定義 (《戰區》戰術軍事風格)
+           -------------------------------------------------------- */
+        :root {
+            /* 顏色系統 */
+            --color-bg-dark: #0a0a0c;
+            --color-bg-panel: rgba(18, 18, 22, 0.85);
+            --color-bg-glass: rgba(30, 32, 38, 0.65);
+            --color-primary: #d4af37; /* 琥珀金 */
+            --color-primary-glow: rgba(212, 175, 55, 0.4);
+            --color-secondary: #8a8d91;
+            --color-text-main: #e0e0e0;
+            --color-text-muted: #7a7d82;
+            --color-danger: #e74c3c;
+            --color-success: #2ecc71;
+            --color-cyan: #00f3ff;
+            
+            /* 邊框與發光 */
+            --border-glass: 1px solid rgba(255, 255, 255, 0.1);
+            --border-primary: 1px solid rgba(212, 175, 55, 0.5);
+            --shadow-panel: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+            --shadow-glow: 0 0 10px var(--color-primary-glow);
+
+            /* 字體設定 */
+            --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+            /* 安全區域 (瀏海螢幕適配) */
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+            --safe-left: env(safe-area-inset-left);
+            --safe-right: env(safe-area-inset-right);
+        }
+
+        /* --------------------------------------------------------
+           2. 全局重置與防回彈設定
+           -------------------------------------------------------- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* 禁用點擊高亮 */
+            -webkit-tap-highlight-color: transparent;
+            /* 禁用長按菜單與選中 */
+            -webkit-touch-callout: none;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* 防止滾動與回彈 */
+            background-color: var(--color-bg-dark);
+            color: var(--color-text-main);
+            font-family: var(--font-main);
+            /* 禁用觸控手勢縮放 */
+            touch-action: none;
+            overscroll-behavior: none;
+            position: fixed; /* 徹底鎖死視口 */
+            top: 0;
+            left: 0;
+        }
+
+        /* 全局畫布 (供 JS/33 渲染引擎調用) */
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            z-index: 1;
+            /* 默認隱藏，由 JS 控制顯示 */
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        /* --------------------------------------------------------
+           3. UI 容器總層 (覆蓋在 Canvas 之上)
+           -------------------------------------------------------- */
+        #app-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; /* 讓點擊事件穿透到 Canvas */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 通用 UI 層設定 */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: none; /* 默認隱藏，由 JS 控制顯示 */
+            flex-direction: column;
+        }
+        
+        .ui-layer.active {
+            display: flex;
+        }
+
+        /* ============================================================
+           模組 A：橫屏鎖定提示層 (強制橫屏)
+           ============================================================ */
+        #orientation-lock {
+            position: fixed;
+            inset: 0;
+            background-color: var(--color-bg-dark);
+            background-image: radial-gradient(circle at center, #1a1c22 0%, #0a0a0c 100%);
+            z-index: 9999;
+            display: none; /* 默認隱藏，由媒體查詢控制 */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-text-main);
+            pointer-events: auto;
+        }
+
+        /* 只有直向時顯示 */
+        @media (orientation: portrait) {
+            #orientation-lock {
+                display: flex;
+            }
+        }
+
+        .rotate-icon-container {
+            width: 120px;
+            height: 120px;
+            margin-bottom: 30px;
+            perspective: 800px;
+        }
+
+        .rotate-phone {
+            width: 60px;
+            height: 110px;
+            background: linear-gradient(145deg, #2a2c30, #1a1c20);
+            border: 3px solid var(--color-primary);
+            border-radius: 12px;
+            margin: 0 auto;
+            box-shadow: var(--shadow-glow);
+            animation: rotate90 2s infinite ease-in-out;
+            position: relative;
+        }
+
+        /* 模擬手機聽筒與 Home 鍵 */
+        .rotate-phone::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 4px;
+            background: #111;
+            border-radius: 2px;
+        }
+        .rotate-phone::after {
+            content: '';
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid #111;
+            border-radius: 50%;
+        }
+
+        @keyframes rotate90 {
+            0% { transform: rotate(0deg); }
+            25% { transform: rotate(0deg); }
+            75% { transform: rotate(90deg); }
+            100% { transform: rotate(90deg); }
+        }
+
+        .rotate-text-zh {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 4px;
+            color: var(--color-primary);
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
+        }
+
+        .rotate-text-en {
+            font-size: 13px;
+            color: var(--color-text-muted);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* ============================================================
+           模組 B：非同步載入進度條層
+           ============================================================ */
+        #loading-layer {
+            position: fixed;
+            inset: 0;
+            background-color: var(--color-bg-dark);
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(30,32,38,0.8) 0%, rgba(10,10,12,1) 100%),
+                linear-gradient(rgba(212,175,55,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(212,175,55,0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 30px 30px, 30px 30px;
+            z-index: 9998;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            transition: opacity 0.5s ease;
+        }
+
+        /* 載入完成後淡出 */
+        #loading-layer.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loading-logo {
+            font-size: 36px;
+            font-weight: 900;
+            color: #fff;
+            letter-spacing: 8px;
+            margin-bottom: 5px;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .loading-logo .accent {
+            color: var(--color-primary);
+            text-shadow: 0 0 20px var(--color-primary-glow);
+        }
+
+        .loading-subtitle {
+            font-size: 12px;
+            color: var(--color-text-muted);
+            letter-spacing: 4px;
+            margin-bottom: 50px;
+            text-transform: uppercase;
+            font-family: var(--font-mono);
+        }
+
+        /* 進度條容器 */
+        .progress-container {
+            width: 300px;
+            max-width: 80vw;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            position: relative;
+            overflow: visible;
+            margin-bottom: 15px;
+        }
+
+        /* 進度條填充 */
+        .progress-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--color-primary) 0%, #fff 100%);
+            border-radius: 2px;
+            transition: width 0.2s ease-out;
+            box-shadow: 0 0 10px var(--color-primary-glow);
+        }
+
+        /* 進度條發光頭部 */
+        .progress-glow-head {
+            position: absolute;
+            top: 50%;
+            left: 0%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            background-color: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 15px 5px var(--color-primary);
+            transition: left 0.2s ease-out;
+        }
+
+        /* 進度百分比 */
+        .progress-text {
+            font-family: var(--font-mono);
+            font-size: 14px;
+            color: var(--color-primary);
+            letter-spacing: 2px;
+            text-shadow: var(--shadow-glow);
+        }
+
+        /* 底部版權與提示 */
+        .loading-footer {
+            position: absolute;
+            bottom: calc(20px + var(--safe-bottom));
+            left: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 10px;
+            color: #444;
+            letter-spacing: 1px;
+            font-family: var(--font-mono);
+        }
+
+        /* ============================================================
+           模組 C：大廳層 (Lobby Layer)
+           ============================================================ */
+        #lobby-layer {
+            background: linear-gradient(180deg, rgba(10,10,12,0.7) 0%, rgba(10,10,12,0.95) 100%);
+            padding: calc(20px + var(--safe-top)) calc(30px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(30px + var(--safe-left));
+            justify-content: space-between;
+            pointer-events: auto; /* 大廳需要點擊 */
+        }
+
+        /* 頂部玩家資訊與資源 */
+        .lobby-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            height: 60px;
+        }
+
+        .player-profile {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background: var(--color-bg-glass);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 8px 20px 8px 8px;
+            border-radius: 40px;
+            border: var(--border-glass);
+            box-shadow: var(--shadow-panel);
+        }
+
+        .player-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #333, #111);
+            border: 2px solid var(--color-primary);
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: var(--color-primary);
+            font-size: 18px;
+        }
+
+        .player-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .player-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: 1px;
+        }
+
+        .player-level {
+            font-size: 11px;
+            color: var(--color-primary);
+            font-family: var(--font-mono);
+        }
+
+        /* 頂部右側資源 */
+        .lobby-resources {
+            display: flex;
+            gap: 15px;
+        }
+
+        .resource-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0,0,0,0.5);
+            padding: 6px 15px;
+            border-radius: 6px;
+            border: var(--border-glass);
+            font-family: var(--font-mono);
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .resource-icon {
+            width: 16px;
+            height: 16px;
+            background-color: var(--color-primary);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); /* 六角形 */
+        }
+
+        /* 大廳核心：左側展示與右側按鈕 */
+        .lobby-content {
+            flex: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            padding: 0 5%;
+        }
+
+        /* 左側：特種兵展示區 */
+        .operator-showcase {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            position: relative;
+        }
+
+        .operator-name-big {
+            font-size: 48px;
+            font-weight: 900;
+            color: transparent;
+            -webkit-text-stroke: 1px rgba(255,255,255,0.3);
+            letter-spacing: 10px;
+            text-transform: uppercase;
+            position: absolute;
+            top: 10%;
+            left: 0;
+            z-index: 1;
+        }
+
+        .operator-tagline {
+            font-size: 14px;
+            color: var(--color-primary);
+            letter-spacing: 3px;
+            margin-top: 20px;
+            font-family: var(--font-mono);
+            position: relative;
+            z-index: 2;
+        }
+
+        /* 右側：主選單按鈕群 */
+        .main-menu-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 280px;
+            z-index: 5;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, rgba(212, 175, 55, 0.15) 0%, transparent 100%);
+            border: 1px solid var(--color-primary);
+            color: var(--color-primary);
+            padding: 16px 24px;
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            clip-path: polygon(0 0, 100% 0, 95% 100%, 0% 100%);
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+        }
+        
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: all 0.5s ease;
+        }
+
+        .btn-primary:hover::before {
+            left: 100%;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(90deg, rgba(212, 175, 55, 0.3) 0%, transparent 100%);
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.4);
+            text-shadow: 0 0 5px var(--color-primary);
+        }
+
+        .btn-secondary {
+            background: rgba(30, 32, 38, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #ddd;
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-align: left;
+            cursor: pointer;
+            clip-path: polygon(0 0, 100% 0, 97% 100%, 0% 100%);
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* 底部大廳導航列 */
+        .lobby-bottom-nav {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            width: 100%;
+            height: 70px;
+            align-items: center;
+            background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+            padding-bottom: 10px;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            color: var(--color-text-muted);
+            cursor: pointer;
+            transition: color 0.2s ease;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .nav-item:hover {
+            color: var(--color-primary);
+        }
+
+        .nav-item.active {
+            color: var(--color-primary);
+            text-shadow: 0 0 8px var(--color-primary-glow);
+        }
+
+        .nav-icon {
+            width: 24px;
+            height: 24px;
+            background-color: currentColor;
+            /* 使用遮罩模擬圖標，這裡以簡單幾何代替 */
+            mask-size: contain;
+            -webkit-mask-size: contain;
+            mask-repeat: no-repeat;
+            -webkit-mask-repeat: no-repeat;
+            mask-position: center;
+            -webkit-mask-position: center;
+        }
+
+        /* ============================================================
+           模組 D：戰鬥 HUD 層 (HUD Layer)
+           ============================================================ */
+        #hud-layer {
+            pointer-events: none; /* 讓點擊穿透，由內部的按鈕單獨開啟 */
+        }
+
+        /* 頂部狀態與小地圖 */
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: calc(15px + var(--safe-top)) calc(20px + var(--safe-right)) 0 calc(20px + var(--safe-left));
+            width: 100%;
+        }
+
+        /* 小地圖容器 */
+        .minimap-container {
+            width: 140px;
+            height: 140px;
+            background: rgba(0, 0, 0, 0.6);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+        
+        /* 小地圖掃描線效果 */
+        .minimap-container::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: rgba(0, 243, 255, 0.5);
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.8);
+            animation: scanline 3s linear infinite;
+        }
+
+        @keyframes scanline {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+
+        /* 小地圖指北針 */
+        .minimap-compass {
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--color-primary);
+            background: rgba(0,0,0,0.5);
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+        }
+
+        /* 頂部中央：比分與時間 */
+        .hud-scoreboard {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            background: var(--color-bg-panel);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            padding: 8px 25px;
+            border-radius: 4px;
+            border-top: 2px solid var(--color-primary);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .score-team {
+            font-size: 24px;
+            font-weight: 800;
+            font-family: var(--font-mono);
+        }
+
+        .score-team.blue { color: #3498db; text-shadow: 0 0 8px rgba(52,152,219,0.5); }
+        .score-team.red { color: #e74c3c; text-shadow: 0 0 8px rgba(231,76,60,0.5); }
+
+        .score-time {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            font-family: var(--font-mono);
+            letter-spacing: 2px;
+        }
+
+        /* 頂部右側：隊友列表與擊殺資訊 */
+        .hud-right-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 10px;
+        }
+
+        .killfeed {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            align-items: flex-end;
+        }
+
+        .killfeed-item {
+            background: rgba(0,0,0,0.5);
+            padding: 4px 10px;
+            font-size: 12px;
+            border-radius: 3px;
+            color: #ddd;
+            font-family: var(--font-mono);
+        }
+
+        .killfeed-item .killer { color: #3498db; font-weight: bold; }
+        .killfeed-item .weapon { color: #f1c40f; margin: 0 5px; }
+        .killfeed-item .victim { color: #e74c3c; font-weight: bold; }
+
+        /* 中央準星 */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            pointer-events: none;
+        }
+
+        .ch-line {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+        }
+        
+        .ch-top { width: 2px; height: 8px; left: 19px; top: 4px; }
+        .ch-bottom { width: 2px; height: 8px; left: 19px; bottom: 4px; }
+        .ch-left { width: 8px; height: 2px; left: 4px; top: 19px; }
+        .ch-right { width: 8px; height: 2px; right: 4px; top: 19px; }
+        .ch-dot { width: 2px; height: 2px; left: 19px; top: 19px; border-radius: 50%; background: var(--color-primary); }
+
+        /* 底部 HUD */
+        .hud-bottom {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 250px;
+            pointer-events: none;
+        }
+
+        /* 左下角搖桿區 */
+        .joystick-zone {
+            position: absolute;
+            bottom: calc(30px + var(--safe-bottom));
+            left: calc(30px + var(--safe-left));
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .joystick-base {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        /* 右下角按鍵區 */
+        .action-buttons-zone {
+            position: absolute;
+            bottom: calc(30px + var(--safe-bottom));
+            right: calc(30px + var(--safe-right));
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 15px;
+            pointer-events: auto;
+        }
+
+        .action-row {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .btn-action {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(20, 22, 28, 0.6);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+            position: relative;
+        }
+
+        .btn-action:active {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-fire {
+            width: 90px;
+            height: 90px;
+            background: rgba(231, 76, 60, 0.2);
+            border-color: rgba(231, 76, 60, 0.5);
+            font-size: 16px;
+        }
+
+        .btn-ads {
+            background: rgba(52, 152, 219, 0.2);
+            border-color: rgba(52, 152, 219, 0.5);
+        }
+
+        /* 右上角彈藥顯示 */
+        .ammo-display {
+            position: absolute;
+            bottom: calc(140px + var(--safe-bottom));
+            right: calc(30px + var(--safe-right));
+            text-align: right;
+            font-family: var(--font-mono);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        .ammo-current {
+            font-size: 42px;
+            font-weight: 900;
+            color: #fff;
+            line-height: 1;
+        }
+
+        .ammo-reserve {
+            font-size: 18px;
+            color: var(--color-text-muted);
+            font-weight: 700;
+        }
+
+        .ammo-current.low {
+            color: var(--color-danger);
+            animation: pulse-red 0.5s infinite;
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* 武器狀態列 (生命值/護甲) */
+        .health-bar-container {
+            position: absolute;
+            bottom: calc(20px + var(--safe-bottom));
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .bar-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .bar-icon {
+            width: 16px;
+            height: 16px;
+            background-color: #ddd;
+        }
+
+        .bar-bg {
+            flex: 1;
+            height: 8px;
+            background: rgba(0,0,0,0.6);
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .bar-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .bar-fill.health { background: linear-gradient(90deg, #2ecc71, #27ae60); }
+        .bar-fill.armor { background: linear-gradient(90deg, #3498db, #2980b9); }
+
+        /* ============================================================
+           模組 E：受擊紅屏與碎甲遮罩 (Damage Vignette)
+           ============================================================ */
+        #damage-vignette {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.1s ease;
+            background: radial-gradient(circle at center, transparent 40%, rgba(231, 76, 60, 0.6) 100%);
+            mix-blend-mode: multiply;
+        }
+
+        /* 碎甲特效 (當護甲被打破瞬間) */
+        #damage-vignette.armor-break {
+            background: radial-gradient(circle at center, transparent 30%, rgba(52, 152, 219, 0.4) 100%);
+            animation: armor-break-flash 0.3s ease-out;
+        }
+
+        @keyframes armor-break-flash {
+            0% { opacity: 1; background: radial-gradient(circle at center, transparent 10%, rgba(52, 152, 219, 0.8) 100%); }
+            100% { opacity: 0; }
+        }
+
+        /* 受擊方向指示器 */
+        .damage-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 200px;
+            height: 200px;
+            margin: -100px 0 0 -100px;
+            border-radius: 50%;
+            border: 4px solid transparent;
+            border-top-color: rgba(231, 76, 60, 0.8);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        /* ============================================================
+           模組 F：按鍵自定義編輯層 (Customizer Layer)
+           ============================================================ */
+        #customizer-layer {
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            z-index: 200;
+            pointer-events: auto;
+            display: none; /* 由 JS 控制顯示 */
+            flex-direction: column;
+            padding: calc(20px + var(--safe-top)) calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));
+        }
+
+        .customizer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .customizer-title {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--color-primary);
+            letter-spacing: 2px;
+        }
+
+        .btn-close {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.3);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-close:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: #fff;
+        }
+
+        .customizer-workspace {
+            flex: 1;
+            position: relative;
+            border: 2px dashed rgba(255,255,255,0.1);
+            border-radius: 8px;
+            /* 供 JS 在此區域生成可拖拽的按鈕 */
+        }
+
+        /* ============================================================
+           模組 G：設置彈窗 (Settings Modal)
+           ============================================================ */
+        #settings-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            z-index: 300;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+        }
+
+        .modal-content {
+            background: var(--color-bg-panel);
+            border: var(--border-primary);
+            box-shadow: var(--shadow-panel), 0 0 30px rgba(212, 175, 55, 0.1);
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .modal-header {
+            padding: 20px 25px;
+            background: rgba(0,0,0,0.3);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--color-primary);
+            letter-spacing: 2px;
+        }
+
+        .modal-body {
+            padding: 25px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .setting-label {
+            font-size: 15px;
+            color: #ddd;
+            font-weight: 600;
+        }
+
+        .setting-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* 滑桿樣式 */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 150px;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--color-primary);
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px var(--color-primary-glow);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.1);
+            border-radius: 2px;
+        }
+
+        /* 開關樣式 */
+        .toggle-switch {
+            width: 50px;
+            height: 26px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 13px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .toggle-switch.active {
+            background: var(--color-primary);
+        }
+        .toggle-knob {
+            width: 22px;
+            height: 22px;
+            background: #fff;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+        }
+        .toggle-switch.active .toggle-knob {
+            transform: translateX(24px);
+        }
+
+        /* ============================================================
+           模組 H：結算面板 (Result Modal)
+           ============================================================ */
+        #result-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 400;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            flex-direction: column;
+        }
+
+        .result-title {
+            font-size: 48px;
+            font-weight: 900;
+            letter-spacing: 10px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+        
+        .result-title.victory {
+            color: var(--color-primary);
+            text-shadow: 0 0 30px var(--color-primary-glow);
+        }
+        
+        .result-title.defeat {
+            color: var(--color-danger);
+            text-shadow: 0 0 30px rgba(231, 76, 60, 0.4);
+        }
+
+        .result-subtitle {
+            font-size: 16px;
+            color: var(--color-text-muted);
+            letter-spacing: 4px;
+            margin-bottom: 40px;
+            font-family: var(--font-mono);
+        }
+
+        .result-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            margin-bottom: 50px;
+        }
+
+        .stat-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: var(--color-bg-glass);
+            padding: 20px 40px;
+            border-radius: 8px;
+            border: var(--border-glass);
+            min-width: 150px;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: 900;
+            color: #fff;
+            font-family: var(--font-mono);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--color-primary);
+            letter-spacing: 2px;
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+
+        .result-actions {
+            display: flex;
+            gap: 20px;
+        }
+
+        /* --------------------------------------------------------
+           全局通用按鈕與特效
+           -------------------------------------------------------- */
+        .btn-warzone {
+            background: var(--color-primary);
+            color: #000;
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            cursor: pointer;
+            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+        }
+
+        .btn-warzone:hover {
+            background: #fff;
+            box-shadow: 0 0 20px rgba(255,255,255,0.4);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-outline:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: #fff;
+        }
+
+    </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="ui">
-  <div id="hud">
-    <span id="fps">FPS --</span>
-    <button id="inspectBtn" class="hud-btn">檢視武器</button>
-    <button id="reset" class="hud-btn">重置敵人</button>
-  </div>
-  <div id="cross">
-    <i class="h hl"></i><i class="h hr"></i><i class="v vt"></i><i class="v vb"></i><i class="d"></i>
-  </div>
-  <div id="stick"><div id="knob"></div></div>
-  <div id="btns">
-    <div class="row"><div id="ammo">30 / 120</div><button class="b reload" id="bReload">RELOAD</button></div>
-    <div class="row"><button class="b sprint" id="bSprint">SPRINT</button><button class="b" id="bCrouch">SLIDE</button></div>
-    <div class="row"><button class="b" id="bJump">JUMP</button><button class="b ads" id="bAds">ADS</button><button class="b fire" id="bFire">FIRE</button></div>
-  </div>
-</div>
-<div id="reloadTxt">RELOADING</div>
-<div id="rotate"><div style="font-size:56px;transform:rotate(90deg)">📱</div><div style="font-weight:700">請橫置裝置遊玩</div></div>
-<div id="err"></div>
 
-<script>
-(function(){
-'use strict';
-var errEl = document.getElementById('err');
-function showErr(m) { errEl.style.display = 'block'; errEl.textContent += m + '\n'; }
-window.onerror = function(msg, url, line) { showErr('錯誤: ' + msg + ' (行 ' + line + ')'); return false; };
+    <!-- ============================================================
+         根容器與 Canvas
+         ============================================================ -->
+    <div id="app-container">
+        
+        <!-- WebGL 渲染畫布 (預留給 JS/33) -->
+        <canvas id="game-canvas"></canvas>
 
-/* 矩陣數學工具 */
-function m4mul(o, a, b) {
-  o[0]=a[0]*b[0]+a[4]*b[1]+a[8]*b[2]+a[12]*b[3]; o[1]=a[1]*b[0]+a[5]*b[1]+a[9]*b[2]+a[13]*b[3]; o[2]=a[2]*b[0]+a[6]*b[1]+a[10]*b[2]+a[14]*b[3]; o[3]=a[3]*b[0]+a[7]*b[1]+a[11]*b[2]+a[15]*b[3];
-  o[4]=a[0]*b[4]+a[4]*b[5]+a[8]*b[6]+a[12]*b[7]; o[5]=a[1]*b[4]+a[5]*b[5]+a[9]*b[6]+a[13]*b[7]; o[6]=a[2]*b[4]+a[6]*b[5]+a[10]*b[6]+a[14]*b[7]; o[7]=a[3]*b[4]+a[7]*b[5]+a[11]*b[6]+a[15]*b[7];
-  o[8]=a[0]*b[8]+a[4]*b[9]+a[8]*b[10]+a[12]*b[11]; o[9]=a[1]*b[8]+a[5]*b[9]+a[9]*b[10]+a[13]*b[11]; o[10]=a[2]*b[8]+a[6]*b[9]+a[10]*b[10]+a[14]*b[11]; o[11]=a[3]*b[8]+a[7]*b[9]+a[11]*b[10]+a[15]*b[11];
-  o[12]=a[0]*b[12]+a[4]*b[13]+a[8]*b[14]+a[12]*b[15]; o[13]=a[1]*b[12]+a[5]*b[13]+a[9]*b[14]+a[13]*b[15]; o[14]=a[2]*b[12]+a[6]*b[13]+a[10]*b[14]+a[14]*b[15]; o[15]=a[3]*b[12]+a[7]*b[13]+a[11]*b[14]+a[15]*b[15];
-}
-function setTRS(o, tx, ty, tz, rx, ry, rz, sx, sy, sz) {
-  var cx=Math.cos(rx),sX=Math.sin(rx),cy=Math.cos(ry),sY=Math.sin(ry),cz=Math.cos(rz),sZ=Math.sin(rz);
-  var a00=cy,a01=sY*sX,a02=sY*cx,a10=0,a11=cx,a12=-sX,a20=-sY,a21=cy*sX,a22=cy*cx;
-  var b00=a00*cz+a01*sZ,b10=a10*cz+a11*sZ,b20=a20*cz+a21*sZ,b01=-a00*sZ+a01*cz,b11=-a10*sZ+a11*cz,b21=-a20*sZ+a21*cz,b02=a02,b12=a12,b22=a22;
-  o[0]=b00*sx;o[1]=b10*sx;o[2]=b20*sx;o[3]=0; o[4]=b01*sy;o[5]=b11*sy;o[6]=b21*sy;o[7]=0; o[8]=b02*sz;o[9]=b12*sz;o[10]=b22*sz;o[11]=0; o[12]=tx;o[13]=ty;o[14]=tz;o[15]=1;
-}
-function m4persp(o, fovy, aspect, near, far) { var f=1/Math.tan(fovy/2); o[0]=f/aspect;o[1]=0;o[2]=0;o[3]=0;o[4]=0;o[5]=f;o[6]=0;o[7]=0;o[8]=0;o[9]=0;o[10]=(far+near)/(near-far);o[11]=-1;o[12]=0;o[13]=0;o[14]=(2*far*near)/(near-far);o[15]=0; }
-function m4ortho(o, l, r, b, t, n, f) { o[0]=2/(r-l);o[1]=0;o[2]=0;o[3]=0;o[4]=0;o[5]=2/(t-b);o[6]=0;o[7]=0;o[8]=0;o[9]=0;o[10]=-2/(f-n);o[11]=0;o[12]=-(r+l)/(r-l);o[13]=-(t+b)/(t-b);o[14]=-(f+n)/(f-n);o[15]=1; }
-function m4lookAt(o, ex, ey, ez, cx, cy, cz, ux, uy, uz) {
-  var fx=cx-ex,fy=cy-ey,fz=cz-ez,fl=Math.sqrt(fx*fx+fy*fy+fz*fz)||1; fx/=fl;fy/=fl;fz/=fl;
-  var sx=fy*uz-fz*uy,sy=fz*ux-fx*uz,sz=fx*uy-fy*ux,sl=Math.sqrt(sx*sx+sy*sy+sz*sz)||1; sx/=sl;sy/=sl;sz/=sl;
-  var ux2=sy*fz-sz*fy,uy2=sz*fx-sx*fz,uz2=sx*fy-sy*fx;
-  o[0]=sx;o[1]=ux2;o[2]=-fx;o[3]=0;o[4]=sy;o[5]=uy2;o[6]=-fy;o[7]=0;o[8]=sz;o[9]=uz2;o[10]=-fz;o[11]=0;o[12]=-(sx*ex+sy*ey+sz*ez);o[13]=-(ux2*ex+uy2*ey+uz2*ez);o[14]=(fx*ex+fy*ey+fz*ez);o[15]=1;
-}
-function buildView(o, px, py, pz, yaw, pitch) {
-  var cx=Math.cos(pitch),sX=Math.sin(pitch),cy=Math.cos(yaw),sY=Math.sin(yaw);
-  var r00=cy,r01=0,r02=-sY,r10=sX*sY,r11=cx,r12=sX*cy,r20=cx*sY,r21=-sX,r22=cx*cy;
-  var tx=-(r00*px+r01*py+r02*pz),ty=-(r10*px+r11*py+r12*pz),tz=-(r20*px+r21*py+r22*pz);
-  o[0]=r00;o[1]=r10;o[2]=r20;o[3]=0;o[4]=r01;o[5]=r11;o[6]=r21;o[7]=0;o[8]=r02;o[9]=r12;o[10]=r22;o[11]=0;o[12]=tx;o[13]=ty;o[14]=tz;o[15]=1;
-}
-var MPOOL=[],MI=0; function mp(){var m=MPOOL[MI];if(!m){m=new Float32Array(16);MPOOL[MI]=m;}MI++;return m;} function mpReset(){MI=0;}
-function spring(cur, tgt, vel, stiff, damp, dt) { var force=(tgt-cur)*stiff; vel+=force*dt; vel*=Math.exp(-damp*dt); cur+=vel*dt; return [cur, vel]; }
-function damp(a, b, rate, dt) { return a+(b-a)*(1-Math.pow(1-rate,dt*60)); }
-function clamp(x, a, b) { return x<a?a:(x>b?b:x); }
+        <!-- ============================================================
+             模組 A：橫屏鎖定提示 (預設透過 CSS Media Query 控制顯示)
+             ============================================================ -->
+        <div id="orientation-lock">
+            <div class="rotate-icon-container">
+                <div class="rotate-phone"></div>
+            </div>
+            <div class="rotate-text-zh">請橫置手機以獲得最佳體驗</div>
+            <div class="rotate-text-en">Please Rotate Your Device</div>
+        </div>
 
-/* WebGL 核心 */
-var canvas = document.getElementById('c');
-var gl = null;
-try { var attrs = { antialias: true, alpha: false, depth: true, powerPreference: 'default' }; gl = canvas.getContext('webgl', attrs) || canvas.getContext('experimental-webgl', attrs); } catch (e) {}
-if (!gl) { showErr('此環境不支援 WebGL。'); return; }
+        <!-- ============================================================
+             模組 B：非同步載入進度條 (初始顯示)
+             ============================================================ -->
+        <div id="loading-layer">
+            <div class="loading-logo">
+                CODWZM <span class="accent">WARZONE</span>
+            </div>
+            <div class="loading-subtitle">TACTICAL MOBILE PROTOCOL</div>
+            
+            <div class="progress-container">
+                <div class="progress-bar" id="load-progress-bar"></div>
+                <div class="progress-glow-head" id="load-glow-head"></div>
+            </div>
+            <div class="progress-text" id="load-percentage">0%</div>
 
-var VS = ['attribute vec3 aPos;','attribute vec3 aNrm;','attribute vec2 aUV;','uniform mat4 uModel;','uniform mat4 uVP;','uniform mat4 uLightVP;','varying vec3 vN;','varying vec3 vW;','varying vec2 vUV;','varying vec4 vSC;','void main() {','  vec4 wp = uModel * vec4(aPos, 1.0);','  vW = wp.xyz;','  vN = mat3(uModel[0].xyz, uModel[1].xyz, uModel[2].xyz) * aNrm;','  vUV = aUV;','  vSC = uLightVP * wp;','  gl_Position = uVP * wp;','}'].join('\n');
-var FS = [
-  'precision highp float;','uniform vec3 uColor;','uniform float uMetal;','uniform float uRough;','uniform float uAlpha;','uniform sampler2D uTex;','uniform float uUseTex;','uniform vec2 uTiling;','uniform vec3 uLightDir;','uniform vec3 uLightCol;','uniform vec3 uAmbient;','uniform vec3 uCam;','uniform vec3 uFogCol;','uniform float uFogNear;','uniform float uFogFar;','uniform float uToneExp;','uniform sampler2D uShadowMap;','uniform float uShadowOn;','varying vec3 vN;','varying vec3 vW;','varying vec2 vUV;','varying vec4 vSC;',
-  'vec3 aces(vec3 x) {','  const float a = 2.51;','  const float b = 0.03;','  const float c = 2.43;','  const float d = 0.59;','  const float e = 0.14;','  return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);','}',
-  'float unpackD(vec4 rgba) {','  return dot(rgba, vec4(1.0/16777216.0, 1.0/65536.0, 1.0/256.0, 1.0));','}',
-  'void main() {','  vec3 N = normalize(vN);','  vec3 V = normalize(uCam - vW);','  vec3 L = normalize(uLightDir);','  vec3 H = normalize(L + V);','  vec3 albedo = uColor;','  float metal = uMetal;','  float rough = uRough;',
-  '  if (uUseTex > 0.5) {','    vec4 t = texture2D(uTex, vUV * uTiling);','    albedo = uColor * t.rgb * 1.8;','    rough = clamp(rough * (0.75 + 0.5 * t.a), 0.06, 1.0);','  }',
-  '  float NdotL = max(dot(N, L), 0.0);','  float NdotV = max(dot(N, V), 0.0001);','  float NdotH = max(dot(N, H), 0.0);','  float VdotH = max(dot(V, H), 0.0);',
-  '  float shadow = 1.0;','  if (uShadowOn > 0.5 && NdotL > 0.001) {','    vec3 sc = vSC.xyz / vSC.w;','    sc = sc * 0.5 + 0.5;','    if (sc.x > 0.002 && sc.x < 0.998 && sc.y > 0.002 && sc.y < 0.998 && sc.z < 1.0) {','      float d = unpackD(texture2D(uShadowMap, sc.xy));','      float bias = max(0.0022 * (1.0 - NdotL), 0.0006);','      shadow = (sc.z - bias > d) ? 0.0 : 1.0;','    }','  }',
-  '  vec3 F0 = mix(vec3(0.04), albedo, metal);','  float a = rough * rough;','  float a2 = a * a;','  float dd = NdotH * NdotH * (a2 - 1.0) + 1.0;','  float D = a2 / (3.14159 * dd * dd + 0.0001);','  float k = (rough + 1.0) * (rough + 1.0) / 8.0;','  float G = (NdotL / (NdotL * (1.0 - k) + k)) * (NdotV / (NdotV * (1.0 - k) + k));','  vec3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);','  vec3 spec = D * G * F / (4.0 * NdotV * NdotL + 0.001) * NdotL * uLightCol * 2.8 * shadow;','  vec3 diff = albedo * (1.0 - metal) * NdotL * uLightCol * shadow;',
-  '  vec3 skyA = vec3(0.25, 0.32, 0.45);','  vec3 gndA = vec3(0.10, 0.10, 0.12);','  vec3 amb = mix(gndA, skyA, 0.5 + 0.5 * N.y) * albedo * (1.0 - metal) * uAmbient;',
-  '  vec3 envCol = mix(vec3(0.15, 0.18, 0.22), vec3(0.45, 0.50, 0.58), 0.5 + 0.5 * N.y);','  vec3 refl = envCol * (F0 + (1.0 - F0) * pow(1.0 - NdotV, 5.0)) * (1.0 - rough * 0.85);',
-  '  vec3 col = diff + spec + amb + refl * mix(0.35, 1.0, metal);',
-  '  float d = length(vW - uCam);','  float fog = clamp((d - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);','  fog = fog * fog * (3.0 - 2.0 * fog);','  col = mix(col, uFogCol, fog * 0.95);',
-  '  col = aces(col * uToneExp);','  col = pow(col, vec3(1.0 / 2.2));',
-  '  gl_FragColor = vec4(col, uAlpha);','}'
-].join('\n');
-var DVS = ['attribute vec3 aPos;','uniform mat4 uModel;','uniform mat4 uLightVP;','void main() {','  gl_Position = uLightVP * uModel * vec4(aPos, 1.0);','}'].join('\n');
-var DFS = ['precision mediump float;','vec4 packD(float depth) {','  const vec4 bs = vec4(256.0 * 256.0 * 256.0, 256.0 * 256.0, 256.0, 1.0);','  const vec4 bm = vec4(0.0, 1.0 / 256.0, 1.0 / 256.0, 1.0 / 256.0);','  vec4 res = fract(depth * bs);','  res -= res.xxyz * bm;','  return res;','}','void main() {','  gl_FragColor = packD(gl_FragCoord.z);','}'].join('\n');
+            <div class="loading-footer">
+                © 2024 CODWZM TACTICAL OPS. ALL RIGHTS RESERVED.
+            </div>
+        </div>
 
-function compile(type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { showErr('Shader 編譯失敗: ' + gl.getShaderInfoLog(s)); return null; } return s; }
-function linkProg(vs, fs) { var p = gl.createProgram(); gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { showErr('Program 連結失敗: ' + gl.getProgramInfoLog(p)); return null; } return p; }
+        <!-- ============================================================
+             模組 C：大廳層 (Lobby Layer)
+             ============================================================ -->
+        <div id="lobby-layer" class="ui-layer">
+            <!-- 頂部玩家資訊 -->
+            <div class="lobby-header">
+                <div class="player-profile">
+                    <div class="player-avatar">G</div>
+                    <div class="player-info">
+                        <div class="player-name">GHOST_Operator</div>
+                        <div class="player-level">LVL. 55 • 上尉</div>
+                    </div>
+                </div>
+                <div class="lobby-resources">
+                    <div class="resource-item">
+                        <div class="resource-icon"></div>
+                        <span>12,450</span>
+                    </div>
+                    <div class="resource-item">
+                        <div class="resource-icon" style="background-color: #3498db;"></div>
+                        <span>850</span>
+                    </div>
+                </div>
+            </div>
 
-var vsObj = compile(gl.VERTEX_SHADER, VS); var fsObj = compile(gl.FRAGMENT_SHADER, FS); if (!vsObj || !fsObj) return; var prog = linkProg(vsObj, fsObj); if (!prog) return;
-var dvsObj = compile(gl.VERTEX_SHADER, DVS); var dfsObj = compile(gl.FRAGMENT_SHADER, DFS); var shadowProg = (dvsObj && dfsObj) ? linkProg(dvsObj, dfsObj) : null;
+            <!-- 大廳核心內容 -->
+            <div class="lobby-content">
+                <!-- 左側特種兵展示 -->
+                <div class="operator-showcase">
+                    <div class="operator-name-big">GHOST</div>
+                    <div class="operator-tagline">// SIMON "GHOST" RILEY</div>
+                </div>
 
-gl.useProgram(prog);
-var aPos = gl.getAttribLocation(prog, 'aPos'); var aNrm = gl.getAttribLocation(prog, 'aNrm'); var aUV = gl.getAttribLocation(prog, 'aUV');
-var uModel = gl.getUniformLocation(prog, 'uModel'); var uVP = gl.getUniformLocation(prog, 'uVP'); var uLightVPm = gl.getUniformLocation(prog, 'uLightVP');
-var uColor = gl.getUniformLocation(prog, 'uColor'); var uMetal = gl.getUniformLocation(prog, 'uMetal'); var uRough = gl.getUniformLocation(prog, 'uRough'); var uAlpha = gl.getUniformLocation(prog, 'uAlpha');
-var uTex = gl.getUniformLocation(prog, 'uTex'); var uUseTex = gl.getUniformLocation(prog, 'uUseTex'); var uTiling = gl.getUniformLocation(prog, 'uTiling');
-var uLightDir = gl.getUniformLocation(prog, 'uLightDir'); var uLightCol = gl.getUniformLocation(prog, 'uLightCol'); var uAmbient = gl.getUniformLocation(prog, 'uAmbient');
-var uCam = gl.getUniformLocation(prog, 'uCam'); var uFogCol = gl.getUniformLocation(prog, 'uFogCol'); var uFogNear = gl.getUniformLocation(prog, 'uFogNear'); var uFogFar = gl.getUniformLocation(prog, 'uFogFar'); var uToneExp = gl.getUniformLocation(prog, 'uToneExp');
-var uShadowMap = gl.getUniformLocation(prog, 'uShadowMap'); var uShadowOn = gl.getUniformLocation(prog, 'uShadowOn');
-var sAPos = -1, sUModel = null, sULightVP = null;
-if (shadowProg) { gl.useProgram(shadowProg); sAPos = gl.getAttribLocation(shadowProg, 'aPos'); sUModel = gl.getUniformLocation(shadowProg, 'uModel'); sULightVP = gl.getUniformLocation(shadowProg, 'uLightVP'); gl.useProgram(prog); }
+                <!-- 右側主選單 -->
+                <div class="main-menu-buttons">
+                    <button class="btn-primary" id="btn-start-match">進入戰區 / DEPLOY</button>
+                    <button class="btn-secondary" id="btn-loadout">武器配置 / LOADOUT</button>
+                    <button class="btn-secondary" id="btn-customize-ui">自定義按鍵 / CUSTOMIZE UI</button>
+                    <button class="btn-secondary" id="btn-settings">系統設置 / SETTINGS</button>
+                </div>
+            </div>
 
-gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.clearColor(0.05, 0.08, 0.12, 1.0);
+            <!-- 底部導航列 -->
+            <div class="lobby-bottom-nav">
+                <div class="nav-item active">
+                    <div class="nav-icon" style="mask-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22currentColor%22><path d=%22M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z%22/></svg>'); -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22currentColor%22><path d=%22M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z%22/></svg>');"></div>
+                    <span>大廳</span>
+                </div>
+                <div class="nav-item">
+                    <div class="nav-icon" style="mask-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22currentColor%22><path d=%22M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z%22/></svg>'); -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22currentColor%22><path d=%22M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z%22/></svg>');"></div>
+                    <span>特種兵</span>
+                </div>
+                <div class="nav-item">
+                    <div class="nav-icon" style="mask-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22currentColor%22><path d=%22M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z%22/></svg>'); -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22currentColor%22><path d=%22M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z%22/></svg>');"></div>
+                    <span>通行證</span>
+                </div>
+                <div class="nav-item">
+                    <div class="nav-icon" style="mask-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22currentColor%22><path d=%22M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z%22/></svg>'); -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22currentColor%22><path d=%22M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z%22/></svg>');"></div>
+                    <span>設置</span>
+                </div>
+            </div>
+        </div>
 
-function newMeshData() { return { v: [], i: [] }; }
-function pushVert(d, px, py, pz, nx, ny, nz, u, v) { d.v.push(px, py, pz, nx, ny, nz, u, v); }
-function buildMesh(d) { var m = {}; m.vbo = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, m.vbo); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(d.v), gl.STATIC_DRAW); m.ibo = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(d.i), gl.STATIC_DRAW); m.count = d.i.length; return m; }
-function makeBoxMesh() {
-  var d = newMeshData(); var faces = [
-    { n: [0,0,1], c: [[-0.5,-0.5,0.5], [0.5,-0.5,0.5], [0.5,0.5,0.5], [-0.5,0.5,0.5]] }, { n: [0,0,-1], c: [[0.5,-0.5,-0.5], [-0.5,-0.5,-0.5], [-0.5,0.5,-0.5], [0.5,0.5,-0.5]] },
-    { n: [0,1,0], c: [[-0.5,0.5,0.5], [0.5,0.5,0.5], [0.5,0.5,-0.5], [-0.5,0.5,-0.5]] }, { n: [0,-1,0], c: [[-0.5,-0.5,-0.5], [0.5,-0.5,-0.5], [0.5,-0.5,0.5], [-0.5,-0.5,0.5]] },
-    { n: [1,0,0], c: [[0.5,-0.5,0.5], [0.5,-0.5,-0.5], [0.5,0.5,-0.5], [0.5,0.5,0.5]] }, { n: [-1,0,0], c: [[-0.5,-0.5,-0.5], [-0.5,-0.5,0.5], [-0.5,0.5,0.5], [-0.5,0.5,-0.5]] }
-  ]; var vi = 0; for (var f = 0; f < 6; f++) { var fc = faces[f]; for (var k = 0; k < 4; k++) { var c = fc.c[k]; pushVert(d, c[0], c[1], c[2], fc.n[0], fc.n[1], fc.n[2], (k===1||k===2)?1:0, (k>=2)?1:0); } d.i.push(vi, vi+1, vi+2, vi, vi+2, vi+3); vi += 4; } return buildMesh(d);
-}
-function makeCylinderMesh(seg) {
-  var d = newMeshData(); for (var i = 0; i <= seg; i++) { var a = i / seg * Math.PI * 2; var sx = Math.sin(a), cz = Math.cos(a); pushVert(d, sx, 0.5, cz, sx, 0, cz, i/seg, 1); pushVert(d, sx, -0.5, cz, sx, 0, cz, i/seg, 0); } for (var i = 0; i < seg; i++) { var a0 = i*2, b0 = i*2+1, a1 = (i+1)*2, b1 = (i+1)*2+1; d.i.push(a0, b0, a1, a1, b0, b1); }
-  var cTop = d.v.length / 8; pushVert(d, 0, 0.5, 0, 0, 1, 0, 0.5, 0.5); for (var i = 0; i <= seg; i++) { var a = i / seg * Math.PI * 2, sx = Math.sin(a), cz = Math.cos(a); pushVert(d, sx, 0.5, cz, 0, 1, 0, 0.5 + sx*0.5, 0.5 + cz*0.5); } for (var i = 0; i < seg; i++) d.i.push(cTop, cTop+1+i, cTop+2+i);
-  var cBot = d.v.length / 8; pushVert(d, 0, -0.5, 0, 0, -1, 0, 0.5, 0.5); for (var i = 0; i <= seg; i++) { var a = i / seg * Math.PI * 2, sx = Math.sin(a), cz = Math.cos(a); pushVert(d, sx, -0.5, cz, 0, -1, 0, 0.5 + sx*0.5, 0.5 + cz*0.5); } for (var i = 0; i < seg; i++) d.i.push(cBot, cBot+2+i, cBot+1+i); return buildMesh(d);
-}
-function makeSphereMesh(latSeg, lonSeg, latMax) {
-  latMax = latMax || Math.PI; var d = newMeshData(); for (var la = 0; la <= latSeg; la++) { var phi = la / latSeg * latMax; var y = Math.cos(phi), r = Math.sin(phi); for (var lo = 0; lo <= lonSeg; lo++) { var th = lo / lonSeg * Math.PI * 2; var x = r * Math.sin(th), z = r * Math.cos(th); pushVert(d, x, y, z, x, y, z, lo/lonSeg, 1 - la/latSeg); } }
-  for (var la = 0; la < latSeg; la++) { for (var lo = 0; lo < lonSeg; lo++) { var a = la * (lonSeg+1) + lo; var b = a + lonSeg + 1; d.i.push(a, b, a+1, a+1, b, b+1); } } return buildMesh(d);
-}
-function makePlaneMesh() { var d = newMeshData(); pushVert(d, -0.5, 0, 0.5, 0, 1, 0, 0, 1); pushVert(d, 0.5, 0, 0.5, 0, 1, 0, 1, 1); pushVert(d, 0.5, 0, -0.5, 0, 1, 0, 1, 0); pushVert(d, -0.5, 0, -0.5, 0, 1, 0, 0, 0); d.i.push(0, 1, 2, 0, 2, 3); return buildMesh(d); }
-function makeOrganicLimbMesh(profile, seg) {
-  var d = newMeshData(); var numRings = profile.length; for (var ring = 0; ring < numRings; ring++) { var p = profile[ring]; for (var i = 0; i <= seg; i++) { var a = i / seg * Math.PI * 2; var sx = Math.sin(a), cz = Math.cos(a); var dr = 0; if (ring > 0 && ring < numRings - 1) { var rNext = profile[ring+1].r, rPrev = profile[ring-1].r, dy = profile[ring+1].y - profile[ring-1].y; dr = (rNext - rPrev) / dy; } var nx = sx, nz = cz, ny = -dr; var len = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1; pushVert(d, sx * p.r, p.y, cz * p.r, nx/len, ny/len, nz/len, i/seg, ring/(numRings-1)); } }
-  for (var ring = 0; ring < numRings - 1; ring++) { for (var i = 0; i < seg; i++) { var a0 = ring * (seg + 1) + i, b0 = a0 + 1, a1 = (ring + 1) * (seg + 1) + i, b1 = a1 + 1; d.i.push(a0, b0, a1, a1, b0, b1); } }
-  var cTop = d.v.length / 8; var topP = profile[numRings - 1]; pushVert(d, 0, topP.y, 0, 0, 1, 0, 0.5, 0.5); for (var i = 0; i <= seg; i++) { var a = i / seg * Math.PI * 2; var sx = Math.sin(a), cz = Math.cos(a); pushVert(d, sx * topP.r, topP.y, cz * topP.r, 0, 1, 0, 0.5 + sx*0.5, 0.5 + cz*0.5); } for (var i = 0; i < seg; i++) d.i.push(cTop, cTop+1+i, cTop+2+i);
-  var cBot = d.v.length / 8; var botP = profile[0]; pushVert(d, 0, botP.y, 0, 0, -1, 0, 0.5, 0.5); for (var i = 0; i <= seg; i++) { var a = i / seg * Math.PI * 2; var sx = Math.sin(a), cz = Math.cos(a); pushVert(d, sx * botP.r, botP.y, cz * botP.r, 0, -1, 0, 0.5 + sx*0.5, 0.5 + cz*0.5); } for (var i = 0; i < seg; i++) d.i.push(cBot, cBot+2+i, cBot+1+i); return buildMesh(d);
-}
+        <!-- ============================================================
+             模組 D：戰鬥 HUD 層 (HUD Layer)
+             ============================================================ -->
+        <div id="hud-layer" class="ui-layer">
+            <!-- 頂部 HUD -->
+            <div class="hud-top">
+                <!-- 左側小地圖 -->
+                <div class="minimap-container">
+                    <div class="minimap-compass">N</div>
+                    <!-- JS/34 會在裡面繪製 Canvas 小地圖 -->
+                </div>
 
-var MESH_BOX = makeBoxMesh(); var MESH_CYL = makeCylinderMesh(24); var MESH_CYL8 = makeCylinderMesh(12); var MESH_SPH = makeSphereMesh(18, 24); var MESH_DOME = makeSphereMesh(12, 24, Math.PI * 0.56); var MESH_PLANE = makePlaneMesh();
-var PROFILE_FOREARM = [{ y: -0.25, r: 0.06 }, { y: -0.15, r: 0.055 }, { y: -0.05, r: 0.045 }, { y: 0.00, r: 0.035 }]; var MESH_ORGANIC_ARM = makeOrganicLimbMesh(PROFILE_FOREARM, 16);
-var PROFILE_THIGH = [{ y: -0.22, r: 0.08 }, { y: -0.10, r: 0.085 }, { y: 0.00, r: 0.07 }]; var MESH_ORGANIC_THIGH = makeOrganicLimbMesh(PROFILE_THIGH, 12);
-var PROFILE_CALF = [{ y: -0.20, r: 0.07 }, { y: -0.10, r: 0.075 }, { y: 0.00, r: 0.045 }]; var MESH_ORGANIC_CALF = makeOrganicLimbMesh(PROFILE_CALF, 12);
+                <!-- 中間比分與時間 -->
+                <div class="hud-scoreboard">
+                    <div class="score-team blue">75</div>
+                    <div class="score-time" id="hud-time">10:00</div>
+                    <div class="score-team red">68</div>
+                </div>
 
-function makeTexFromCanvas(cv) { var tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.generateMipmap(gl.TEXTURE_2D); return tex; }
-function makeBrickCanvas() { var s=512,cv=document.createElement('canvas');cv.width=cv.height=s;var x=cv.getContext('2d');x.fillStyle='#1a1a1a';x.fillRect(0,0,s,s);var bw=128,bh=64;for(var row=0;row<8;row++){for(var col=0;col<5;col++){var bx=col*bw+(row%2?bw/2:0),by=row*bh;x.fillStyle=(Math.random()>0.5)?'#2a2a2a':'#242424';x.fillRect(bx+2,by+2,bw-4,bh-4);x.fillStyle='rgba(0,0,0,'+(0.2+Math.random()*0.3)+')';x.beginPath();x.arc(bx+bw/2,by+bh/2,20+Math.random()*25,0,6.283);x.fill();}}x.fillStyle='rgba(5,5,5,0.6)';for(var i=0;i<50;i++)x.fillRect(Math.random()*s,0,1+Math.random()*6,s);return cv;}
-function makeAsphaltCanvas() { var s=512,cv=document.createElement('canvas');cv.width=cv.height=s;var x=cv.getContext('2d');x.fillStyle='#101214';x.fillRect(0,0,s,s);x.strokeStyle='rgba(0,0,0,0.8)';x.lineWidth=30;x.beginPath();x.moveTo(-50,100);x.lineTo(s+50,180);x.stroke();x.beginPath();x.moveTo(-50,200);x.lineTo(s+50,280);x.stroke();var img=x.getImageData(0,0,s,s),d=img.data;for(var i=0;i<d.length;i+=4){var n=(Math.random()-0.5)*40;d[i]=Math.max(0,Math.min(255,d[i]+n));d[i+1]=Math.max(0,Math.min(255,d[i+1]+n));d[i+2]=Math.max(0,Math.min(255,d[i+2]+n));}x.putImageData(img,0,0);x.strokeStyle='rgba(0,0,0,0.9)';x.lineWidth=2;for(var k=0;k<25;k++){x.beginPath();var sx=Math.random()*s,sy=Math.random()*s;x.moveTo(sx,sy);for(var j=0;j<6;j++){sx+=(Math.random()-0.5)*80;sy+=(Math.random()-0.5)*80;x.lineTo(sx,sy);}x.stroke();}x.fillStyle='#a88b08';x.fillRect(0,400,s,40);x.fillStyle='#0a0a0a';for(var j=0;j<10;j++){x.beginPath();x.moveTo(j*60,440);x.lineTo(j*60+30,400);x.lineTo(j*60+60,400);x.lineTo(j*60+30,440);x.fill();}return cv;}
-function makeWoodCanvas() { var s=512,cv=document.createElement('canvas');cv.width=cv.height=s;var x=cv.getContext('2d');x.fillStyle='#1f1510';x.fillRect(0,0,s,s);for(var p=0;p<8;p++){var y0=p*64;x.fillStyle=(p%2===0)?'#2b1d14':'#1d120b';x.fillRect(0,y0+2,s,60);x.strokeStyle='rgba(0,0,0,0.8)';x.lineWidth=3;x.beginPath();x.moveTo(0,y0);x.lineTo(s,y0);x.stroke();x.strokeStyle='rgba(0,0,0,0.4)';x.lineWidth=1;for(var l=0;l<15;l++){x.beginPath();var yy=y0+8+Math.random()*48;x.moveTo(0,yy);for(var q=1;q<=8;q++)x.lineTo(q*s/8,yy+(Math.random()-0.5)*6);x.stroke();}}return cv;}
-function makeSandbagCanvas() { var s=512,cv=document.createElement('canvas');cv.width=cv.height=s;var x=cv.getContext('2d');x.fillStyle='#23281e';x.fillRect(0,0,s,s);for(var row=0;row<8;row++){for(var col=0;col<8;col++){var bx=col*64+(row%2?32:0),by=row*64;x.fillStyle='rgba(28,32,24,0.9)';x.beginPath();x.ellipse(bx+32,by+32,30,20,0,0,6.283);x.fill();x.strokeStyle='rgba(10,15,8,0.9)';x.lineWidth=2;x.stroke();x.strokeStyle='rgba(45,55,40,0.4)';x.beginPath();x.moveTo(bx+10,by+20);x.quadraticCurveTo(bx+30,by+40,bx+50,by+25);x.stroke();}}return cv;}
-function makeCamoCanvas() { var s=512,cv=document.createElement('canvas');cv.width=cv.height=s;var x=cv.getContext('2d');x.fillStyle='#12140e';x.fillRect(0,0,s,s);var colors=['#0a0c07','#1a1f15','#252e1f','#323d29'];for(var i=0;i<200;i++){x.fillStyle=colors[Math.floor(Math.random()*colors.length)];x.beginPath();var cx=Math.random()*s,cy=Math.random()*s,r=10+Math.random()*40;x.moveTo(cx+r,cy);for(var a=1;a<=7;a++){var th=a/7*Math.PI*2,rr=r*(0.4+Math.random()*0.6);x.lineTo(cx+Math.cos(th)*rr,cy+Math.sin(th)*rr);}x.fill();}return cv;}
-function makeMetalScratchCanvas() { var s=256,cv=document.createElement('canvas');cv.width=cv.height=s;var x=cv.getContext('2d');x.fillStyle='#1a1b1e';x.fillRect(0,0,s,s);x.strokeStyle='rgba(255,255,255,0.15)';x.lineWidth=1;for(var i=0;i<80;i++){x.beginPath();x.moveTo(Math.random()*s,Math.random()*s);x.lineTo(Math.random()*s,Math.random()*s);x.stroke();}for(var i=0;i<20;i++){var cx=Math.random()*s,cy=Math.random()*s;var grd=x.createRadialGradient(cx,cy,0,cx,cy,15+Math.random()*20);grd.addColorStop(0,'rgba(0,0,0,0.6)');grd.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=grd;x.beginPath();x.arc(cx,cy,30,0,6.283);x.fill();}return cv;}
-function makeLeatherMeshCanvas() { var s=512,cv=document.createElement('canvas');cv.width=cv.height=s;var x=cv.getContext('2d');x.fillStyle='#1a1c1e';x.fillRect(0,0,s,s);var img=x.getImageData(0,0,s,s),d=img.data;for(var i=0;i<d.length;i+=4){var n=(Math.random()-0.5)*20;d[i]=Math.max(0,Math.min(255,d[i]+n));d[i+1]=Math.max(0,Math.min(255,d[i+1]+n));d[i+2]=Math.max(0,Math.min(255,d[i+2]+n));}x.putImageData(img,0,0);x.strokeStyle='rgba(0,0,0,0.4)';x.lineWidth=2;for(var i=0;i<s;i+=8){x.beginPath();x.moveTo(i,0);x.lineTo(i+s,s);x.stroke();x.beginPath();x.moveTo(i,s);x.lineTo(i+s,0);x.stroke();}x.strokeStyle='rgba(180,160,100,0.6)';x.lineWidth=3;x.setLineDash([10,8]);x.strokeRect(20,20,s-40,s-40);x.setLineDash([]);x.fillStyle='rgba(40,45,50,0.9)';x.fillRect(150,150,200,200);x.strokeStyle='rgba(20,25,30,0.8)';x.lineWidth=1;for(var i=0;i<200;i+=4){x.beginPath();x.moveTo(150,150+i);x.lineTo(350,150+i);x.stroke();x.beginPath();x.moveTo(150+i,150);x.lineTo(150+i,350);x.stroke();}return cv;}
+                <!-- 右側擊殺資訊 -->
+                <div class="hud-right-panel">
+                    <div class="killfeed">
+                        <div class="killfeed-item">
+                            <span class="killer">Player_01</span>
+                            <span class="weapon">[M4A1]</span>
+                            <span class="victim">Enemy_04</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-var texBrick = makeTexFromCanvas(makeBrickCanvas()); var texAsphalt = makeTexFromCanvas(makeAsphaltCanvas()); var texWood = makeTexFromCanvas(makeWoodCanvas()); var texSandbag = makeTexFromCanvas(makeSandbagCanvas()); var texCamo = makeTexFromCanvas(makeCamoCanvas()); var texMetal = makeTexFromCanvas(makeMetalScratchCanvas()); var texLeather = makeTexFromCanvas(makeLeatherMeshCanvas());
+            <!-- 中央準星 -->
+            <div id="crosshair">
+                <div class="ch-line ch-top"></div>
+                <div class="ch-line ch-bottom"></div>
+                <div class="ch-line ch-left"></div>
+                <div class="ch-line ch-right"></div>
+                <div class="ch-line ch-dot"></div>
+            </div>
 
-function makeMat(c, metal, rough, tex, tiling, alpha, blend, noShadow) { return { c: c, metal: metal, rough: rough, tex: tex || null, tiling: tiling || [1, 1], alpha: (alpha !== undefined) ? alpha : 1.0, blend: (blend !== undefined) ? blend : 0, noShadow: !!noShadow }; }
+            <!-- 底部 HUD -->
+            <div class="hud-bottom">
+                <!-- 左下搖桿 (由 JS/35 接管事件) -->
+                <div class="joystick-zone" id="joystick-area">
+                    <div class="joystick-base" id="joystick-knob"></div>
+                </div>
 
-var M_GROUND = makeMat([1.0,1.0,1.0], 0.00, 0.94, texAsphalt, [16,16]); var M_BRICK = makeMat([1.0,1.0,1.0], 0.05, 0.88, texBrick, [3,2]); var M_BRICK2 = makeMat([0.8,0.8,0.8], 0.05, 0.88, texBrick, [1,1]); var M_WOOD = makeMat([1.0,1.0,1.0], 0.02, 0.86, texWood, [1,1]); var M_SANDBAG = makeMat([1.0,1.0,1.0], 0.00, 0.95, texSandbag, [1,1]);
-var M_CAMO = makeMat([1.0,1.0,1.0], 0.02, 0.86, texCamo, [1,1]); var M_VEST = makeMat([0.05,0.06,0.04], 0.10, 0.80, null, null); var M_HELMET = makeMat([0.04,0.05,0.03], 0.55, 0.45, null, null); var M_SKIN = makeMat([0.25,0.18,0.12], 0.00, 0.70, null, null); var M_GOGGLE = makeMat([0.02,0.08,0.12], 0.95, 0.05, null, null); var M_BOOT = makeMat([0.02,0.02,0.01], 0.10, 0.82, null, null); var M_GLOVE = makeMat([0.03,0.03,0.03], 0.14, 0.76, texLeather, [1,1]);
+                <!-- 生命值與護甲條 -->
+                <div class="health-bar-container">
+                    <div class="bar-row">
+                        <div class="bar-icon" style="background-color: #3498db; clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);"></div>
+                        <div class="bar-bg"><div class="bar-fill armor" style="width: 100%;"></div></div>
+                    </div>
+                    <div class="bar-row">
+                        <div class="bar-icon" style="background-color: #2ecc71; clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);"></div>
+                        <div class="bar-bg"><div class="bar-fill health" style="width: 100%;"></div></div>
+                    </div>
+                </div>
 
-// === 關鍵修復：補齊所有缺失的材質變數 ===
-var M_GUN_FDE = makeMat([0.72, 0.62, 0.49], 0.40, 0.45, texMetal, [1,1]); // 沙色
-var M_GUN_BLK = makeMat([0.08, 0.09, 0.10], 0.80, 0.28, texMetal, [2,2]); // 消光黑
-var M_GUN_DARK = makeMat([0.02, 0.02, 0.02], 0.50, 0.60, null, null); // 內部深色
-var M_GUN_POLY = makeMat([0.10, 0.11, 0.12], 0.20, 0.65, texMetal, [1,1]); // 塑膠
-var M_GUN_MET = makeMat([0.15, 0.16, 0.17], 0.95, 0.22, null, null); // 金屬 (修復報錯)
-var M_BULLET_BRASS = makeMat([0.83, 0.68, 0.21], 0.90, 0.20, null, null); // 黃銅
-var M_MAG_WINDOW = makeMat([0.15, 0.15, 0.15], 0.60, 0.10, null, null, 0.4, 2, true); // 玻璃
+                <!-- 右下彈藥顯示 -->
+                <div class="ammo-display">
+                    <span class="ammo-current" id="hud-ammo-mag">30</span>
+                    <span class="ammo-reserve">/ <span id="hud-ammo-reserve">120</span></span>
+                </div>
 
-var M_SHADOW = makeMat([0.00,0.00,0.00], 0.00, 1.00, null, null, 0.5, 2, true); var M_TRACER = makeMat([1.00,0.80,0.40], 0.00, 0.45, null, null, 1.0, 1, true); var M_FLASH = makeMat([1.00,0.85,0.50], 0.00, 0.35, null, null, 1.0, 1, true); var M_RED_DOT = makeMat([1.00,0.10,0.05], 0.00, 0.20, null, null, 1.0, 1, true); var M_LASER = makeMat([1.00,0.00,0.00], 0.00, 0.10, null, null, 0.6, 1, true); var M_GLASS = makeMat([0.20,0.40,0.50], 0.80, 0.10, null, null, 0.15, 2, true); var M_SHELL = makeMat([0.70,0.55,0.15], 0.80, 0.30, null, null); var M_BULLET_HOLE = makeMat([0.01,0.01,0.01], 0.00, 0.90, null, null, 0.9, 2, true);
+                <!-- 右下操作按鍵 -->
+                <div class="action-buttons-zone">
+                    <div class="action-row">
+                        <button class="btn-action" id="btn-reload">RELOAD</button>
+                        <button class="btn-action" id="btn-lethal">LETHAL</button>
+                    </div>
+                    <div class="action-row">
+                        <button class="btn-action" id="btn-jump">JUMP</button>
+                        <button class="btn-action" id="btn-crouch">CROUCH</button>
+                    </div>
+                    <div class="action-row" style="align-items: flex-end;">
+                        <button class="btn-action btn-ads" id="btn-ads">ADS</button>
+                        <button class="btn-action btn-fire" id="btn-fire">FIRE</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-var drawList = []; var drawCount = 0; function pushDraw(m, mesh, mat) { var d = drawList[drawCount]; if (!d) { d = { m: new Float32Array(16), mesh: null, mat: null }; drawList[drawCount] = d; } d.m.set(m); d.mesh = mesh; d.mat = mat; drawCount++; }
+        <!-- ============================================================
+             模組 E：受擊紅屏與碎甲遮罩
+             ============================================================ -->
+        <div id="damage-vignette">
+            <!-- 受擊方向指示器 (可容納多個) -->
+            <div class="damage-indicator" id="dmg-ind-1"></div>
+        </div>
 
-var SHADOW_SIZE = 1024; var shadowTex = null, shadowFB = null, shadowsEnabled = false;
-(function initShadow() {
-  try { shadowTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, shadowTex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, SHADOW_SIZE, SHADOW_SIZE, 0, gl.RGBA, gl.UNSIGNED_BYTE, null); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    var depthRB = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, depthRB); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, SHADOW_SIZE, SHADOW_SIZE);
-    shadowFB = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, shadowTex, 0); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRB);
-    var st = gl.checkFramebufferStatus(gl.FRAMEBUFFER); shadowsEnabled = (st === gl.FRAMEBUFFER_COMPLETE); gl.bindFramebuffer(gl.FRAMEBUFFER, null); } catch (e) { shadowsEnabled = false; }
-})();
+        <!-- ============================================================
+             模組 F：按鍵自定義編輯層 (Customizer Layer)
+             ============================================================ -->
+        <div id="customizer-layer" class="ui-layer">
+            <div class="customizer-header">
+                <div class="customizer-title">UI 按鍵自定義</div>
+                <button class="btn-close" id="btn-close-customizer">保存並返回</button>
+            </div>
+            <div class="customizer-workspace" id="customizer-workspace">
+                <!-- JS/36 會在此生成可拖拽的按鍵副本 -->
+            </div>
+        </div>
 
-var lightView = new Float32Array(16); var lightProj = new Float32Array(16); var lightVP = new Float32Array(16); var LIGHT_DIR = [0.6, 0.8, 0.4];
-function updateLightMatrices() { var lx = LIGHT_DIR[0], ly = LIGHT_DIR[1], lz = LIGHT_DIR[2]; var ll = Math.sqrt(lx*lx + ly*ly + lz*lz) || 1; lx /= ll; ly /= ll; lz /= ll; LIGHT_DIR[0] = lx; LIGHT_DIR[1] = ly; LIGHT_DIR[2] = lz; var cx = 0, cy = 0, cz = 0, dist = 60; m4lookAt(lightView, cx + lx*dist, cy + ly*dist, cz + lz*dist, cx, cy, cz, 0, 1, 0); m4ortho(lightProj, -35, 35, -35, 35, 1, 140); m4mul(lightVP, lightProj, lightView); }
-updateLightMatrices();
+        <!-- ============================================================
+             模組 G：設置彈窗 (Settings Modal)
+             ============================================================ -->
+        <div id="settings-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div class="modal-title">系統設置</div>
+                    <button class="btn-close" id="btn-close-settings">X</button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-item">
+                        <div class="setting-label">畫面品質</div>
+                        <div class="setting-control">
+                            <select style="background: #222; color: #fff; border: 1px solid #444; padding: 5px 10px; border-radius: 4px;">
+                                <option>極致 (Ultra)</option>
+                                <option selected>高 (High)</option>
+                                <option>中 (Medium)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">幀率上限</div>
+                        <div class="setting-control">
+                            <select style="background: #222; color: #fff; border: 1px solid #444; padding: 5px 10px; border-radius: 4px;">
+                                <option>120 FPS</option>
+                                <option selected>60 FPS</option>
+                                <option>30 FPS</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">靈敏度 (全局)</div>
+                        <div class="setting-control">
+                            <input type="range" min="1" max="100" value="50" id="setting-sens">
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">輔助瞄準</div>
+                        <div class="setting-control">
+                            <div class="toggle-switch active" id="toggle-aim-assist">
+                                <div class="toggle-knob"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">震動反饋</div>
+                        <div class="setting-control">
+                            <div class="toggle-switch active" id="toggle-haptics">
+                                <div class="toggle-knob"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">背景音樂音量</div>
+                        <div class="setting-control">
+                            <input type="range" min="0" max="100" value="70">
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">音效音量</div>
+                        <div class="setting-control">
+                            <input type="range" min="0" max="100" value="100">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-var GROUND = 64; var BOUND = GROUND / 2 - 1.5; var obstacles = [];
-function addBoxObs(x, z, w, h, d, mat) { obstacles.push({ x: x, z: z, hw: w / 2, hd: d / 2, h: h, mat: mat, type: 'box' }); }
-function addSandbagPile(x, z, w, d, layers) { obstacles.push({ x: x, z: z, hw: w / 2, hd: d / 2, h: layers * 0.22, mat: M_SANDBAG, type: 'sand', w: w, d: d, layers: layers }); }
-addBoxObs(-8,-5,6,1.2,1.0,M_BRICK2); addBoxObs(8,5,6,1.2,1.0,M_BRICK2); addBoxObs(10,-10,1.0,1.2,6,M_BRICK2); addBoxObs(-10,10,1.0,1.2,6,M_BRICK2); addBoxObs(-15,2,1.0,4.0,10,M_BRICK); addBoxObs(0,14,10,4.0,1.0,M_BRICK); addBoxObs(16,0,1.0,4.0,12,M_BRICK); addBoxObs(-2,-14,1.4,1.2,1.4,M_WOOD); addBoxObs(-1,-15,1.2,1.0,1.2,M_WOOD); addSandbagPile(-5,3,2.6,1.4,5); addSandbagPile(5,-3,2.6,1.4,5);
-(function() { for (var i = 0; i < 8; i++) { obstacles.push({ x: -10 + i * 2.5, z: -8, hw: 1.0, hd: 0.2, h: 0.01, mat: (i % 2 === 0) ? M_WOOD : M_GUN_BLK, flat: true, type: 'flat' }); } })();
+        <!-- ============================================================
+             模組 H：結算面板 (Result Modal)
+             ============================================================ -->
+        <div id="result-modal">
+            <div class="result-title victory" id="res-title">勝利</div>
+            <div class="result-subtitle" id="res-subtitle">MISSION ACCOMPLISHED</div>
+            
+            <div class="result-stats-grid">
+                <div class="stat-box">
+                    <div class="stat-value" id="res-kills">24</div>
+                    <div class="stat-label">擊殺</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="res-deaths">3</div>
+                    <div class="stat-label">死亡</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="res-damage">8450</div>
+                    <div class="stat-label">總傷害</div>
+                </div>
+            </div>
 
-var actx = null; function initAudio() { if (actx) return; try { var AC = window.AudioContext || window.webkitAudioContext; if (AC) actx = new AC(); } catch (e) {} }
-document.addEventListener('pointerdown', initAudio, true);
-function audioReady() { if (!actx) return false; if (actx.state === 'suspended') { try { actx.resume(); } catch (e) {} } return actx.state !== 'closed'; }
-function sGun() { if (!audioReady()) return; var t = actx.currentTime, dur = 0.14, sr = actx.sampleRate, n = Math.floor(sr * dur); var buf = actx.createBuffer(1, n, sr), d = buf.getChannelData(0); for (var i = 0; i < n; i++) { var env = Math.pow(1 - i / n, 4); d[i] = (Math.random() * 2 - 1) * env; } var src = actx.createBufferSource(); src.buffer = buf; var bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 0.7; var g = actx.createGain(); g.gain.setValueAtTime(0.44, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur); src.connect(bp); bp.connect(g); g.connect(actx.destination); src.start(t); var o = actx.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(52, t + 0.08); var og = actx.createGain(); og.gain.setValueAtTime(0.24, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.08); o.connect(og); og.connect(actx.destination); o.start(t); o.stop(t + 0.09); }
-function sHit() { if (!audioReady()) return; var t = actx.currentTime; var o = actx.createOscillator(); o.type = 'sine'; o.frequency.value = 1500; var g = actx.createGain(); g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.06); }
-function sEnemyShot() { if (!audioReady()) return; var t = actx.currentTime; var o = actx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(230, t); o.frequency.exponentialRampToValueAtTime(80, t + 0.09); var g = actx.createGain(); g.gain.setValueAtTime(0.042, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.09); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.1); }
-function sMagOut() { if (!audioReady()) return; var t = actx.currentTime; var o = actx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(420, t); o.frequency.exponentialRampToValueAtTime(180, t + 0.08); var g = actx.createGain(); g.gain.setValueAtTime(0.08, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.08); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.09); }
-function sMagIn() { if (!audioReady()) return; var t = actx.currentTime; var o = actx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(680, t); o.frequency.exponentialRampToValueAtTime(240, t + 0.06); var g = actx.createGain(); g.gain.setValueAtTime(0.1, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.06); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.07); }
-function sBolt() { if (!audioReady()) return; var t = actx.currentTime; var o = actx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(500, t + 0.04); var g = actx.createGain(); g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.04); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + 0.05); }
+            <div class="result-actions">
+                <button class="btn-warzone" id="btn-rematch">再次部署</button>
+                <button class="btn-outline" id="btn-back-lobby">返回大廳</button>
+            </div>
+        </div>
 
-var player = { x: 0, z: 14, y: 0, vx: 0, vz: 0, vy: 0, yaw: 0, pitch: 0, grounded: true, curH: 1.68, crouching: false, sliding: false, slideT: 0, ads: 0, adsVel: 0, sprintProg: 0, sprintVel: 0, tacSprintProg: 0, tacSprintVel: 0, tacSprintTimer: 0, bob: 0, shake: 0, cameraTrauma: 0, fovPunch: 0, radius: 0.45 };
-var gun = { mag: 30, magSize: 30, reserve: 120, lastFire: -1, fireInterval: 0.09, recoilZ: 0, recoilZVel: 0, recoilPitch: 0, recoilPitchVel: 0, recoilYaw: 0, recoilYawVel: 0, boltTimer: 0, inspectT: 0, inspecting: false, triggerFingerPull: 0 };
-var reload = { active: false, t: 0, dur: 1.9, phase: 0 };
-var stickX = 0, stickY = 0, stickId = null; var lookId = null, lookLX = 0, lookLY = 0; var firing = false, adsHold = false, jumpQ = false, crouchQ = false, sprintQ = false; var hitFlash = 0;
+    </div>
 
-var stickEl = document.getElementById('stick'); var knobEl = document.getElementById('knob'); var crossEl = document.getElementById('cross'); var reloadTxtEl = document.getElementById('reloadTxt'); var ammoEl = document.getElementById('ammo'); var fpsEl = document.getElementById('fps');
+    <!-- ============================================================
+         非同步腳本加載器與 UI 防護邏輯 (最底層，最後執行)
+         ============================================================ -->
+    <script>
+        (function() {
+            'use strict';
 
-stickEl.addEventListener('pointerdown', function(e) { e.preventDefault(); e.stopPropagation(); if (stickId !== null) return; stickId = e.pointerId; var r = stickEl.getBoundingClientRect(); stickEl._cx = r.left + r.width / 2; stickEl._cy = r.top + r.height / 2; stickEl._r = r.width * 0.42; try { stickEl.setPointerCapture(e.pointerId); } catch(x) {} updateStick(e.clientX, e.clientY); }, { passive: false });
-stickEl.addEventListener('pointermove', function(e) { if (e.pointerId !== stickId) return; e.preventDefault(); updateStick(e.clientX, e.clientY); }, { passive: false });
-function endStick(e) { if (e.pointerId !== stickId) return; stickId = null; stickX = 0; stickY = 0; knobEl.style.transform = 'translate(0,0)'; }
-stickEl.addEventListener('pointerup', endStick); stickEl.addEventListener('pointercancel', endStick);
-function updateStick(cx, cy) { var dx = cx - stickEl._cx, dy = cy - stickEl._cy; var d = Math.sqrt(dx*dx + dy*dy), m = stickEl._r; if (d > m) { dx = dx / d * m; dy = dy / d * m; } stickX = dx / m; stickY = dy / m; knobEl.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'; }
+            /* --------------------------------------------------------
+               1. iOS 與全局防誤觸防護
+               -------------------------------------------------------- */
+            
+            // 禁用雙擊縮放
+            document.addEventListener('dblclick', function(e) {
+                e.preventDefault();
+            }, { passive: false });
 
-canvas.addEventListener('pointerdown', function(e) { if (lookId !== null) return; lookId = e.pointerId; lookLX = e.clientX; lookLY = e.clientY; try { canvas.setPointerCapture(e.pointerId); } catch(x) {} });
-canvas.addEventListener('pointermove', function(e) { if (e.pointerId !== lookId) return; var dx = e.clientX - lookLX, dy = e.clientY - lookLY; lookLX = e.clientX; lookLY = e.clientY; var sens = 0.0032 * (1 - player.ads * 0.35); player.yaw -= dx * sens; player.pitch -= dy * sens; player.pitch = clamp(player.pitch, -1.25, 1.25); });
-function endLook(e) { if (e.pointerId === lookId) lookId = null; }
-canvas.addEventListener('pointerup', endLook); canvas.addEventListener('pointercancel', endLook);
+            // 禁用雙指手勢縮放 (iOS Safari 特有)
+            document.addEventListener('gesturestart', function(e) {
+                e.preventDefault();
+            }, { passive: false });
 
-function bindBtn(id, onDown, onUp) { var el = document.getElementById(id); el.addEventListener('pointerdown', function(e) { e.preventDefault(); e.stopPropagation(); el.classList.add('on'); try { el.setPointerCapture(e.pointerId); } catch(x) {} if (onDown) onDown(); }, { passive: false }); el.addEventListener('pointerup', function(e) { el.classList.remove('on'); if (onUp) onUp(); }); el.addEventListener('pointercancel', function() { el.classList.remove('on'); if (onUp) onUp(); }); }
-bindBtn('bFire', function() { firing = true; }, function() { firing = false; }); bindBtn('bAds', function() { adsHold = true; }, function() { adsHold = false; }); bindBtn('bJump', function() { jumpQ = true; }); bindBtn('bCrouch', function() { crouchQ = true; }); bindBtn('bReload', function() { startReload(); }); bindBtn('bSprint', function() { sprintQ = true; }, function() { sprintQ = false; });
-document.getElementById('inspectBtn').addEventListener('pointerdown', function(e) { e.preventDefault(); e.stopPropagation(); if (!reload.active && !gun.inspecting) { gun.inspecting = true; gun.inspectT = 0; } });
+            // 禁用長按選中與右鍵菜單
+            document.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+            });
 
-var particles = [], shells = [], bulletHoles = [];
-function spawnParticles(x, y, z, nx, ny, nz, type) { for (var i = 0; i < 8; i++) { particles.push({ x: x, y: y, z: z, vx: (Math.random()-0.5)*3 + nx*2, vy: (Math.random()-0.5)*3 + ny*2 + 1, vz: (Math.random()-0.5)*3 + nz*2, life: 0.3 + Math.random()*0.3, maxLife: 0.6, type: type, size: 0.02 + Math.random()*0.03 }); } }
-function spawnShell(x, y, z) { shells.push({ x: x, y: y, z: z, vx: (Math.random()-0.5)*2 + 1.5, vy: Math.random()*2 + 1, vz: (Math.random()-0.5)*2, rx: 0, ry: 0, rz: 0, vrx: Math.random()*10, vry: Math.random()*10, vrz: Math.random()*10, life: 1.5 }); }
-function spawnBulletHole(x, y, z, nx, ny, nz) { var m = new Float32Array(16); var ry = Math.atan2(nx, nz); var rx = -Math.asin(ny); setTRS(m, x + nx*0.005, y + ny*0.005, z + nz*0.005, rx, ry, 0, 0.08, 0.08, 0.08); bulletHoles.push({ m: m, life: 5.0 }); if (bulletHoles.length > 60) bulletHoles.shift(); }
-function updateParticles(dt) { for (var i = particles.length - 1; i >= 0; i--) { var p = particles[i]; p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt; p.vy -= 9.8*dt; p.life -= dt; if (p.life <= 0) particles.splice(i, 1); } for (var i = shells.length - 1; i >= 0; i--) { var s = shells[i]; s.x += s.vx*dt; s.y += s.vy*dt; s.z += s.vz*dt; s.vy -= 9.8*dt; s.rx += s.vrx*dt; s.ry += s.vry*dt; s.rz += s.vrz*dt; if (s.y < 0) { s.y = 0; s.vy *= -0.3; s.vx *= 0.8; s.vz *= 0.8; } s.life -= dt; if (s.life <= 0) shells.splice(i, 1); } for (var i = bulletHoles.length - 1; i >= 0; i--) { bulletHoles[i].life -= dt; if (bulletHoles[i].life <= 0) bulletHoles.splice(i, 1); } }
+            // 防止頁面回彈 (阻止 touchmove 事件)
+            document.body.addEventListener('touchmove', function(e) {
+                // 允許在自定義層或設置彈窗內部滾動
+                if (e.target.closest('#settings-modal .modal-body')) {
+                    return;
+                }
+                e.preventDefault();
+            }, { passive: false });
 
-var enemies = [];
-function newAnim() { return { pelvisYaw: 0, pelvisYawT: 0, spinePitch: 0, spinePitchT: 0, spineRoll: 0, spineRollT: 0, headPitch: 0, headPitchT: 0, headYaw: 0, headYawT: 0, pelvisY: 0.95, pelvisYT: 0.95, hipR: 0, hipRT: 0, kneeR: 0, kneeRT: 0, hipL: 0, hipLT: 0, kneeL: 0, kneeLT: 0, armRX: 1.25, armRXT: 1.25, armREX: 0.55, armREXT: 0.55, armRZ: -0.10, armRZT: -0.10, armLX: 1.20, armLXT: 1.20, armLEX: 0.45, armLEXT: 0.45, armLZ: 0.85, armLZT: 0.85, bank: 0, bankT: 0, flinch: 0, phase: 0 }; }
-function initEnemies() { enemies.length = 0; var homes = [[-6, -7], [7, -11], [-11, 1]]; for (var i = 0; i < 3; i++) { enemies.push({ id: i, x: homes[i][0], z: homes[i][1], hx: homes[i][0], hz: homes[i][1], yaw: 0, hp: 100, alive: true, respawnT: 0, mode: i, ai: { state: 0, timer: 0.6 + i*0.3, strafeDir: (i%2 ? 1 : -1), strafeTimer: 0.6, fireCd: 0.6 }, anim: newAnim(), muzzle: [0, 1.4, 0], tracerT: 0, tracerM: new Float32Array(16) }); } }
-initEnemies();
 
-function resolveEntity(e) { var r = 0.36; for (var i = 0; i < obstacles.length; i++) { var o = obstacles[i]; if (o.flat) continue; var dx = e.x - o.x, dz = e.z - o.z; var ox = o.hw + r - Math.abs(dx), oz = o.hd + r - Math.abs(dz); if (ox > 0 && oz > 0) { if (ox < oz) e.x += (dx >= 0 ? 1 : -1) * ox; else e.z += (dz >= 0 ? 1 : -1) * oz; } } if (e.x < -BOUND + r) e.x = -BOUND + r; if (e.x > BOUND - r) e.x = BOUND - r; if (e.z < -BOUND + r) e.z = -BOUND + r; if (e.z > BOUND - r) e.z = BOUND - r; }
-function angDiff(a, b) { var d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; }
-function updateEnemy(e, dt, time) {
-  if (!e.alive) { e.respawnT -= dt; if (e.respawnT <= 0) { e.alive = true; e.hp = 100; e.x = e.hx + (Math.random()-0.5)*2; e.z = e.hz + (Math.random()-0.5)*2; e.anim = newAnim(); e.ai.state = 0; e.ai.timer = 0.8; e.ai.strafeTimer = 0.6; e.ai.fireCd = 0.6; } return; }
-  var a = e.anim; var dx = player.x - e.x, dz = player.z - e.z; var dist = Math.sqrt(dx*dx + dz*dz) || 0.01; var nx = dx / dist, nz = dz / dist; var targetYaw = Math.atan2(-nx, -nz); e.yaw += angDiff(targetYaw, e.yaw) * Math.min(1, dt * 10);
-  var mvx = 0, mvz = 0, spd = 0, pose = 'normal';
-  if (e.mode === 0) { e.ai.strafeTimer -= dt; if (e.ai.strafeTimer <= 0) { e.ai.strafeDir *= -1; e.ai.strafeTimer = 0.42 + Math.random()*0.5; } mvx = nz * e.ai.strafeDir; mvz = -nx * e.ai.strafeDir; spd = 1.0; if (dist > 9) { mvx += nx*0.35; mvz += nz*0.35; } if (dist < 4) { mvx -= nx*0.55; mvz -= nz*0.55; } e.ai.fireCd -= dt; if (e.ai.fireCd <= 0 && dist < 25) { e.ai.fireCd = 0.55 + Math.random()*0.5; fireTracer(e); sEnemyShot(); } } 
-  else if (e.mode === 1) { e.ai.timer -= dt; if (e.ai.state === 0) { mvx = nx; mvz = nz; spd = 1.6; pose = 'sprint'; if (e.ai.timer <= 0) { e.ai.state = 1; e.ai.timer = 0.62; } } else if (e.ai.state === 1) { mvx = nx; mvz = nz; spd = 1.2; pose = 'slide'; if (e.ai.timer <= 0) { e.ai.state = 2; e.ai.timer = 0.28; } } else if (e.ai.state === 2) { pose = 'slideEnd'; if (e.ai.timer <= 0) { e.ai.state = 3; e.ai.timer = 2.0; e.ai.strafeTimer = 0.5; } } else { e.ai.strafeTimer -= dt; if (e.ai.strafeTimer <= 0) { e.ai.strafeDir *= -1; e.ai.strafeTimer = 0.5; } mvx = nz * e.ai.strafeDir; mvz = -nx * e.ai.strafeDir; spd = 0.85; if (e.ai.timer <= 0) { e.ai.state = 0; e.ai.timer = 1.3; } } } 
-  else { e.ai.timer -= dt; if (e.ai.state === 0) { var ang = time*0.32 + e.id*2.1; var tx = Math.cos(ang)*9, tz = Math.sin(ang)*7; var tdx = tx-e.x, tdz = tz-e.z; var tl = Math.sqrt(tdx*tdx + tdz*tdz) || 1; mvx = tdx/tl; mvz = tdz/tl; spd = 1.2; pose = 'sprint'; if (dist < 9 && e.ai.timer <= 0) { e.ai.state = 1; e.ai.timer = 0.85; } } else if (e.ai.state === 1) { mvx = nx; mvz = nz; spd = 1.6; pose = 'dive'; if (e.ai.timer <= 0) { e.ai.state = 2; e.ai.timer = 1.1; } } else { spd = 0; pose = 'prone'; if (e.ai.timer <= 0) { e.ai.state = 0; e.ai.timer = 2.0; } } }
-  var ml = Math.sqrt(mvx*mvx + mvz*mvz); if (ml > 1e-4) { mvx /= ml; mvz /= ml; } else { mvx = 0; mvz = 0; } if (spd > 0) { e.x += mvx * 4.6 * spd * dt; e.z += mvz * 4.6 * spd * dt; resolveEntity(e); }
-  var strafe = mvx * nz - mvz * nx;
-  a.pelvisYawT = 0; a.pelvisYT = 0.95; a.spinePitchT = 0.04; a.spineRollT = 0; a.headPitchT = 0; a.headYawT = 0; a.armRXT = 1.25; a.armREXT = 0.55; a.armRZT = -0.10; a.armLXT = 1.20; a.armLEXT = 0.45; a.armLZT = 0.85; a.bankT = -strafe * 0.14;
-  if (pose === 'slide') { a.pelvisYT = 0.44; a.hipRT = -1.25; a.kneeRT = 1.55; a.hipLT = 0.35; a.kneeLT = -0.90; a.spinePitchT = 0.35; a.armRXT = 1.45; a.armREXT = 0.35; a.armLXT = 1.40; a.armLEXT = 0.30; } 
-  else if (pose === 'slideEnd') { a.pelvisYT = 0.78; a.hipRT = -0.55; a.kneeRT = 1.15; a.hipLT = 0.25; a.kneeLT = -0.70; a.spinePitchT = 0.10; } 
-  else if (pose === 'dive') { a.pelvisYT = 0.62; a.spinePitchT = 1.28; a.hipRT = -0.45; a.kneeRT = -0.30; a.hipLT = -0.45; a.kneeLT = -0.30; a.armRXT = 0.75; a.armREXT = 0.55; a.armLXT = 0.70; a.armLEXT = 0.50; } 
-  else if (pose === 'prone') { a.pelvisYT = 0.34; a.spinePitchT = 1.42; a.hipRT = -0.22; a.kneeRT = -0.16; a.hipLT = -0.22; a.kneeLT = -0.16; a.armRXT = 0.55; a.armREXT = 0.45; a.armLXT = 0.50; a.armLEXT = 0.40; } 
-  else if (pose === 'sprint') { a.spinePitchT = -0.18; a.pelvisYT = 0.90; a.phase += dt * (8 + spd*6); var sw = Math.sin(a.phase) * 0.95; a.hipRT = sw; a.hipLT = -sw; a.kneeRT = -Math.max(0, -sw)*1.25 - Math.abs(Math.cos(a.phase))*0.35; a.kneeLT = -Math.max(0, sw)*1.25 - Math.abs(Math.cos(a.phase))*0.35; a.armRXT = 1.10; a.armREXT = 0.70; a.armLXT = 1.05; a.armLEXT = 0.65; } 
-  else { a.phase += dt * (5 + spd*7); var sw2 = Math.sin(a.phase) * 0.66 * Math.min(1, spd + 0.25); a.hipRT = sw2; a.hipLT = -sw2; a.kneeRT = -Math.max(0, -sw2)*1.15 - Math.abs(Math.cos(a.phase))*0.30*spd; a.kneeLT = -Math.max(0, sw2)*1.15 - Math.abs(Math.cos(a.phase))*0.30*spd; if (Math.abs(strafe) > 0.30 && spd > 0.25) { a.pelvisYawT = strafe * 1.05; a.pelvisYT = 0.84; a.kneeRT -= 0.26; a.kneeLT -= 0.26; } }
-  if (a.flinch > 0) { a.flinch -= dt * 5.5; if (a.flinch < 0) a.flinch = 0; } var fl = Math.sin(a.flinch * 26) * a.flinch;
-  a.pelvisYaw = damp(a.pelvisYaw, a.pelvisYawT, 0.15, dt); a.pelvisY = damp(a.pelvisY, a.pelvisYT, 0.16, dt); a.spinePitch = damp(a.spinePitch, a.spinePitchT, 0.16, dt) + fl*0.35; a.spineRoll = damp(a.spineRoll, a.spineRollT, 0.12, dt); a.headPitch = damp(a.headPitch, a.headPitchT, 0.20, dt) + fl*0.55; a.headYaw = damp(a.headYaw, a.headYawT, 0.20, dt); a.hipR = damp(a.hipR, a.hipRT, 0.22, dt); a.kneeR = damp(a.kneeR, a.kneeRT, 0.22, dt); a.hipL = damp(a.hipL, a.hipLT, 0.22, dt); a.kneeL = damp(a.kneeL, a.kneeLT, 0.22, dt); a.armRX = damp(a.armRX, a.armRXT, 0.20, dt); a.armREX = damp(a.armREX, a.armREXT, 0.20, dt); a.armRZ = damp(a.armRZ, a.armRZT, 0.20, dt); a.armLX = damp(a.armLX, a.armLXT, 0.20, dt); a.armLEX = damp(a.armLEX, a.armLEXT, 0.20, dt); a.armLZ = damp(a.armLZ, a.armLZT, 0.20, dt); a.bank = damp(a.bank, a.bankT, 0.11, dt);
-}
+            /* --------------------------------------------------------
+               2. 大廳 UI 切換邏輯 (純 DOM 操作，不涉及遊戲邏輯)
+               -------------------------------------------------------- */
+            const lobbyLayer = document.getElementById('lobby-layer');
+            const hudLayer = document.getElementById('hud-layer');
+            const gameCanvas = document.getElementById('game-canvas');
+            const settingsModal = document.getElementById('settings-modal');
+            const customizerLayer = document.getElementById('customizer-layer');
+            const resultModal = document.getElementById('result-modal');
 
-var tL = new Float32Array(16);
-function drawPart(parent, px, py, pz, rx, ry, rz, sx, sy, sz, mesh, mat) { var m = mp(); setTRS(tL, px, py, pz, rx, ry, rz, sx, sy, sz); m4mul(m, parent, tL); pushDraw(m, mesh, mat); return m; }
-function drawJoint(parent, px, py, pz, rx, ry, rz, r, mat) { var m = mp(); setTRS(tL, px, py, pz, rx, ry, rz, r, r, r); m4mul(m, parent, tL); pushDraw(m, MESH_SPH, mat); return m; }
+            // 進入戰鬥按鈕
+            document.getElementById('btn-start-match').addEventListener('click', function() {
+                // 隱藏大廳，顯示 HUD
+                lobbyLayer.classList.remove('active');
+                hudLayer.classList.add('active');
+                
+                // 顯示 Canvas
+                gameCanvas.style.visibility = 'visible';
+                gameCanvas.style.opacity = '1';
 
-function buildSoldier(e) {
-  var a = e.anim; var mRoot = mp(); setTRS(mRoot, e.x, 0, e.z, 0, e.yaw, 0, 1, 1, 1);
-  var mShadow = mp(); var shR = 0.44 + (a.pelvisY < 0.7 ? 0.30 : 0); setTRS(tL, 0, 0.014, 0, 0, 0, 0, shR, 0.006, shR); m4mul(mShadow, mRoot, tL); pushDraw(mShadow, MESH_SPH, M_SHADOW);
-  var mPelvis = mp(); setTRS(tL, 0, a.pelvisY, 0, 0, a.pelvisYaw, 0, 1, 1, 1); m4mul(mPelvis, mRoot, tL);
-  drawPart(mPelvis, 0, 0, 0, 0, 0, 0, 0.150, 0.125, 0.115, MESH_SPH, M_CAMO); drawPart(mPelvis, 0, 0.045, 0, 0, 0, 0, 0.158, 0.055, 0.122, MESH_CYL, M_VEST);
-  var mSpine = mp(); setTRS(tL, 0, 0.06, 0, a.spinePitch, -a.pelvisYaw, a.spineRoll, 1, 1, 1); m4mul(mSpine, mPelvis, tL);
-  drawPart(mSpine, 0, 0.13, 0, 0, 0, 0, 0.148, 0.30, 0.104, MESH_CYL, M_CAMO); drawPart(mSpine, 0, 0.255, -0.008, 0, 0, 0, 0.172, 0.24, 0.118, MESH_CYL, M_CAMO); drawPart(mSpine, 0, 0.235, -0.010, 0, 0, 0, 0.184, 0.235, 0.132, MESH_CYL, M_VEST);
-  var magPos = [[-0.105, 0.16], [-0.035, 0.16], [0.035, 0.16], [0.105, 0.16]]; for (var mi = 0; mi < 4; mi++) drawPart(mSpine, magPos[mi][0], magPos[mi][1], -0.128, 0, 0, 0, 0.055, 0.095, 0.040, MESH_BOX, M_VEST);
-  drawPart(mSpine, 0.195, 0.305, 0, 0, 0, -0.2, 0.08, 0.08, 0.1, MESH_SPH, M_VEST); drawPart(mSpine, -0.195, 0.305, 0, 0, 0, 0.2, 0.08, 0.08, 0.1, MESH_SPH, M_VEST); drawPart(mSpine, 0, 0.395, 0, 0, 0, 0, 0.056, 0.11, 0.056, MESH_CYL, M_SKIN);
-  var mHead = mp(); setTRS(tL, 0, 0.46, 0, a.headPitch, a.headYaw, 0, 1, 1, 1); m4mul(mHead, mSpine, tL);
-  drawPart(mHead, 0, 0.028, 0, 0, 0, 0, 0.104, 0.122, 0.108, MESH_SPH, M_SKIN); drawPart(mHead, 0, -0.02, -0.06, 0.2, 0, 0, 0.11, 0.12, 0.08, MESH_SPH, M_VEST); drawPart(mHead, 0, 0.030, -0.004, 0, 0, 0, 0.136, 0.128, 0.140, MESH_DOME, M_HELMET); drawPart(mHead, 0, 0.026, -0.004, 0, 0, 0, 0.138, 0.020, 0.142, MESH_CYL, M_HELMET); drawPart(mHead, 0, 0.040, -0.098, 0.10, 0, 0, 0.104, 0.042, 0.028, MESH_BOX, M_GOGGLE); drawPart(mHead, 0, 0.10, -0.08, 0.3, 0, 0, 0.04, 0.04, 0.06, MESH_BOX, M_HELMET); drawPart(mHead, 0, 0.12, -0.11, Math.PI/2, 0, 0, 0.03, 0.06, 0.03, MESH_CYL8, M_GUN_MET); drawPart(mHead, 0.108, 0.02, 0, 0, 0, Math.PI/2, 0.04, 0.03, 0.04, MESH_CYL8, M_HELMET); drawPart(mHead, -0.108, 0.02, 0, 0, 0, Math.PI/2, 0.04, 0.03, 0.04, MESH_CYL8, M_HELMET);
-  var mShR = mp(); setTRS(tL, 0.195, 0.305, 0, a.armRX, 0, a.armRZ, 1, 1, 1); m4mul(mShR, mSpine, tL); drawJoint(mShR, 0, 0, 0, 0, 0, 0, 0.082, M_CAMO); drawPart(mShR, 0, -0.14, 0, 0, 0, 0, 0.060, 0.28, 0.060, MESH_CYL, M_CAMO);
-  var mElR = mp(); setTRS(tL, 0, -0.28, 0, a.armREX, 0, 0, 1, 1, 1); m4mul(mElR, mShR, tL); drawJoint(mElR, 0, 0, 0, 0, 0, 0, 0.062, M_CAMO); drawPart(mElR, 0, -0.125, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_ARM, M_GLOVE);
-  var mShL = mp(); setTRS(tL, -0.195, 0.305, 0, a.armLX, 0, a.armLZ, 1, 1, 1); m4mul(mShL, mSpine, tL); drawJoint(mShL, 0, 0, 0, 0, 0, 0, 0.082, M_CAMO); drawPart(mShL, 0, -0.14, 0, 0, 0, 0, 0.060, 0.28, 0.060, MESH_CYL, M_CAMO);
-  var mElL = mp(); setTRS(tL, 0, -0.28, 0, a.armLEX, 0, 0, 1, 1, 1); m4mul(mElL, mShL, tL); drawJoint(mElL, 0, 0, 0, 0, 0, 0, 0.062, M_CAMO); drawPart(mElL, 0, -0.125, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_ARM, M_GLOVE);
-  var mGun = mp(); setTRS(tL, 0.135, 0.215, -0.40, -0.05, 0.06, 0, 1, 1, 1); m4mul(mGun, mSpine, tL);
-  drawPart(mGun, 0, 0, 0.02, 0, 0, 0, 0.048, 0.070, 0.26, MESH_BOX, M_GUN_BLK); drawPart(mGun, 0, 0.048, 0.02, 0, 0, 0, 0.040, 0.020, 0.24, MESH_BOX, M_GUN_BLK); drawPart(mGun, 0, -0.004, -0.20, Math.PI/2, 0, 0, 0.040, 0.22, 0.040, MESH_CYL, M_GUN_FDE); drawPart(mGun, 0, 0.002, -0.36, Math.PI/2, 0, 0, 0.016, 0.20, 0.016, MESH_CYL, M_GUN_BLK); drawPart(mGun, 0, -0.088, 0.025, 0.06, 0, 0, 0.030, 0.10, 0.055, MESH_BOX, M_GUN_POLY); drawPart(mGun, 0, -0.078, 0.115, 0.32, 0, 0, 0.030, 0.085, 0.042, MESH_BOX, M_GUN_POLY); drawPart(mGun, 0, -0.004, 0.215, 0, 0, 0, 0.038, 0.055, 0.12, MESH_BOX, M_GUN_FDE);
-  var gx = 0, gy = 0.002, gz = -0.46; e.muzzle[0] = mGun[0]*gx + mGun[4]*gy + mGun[8]*gz + mGun[12]; e.muzzle[1] = mGun[1]*gx + mGun[5]*gy + mGun[9]*gz + mGun[13]; e.muzzle[2] = mGun[2]*gx + mGun[6]*gy + mGun[10]*gz + mGun[14];
-  var mHipR = mp(); setTRS(tL, 0.098, -0.055, 0, a.hipR, 0, 0, 1, 1, 1); m4mul(mHipR, mPelvis, tL); drawJoint(mHipR, 0, 0, 0, 0, 0, 0, 0.084, M_CAMO); drawPart(mHipR, 0, -0.22, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_THIGH, M_CAMO);
-  var mKnR = mp(); setTRS(tL, 0, -0.44, 0, a.kneeR, 0, 0, 1, 1, 1); m4mul(mKnR, mHipR, tL); drawJoint(mKnR, 0, 0, 0, 0, 0, 0, 0.068, M_CAMO); drawPart(mKnR, 0, -0.20, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_CALF, M_CAMO); drawPart(mKnR, 0, -0.02, -0.06, 0, 0, 0, 0.06, 0.08, 0.05, MESH_SPH, M_VEST);
-  var mFootR = mp(); setTRS(tL, 0, -0.40, 0, 0, 0, 0, 1, 1, 1); m4mul(mFootR, mKnR, tL); drawJoint(mFootR, 0, 0, 0, 0, 0, 0, 0.060, M_BOOT); drawPart(mFootR, 0, -0.035, -0.045, 0, 0, 0, 0.072, 0.075, 0.20, MESH_BOX, M_BOOT);
-  var mHipL = mp(); setTRS(tL, -0.098, -0.055, 0, a.hipL, 0, 0, 1, 1, 1); m4mul(mHipL, mPelvis, tL); drawJoint(mHipL, 0, 0, 0, 0, 0, 0, 0.084, M_CAMO); drawPart(mHipL, 0, -0.22, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_THIGH, M_CAMO);
-  var mKnL = mp(); setTRS(tL, 0, -0.44, 0, a.kneeL, 0, 0, 1, 1, 1); m4mul(mKnL, mHipL, tL); drawJoint(mKnL, 0, 0, 0, 0, 0, 0, 0.068, M_CAMO); drawPart(mKnL, 0, -0.20, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_CALF, M_CAMO); drawPart(mKnL, 0, -0.02, -0.06, 0, 0, 0, 0.06, 0.08, 0.05, MESH_SPH, M_VEST);
-  var mFootL = mp(); setTRS(tL, 0, -0.40, 0, 0, 0, 0, 1, 1, 1); m4mul(mFootL, mKnL, tL); drawJoint(mFootL, 0, 0, 0, 0, 0, 0, 0.060, M_BOOT); drawPart(mFootL, 0, -0.035, -0.045, 0, 0, 0, 0.072, 0.075, 0.20, MESH_BOX, M_BOOT);
-}
+                // 觸發全局事件，通知後續腳本遊戲開始 (JS/01 會監聽)
+                window.dispatchEvent(new CustomEvent('WZM_GAME_START'));
+            });
 
-var mCam = new Float32Array(16); var mLocal = new Float32Array(16); var mGunW = new Float32Array(16); var mBillboard = new Float32Array(16); var laserEnd = [0, 0, 0];
+            // 打開自定義按鍵層
+            document.getElementById('btn-customize-ui').addEventListener('click', function() {
+                customizerLayer.classList.add('active');
+                customizerLayer.style.display = 'flex';
+            });
 
-function buildPlayerGun(eyeY) {
-  var ads = player.ads; var sprint = player.sprintProg; var tacSprint = player.tacSprintProg; var p = reload.active ? (reload.t / reload.dur) : 0; var inspectP = gun.inspecting ? (gun.inspectT / 3.5) : 0;
-  var rlTiltZ = 0, rlTiltX = 0, rlDownY = 0, rlRightX = 0; var magDrop = 0, magTilt = 0; var handLX = -0.008, handLY = -0.086, handLZ = -0.225; var lThumb = 0.4, lIndex = 0.5, lMiddle = 0.6, lRing = 0.6, lPinky = 0.6;
-  gun.triggerFingerPull = damp(gun.triggerFingerPull, firing ? 1 : 0, 0.4, 1/60); var rIndex = 0.2 + gun.triggerFingerPull * 0.8; var boltKick = gun.boltTimer > 0 ? Math.sin((1 - gun.boltTimer / 0.08) * Math.PI) * 0.06 : 0;
-  if (reload.active) {
-    if (p < 0.28) { var hp1 = p / 0.28; rlTiltZ = hp1 * -0.66; rlTiltX = hp1 * -0.2; rlDownY = hp1 * -0.08; magDrop = hp1 * 0.15; magTilt = hp1 * 0.35; handLX += hp1 * 0.05; handLY -= hp1 * 0.15; handLZ += hp1 * 0.1; lThumb = 0.4 + hp1 * 0.4; lIndex = 0.5 + hp1 * 0.5; lMiddle = 0.6 + hp1 * 0.4; } 
-    else if (p < 0.58) { var hp2 = (p - 0.28) / 0.30; rlTiltZ = -0.66; rlTiltX = -0.2; rlDownY = -0.08; magDrop = 0.15 - hp2 * 0.15; magTilt = 0.35 - hp2 * 0.35; handLX = 0.042; handLY = -0.236 + hp2 * 0.15; handLZ = -0.125; if (p > 0.5) rlDownY += Math.sin((p - 0.5) / 0.08 * Math.PI) * 0.04; lThumb = 0.8 - hp2 * 0.4; lIndex = 1.0 - hp2 * 0.5; lMiddle = 1.0 - hp2 * 0.4; } 
-    else { var mp3 = (p - 0.58) / 0.42; var hp3 = mp3; rlTiltZ = -0.66 * (1 - hp3); rlTiltX = -0.2 * (1 - hp3); rlDownY = -0.08 * (1 - hp3); handLX = 0.042 - hp3 * 0.05; handLY = -0.086 - hp3 * 0.15; handLZ = -0.125 - hp3 * 0.1; if (hp3 < 0.2) { rlTiltX += Math.sin(hp3 / 0.2 * Math.PI) * 0.1; rlRightX += Math.sin(hp3 / 0.2 * Math.PI) * 0.05; lIndex = 0.5 + Math.sin(hp3 / 0.2 * Math.PI) * 0.5; } if (hp3 > 0.3) { handLX = -0.008; handLY = -0.086; handLZ = -0.225; lIndex = 0.5; lMiddle = 0.6; lRing = 0.6; lPinky = 0.6; } }
-  }
-  var rz = gun.recoilZ * 0.05; var rx = gun.recoilPitch * 0.05; var ry = gun.recoilYaw * 0.05;
-  var targetGx = 0.175; var targetGy = -0.195; var targetGz = -0.45; if (ads > 0) { targetGx = targetGx * (1 - ads) + 0.000 * ads; targetGy = targetGy * (1 - ads) + -0.085 * ads; targetGz = targetGz * (1 - ads) + -0.32 * ads; }
-  var sGx = -0.1 * sprint; var sGy = -0.12 * sprint; var sRz = 0.73 * sprint; var sRx = -0.26 * sprint;
-  var tacGx = 0.26 * tacSprint; var tacGy = -0.04 * tacSprint; var tacGz = -0.24 * tacSprint; var tacRz = 0.56 * tacSprint; var tacRx = 0.84 * tacSprint; var tacRy = 0.22 * tacSprint;
-  var gx = targetGx + sGx + rlRightX + tacGx; var gy = targetGy + sGy + rlDownY + tacGy; var gz = targetGz + rz + boltKick + tacGz;
-  var yawRot = 0.0 + ry + tacRy; var pitchRot = 0.0 + rx + sRx + rlTiltX + tacRx; var rollRot = 0.0 + rlTiltZ + sRz + rz * 0.2 + tacRz;
-  if (gun.inspecting) { var iY = Math.sin(inspectP * Math.PI); var iZ = Math.sin(inspectP * Math.PI * 2); gx -= 0.08 * iY; gy += 0.06 * iY; gz += 0.08 * iY; pitchRot += 0.4 * iY; rollRot += 1.2 * iY * iZ; }
-  var speed = Math.sqrt(player.vx * player.vx + player.vz * player.vz); var bobAmp = (player.ads > 0.5 ? 0.002 : 0.008) * Math.min(1, speed / 4); bobAmp *= (1 - tacSprint * 0.8);
-  gx += Math.sin(player.bob) * bobAmp; gy += Math.sin(player.bob * 2) * bobAmp;
-  setTRS(mCam, player.x, eyeY, player.z, player.pitch, player.yaw, 0, 1, 1, 1); setTRS(mLocal, gx, gy, gz, pitchRot, yawRot, rollRot, 1, 1, 1); m4mul(mGunW, mCam, mLocal);
-  var m;
-  m = mp(); setTRS(tL, 0, 0, 0.02, 0, 0, 0, 0.072, 0.088, 0.30); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, 0.052, 0.02, 0, 0, 0, 0.064, 0.032, 0.30); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0.038, 0.052, 0.02 - boltKick * 0.6, 0, 0, 0, 0.015, 0.015, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_DARK);
-  m = mp(); setTRS(tL, 0.036, 0.03, 0.02, 0, 0, 0, 0.004, 0.03, 0.08); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_DARK);
-  for (var rail = 0; rail < 10; rail++) { m = mp(); setTRS(tL, 0, 0.075, 0.185 - rail * 0.035, 0, 0, 0, 0.046, 0.012, 0.020); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK); }
-  m = mp(); setTRS(tL, 0, -0.004, -0.235, Math.PI / 2, 0, 0, 0.050, 0.32, 0.050); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_FDE);
-  for (var h = 0; h < 8; h++) { m = mp(); setTRS(tL, 0, 0.022, -0.12 - h * 0.035, 0, 0, 0, 0.045, 0.010, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_FDE); }
-  for (var h = 0; h < 4; h++) { m = mp(); setTRS(tL, 0.048, -0.004, -0.12 - h * 0.06, Math.PI / 2, 0, 0, 0.010, 0.04, 0.010); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_DARK); m = mp(); setTRS(tL, -0.048, -0.004, -0.12 - h * 0.06, Math.PI / 2, 0, 0, 0.010, 0.04, 0.010); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_DARK); }
-  m = mp(); setTRS(tL, 0, 0.002, -0.48, Math.PI / 2, 0, 0, 0.017, 0.16, 0.017); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, 0.002, -0.60, Math.PI / 2, 0, 0, 0.025, 0.08, 0.025); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, 0.002, -0.64, Math.PI / 2, 0, 0, 0.028, 0.015, 0.028); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_DARK);
-  m = mp(); setTRS(tL, 0, 0.06, -0.42, 0, 0, 0, 0.02, 0.03, 0.02); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, 0.08, -0.42, 0, 0, 0, 0.01, 0.03, 0.01); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, 0.06, 0.16, 0, 0, 0, 0.02, 0.03, 0.02); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, 0.08, 0.16, 0, 0, 0, 0.03, 0.02, 0.01); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, -0.11, 0.08, 0.3, 0, 0, 0.035, 0.12, 0.045); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-  m = mp(); setTRS(tL, 0, 0.012, 0.29, Math.PI / 2, 0, 0, 0.026, 0.17, 0.026); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, -0.02, 0.38, 0, 0, 0, 0.050, 0.10, 0.08); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_FDE);
-  m = mp(); setTRS(tL, 0, -0.02, 0.40, 0, 0, 0, 0.030, 0.06, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_DARK);
-  m = mp(); setTRS(tL, 0, 0.03, 0.36, 0, 0, 0, 0.045, 0.02, 0.10); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_FDE);
-  var magY = -0.122 - magDrop; var magZ = 0.06 - magDrop * 0.4;
-  m = mp(); setTRS(tL, 0, magY, magZ, magTilt, 0, 0, 0.052, 0.155, 0.085); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-  m = mp(); setTRS(tL, 0.054, magY - 0.02, magZ, magTilt, 0, 0, 0.002, 0.08, 0.03); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_MAG_WINDOW);
-  var bulletRatio = Math.max(0.05, gun.mag / gun.magSize); var bulletH = 0.08 * bulletRatio;
-  if (bulletH > 0.01) { m = mp(); setTRS(tL, 0.056, magY - 0.06 + bulletH/2, magZ, magTilt, 0, 0, 0.001, bulletH, 0.02); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_BULLET_BRASS); }
-  m = mp(); setTRS(tL, 0, 0.092, 0.02, 0, 0, 0, 0.052, 0.028, 0.11); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, -0.042, 0.126, 0.02, 0, 0, 0, 0.008, 0.05, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0.042, 0.126, 0.02, 0, 0, 0, 0.008, 0.05, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, 0.150, 0.02, 0, 0, 0, 0.09, 0.008, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  m = mp(); setTRS(tL, 0, 0.126, -0.03, 0, 0, 0, 0.08, 0.045, 0.002); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GLASS);
-  var rdx = mGunW[12] - player.x, rdy = mGunW[13] - eyeY, rdz = mGunW[14] - player.z; var ryaw = Math.atan2(rdx, rdz); var rpitch = -Math.asin(rdy / Math.sqrt(rdx*rdx + rdy*rdy + rdz*rdz));
-  m = mp(); setTRS(mBillboard, 0, 0.126, -0.032, rpitch, ryaw, 0, 0.006, 0.006, 0.006); m4mul(m, mGunW, mBillboard); pushDraw(m, MESH_SPH, M_RED_DOT);
-  for (var i = 0; i < 8; i++) { var ang = i / 8 * Math.PI * 2; var rx2 = Math.cos(ang) * 0.018; var ry2 = Math.sin(ang) * 0.018; m = mp(); setTRS(mBillboard, rx2, 0.126 + ry2, -0.032, rpitch, ryaw, 0, 0.004, 0.004, 0.004); m4mul(m, mGunW, mBillboard); pushDraw(m, MESH_SPH, M_RED_DOT); }
-  if (tacSprint > 0.5) {
-    m = mp(); setTRS(tL, 0.005, -0.108, 0.115, 0.22, -0.14, 0, 0.070, 0.095, 0.095); m4mul(m, mGunW, tL); pushDraw(m, MESH_SPH, M_GLOVE); m = mp(); setTRS(tL, 0.04, -0.09, 0.09, 0.4, 0, 0, 0.028, 0.055, 0.050); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GLOVE);
-    m = mp(); setTRS(tL, 0.08, -0.22, 0.18, -0.1, -0.1, 0.1, 1, 1, 1); m4mul(m, mGunW, tL); pushDraw(m, MESH_ORGANIC_ARM, M_CAMO);
-    var lArmSwing = Math.sin(player.bob * 2) * 0.15 * tacSprint; m = mp(); setTRS(tL, -0.2, -0.35 + lArmSwing, -0.4, -0.6, 0.3, -0.2, 1, 1, 1); m4mul(m, mCam, tL); pushDraw(m, MESH_ORGANIC_ARM, M_CAMO); m = mp(); setTRS(tL, -0.2, -0.45 + lArmSwing, -0.5, -0.2, 0, 0, 0.04, 0.06, 0.04); m4mul(m, mCam, tL); pushDraw(m, MESH_SPH, M_GLOVE);
-  } else {
-    m = mp(); setTRS(tL, 0.005, -0.108, 0.115, 0.22, -0.14, 0, 0.070, 0.095, 0.095); m4mul(m, mGunW, tL); pushDraw(m, MESH_SPH, M_GLOVE); m = mp(); setTRS(tL, 0.055, -0.08, 0.11, 0.22, -0.14, 0, 0.04, 0.04, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-    m = mp(); setTRS(tL, -0.02, -0.06, 0.09, 0.5, -0.5, 0, 0.018, 0.045, 0.02); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    m = mp(); setTRS(tL, 0.04, -0.055, 0.08, rIndex * 0.5, 0, 0, 0.016, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, 0.04, -0.03, 0.09, rIndex * 1.0, 0, 0, 0.015, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, 0.04, -0.01, 0.10, rIndex * 1.2, 0, 0, 0.014, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    m = mp(); setTRS(tL, 0.042, -0.07, 0.11, 0.5, 0, 0, 0.015, 0.045, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, 0.04, -0.085, 0.12, 0.5, 0, 0, 0.015, 0.045, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, 0.035, -0.095, 0.13, 0.5, 0, 0, 0.014, 0.04, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    m = mp(); setTRS(tL, 0.12, -0.22, 0.22, -0.4, -0.3, 0.3, 1, 1, 1); m4mul(m, mGunW, tL); pushDraw(m, MESH_ORGANIC_ARM, M_CAMO);
-    m = mp(); setTRS(tL, handLX, handLY, handLZ, 0.16, 0.22, 0, 0.068, 0.090, 0.095); m4mul(m, mGunW, tL); pushDraw(m, MESH_SPH, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.045, handLY + 0.02, handLZ, 0.16, 0.22, 0, 0.03, 0.04, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-    m = mp(); setTRS(tL, handLX + 0.03, handLY + 0.04, handLZ, 0.2, 0.5, 0, 0.018, 0.045, 0.02); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    m = mp(); setTRS(tL, handLX - 0.03, handLY + 0.02, handLZ - 0.02, 0.1, lIndex * 0.5, 0, 0.015, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.035, handLY - 0.01, handLZ - 0.02, 0.2, lIndex * 1.0, 0, 0.014, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.04, handLY - 0.035, handLZ - 0.02, 0.3, lIndex * 1.2, 0, 0.013, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    m = mp(); setTRS(tL, handLX - 0.04, handLY + 0.01, handLZ, 0.1, lMiddle * 0.5, 0, 0.015, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.045, handLY - 0.02, handLZ, 0.2, lMiddle * 1.0, 0, 0.014, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.05, handLY - 0.045, handLZ, 0.3, lMiddle * 1.2, 0, 0.013, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    m = mp(); setTRS(tL, handLX - 0.05, handLY + 0.01, handLZ + 0.02, 0.1, lRing * 0.5, 0, 0.014, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.055, handLY - 0.02, handLZ + 0.02, 0.2, lRing * 1.0, 0, 0.013, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.06, handLY - 0.045, handLZ + 0.02, 0.3, lRing * 1.2, 0, 0.012, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    m = mp(); setTRS(tL, handLX - 0.05, handLY + 0.01, handLZ + 0.04, 0.1, lPinky * 0.5, 0, 0.013, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.055, handLY - 0.02, handLZ + 0.04, 0.2, lPinky * 1.0, 0, 0.012, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE); m = mp(); setTRS(tL, handLX - 0.06, handLY - 0.045, handLZ + 0.04, 0.3, lPinky * 1.2, 0, 0.011, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    m = mp(); setTRS(tL, handLX - 0.15, handLY - 0.07, handLZ + 0.15, -0.2, 0.4, -0.4, 1, 1, 1); m4mul(m, mGunW, tL); pushDraw(m, MESH_ORGANIC_ARM, M_CAMO);
-  }
-  if (hitFlash > 0) { var fs = 0.08 + (1 - hitFlash / 0.06) * 0.06; m = mp(); setTRS(tL, 0, 0.002, -0.65, Math.PI / 2, 0, 0, fs, fs, fs); m4mul(m, mGunW, tL); pushDraw(m, MESH_SPH, M_FLASH); m = mp(); setTRS(tL, 0, 0.002, -0.70, Math.PI / 2, 0, 0, fs * 0.5, fs * 1.2, fs * 0.5); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_FLASH); }
-  var laserOrigin = [mGunW[12] + mGunW[0] * 0.065 + mGunW[4] * 0.02 + mGunW[8] * -0.15, mGunW[13] + mGunW[1] * 0.065 + mGunW[5] * 0.02 + mGunW[9] * -0.15, mGunW[14] + mGunW[2] * 0.065 + mGunW[6] * 0.02 + mGunW[10] * -0.15];
-  var ldx = -mGunW[8], ldy = -mGunW[9], ldz = -mGunW[10]; var lLen = Math.sqrt(ldx*ldx + ldy*ldy + ldz*ldz); ldx /= lLen; ldy /= lLen; ldz /= lLen;
-  var maxDist = 50; var hitDist = maxDist; for (var i = 0; i < obstacles.length; i++) { var o = obstacles[i]; if (o.flat) continue; var t = rayAABB(laserOrigin[0], laserOrigin[1], laserOrigin[2], ldx, ldy, ldz, o.x - o.hw, 0, o.z - o.hd, o.x + o.hw, o.h, o.z + o.hd); if (t !== null && t < hitDist) hitDist = t; }
-  laserEnd[0] = laserOrigin[0] + ldx * hitDist; laserEnd[1] = laserOrigin[1] + ldy * hitDist; laserEnd[2] = laserOrigin[2] + ldz * hitDist;
-  var ldx2 = laserEnd[0] - laserOrigin[0], ldy2 = laserEnd[1] - laserOrigin[1], ldz2 = laserEnd[2] - laserOrigin[2]; var ll = Math.sqrt(ldx2*ldx2 + ldy2*ldy2 + ldz2*ldz2); var lyaw = Math.atan2(ldx2, ldz2); var lpitch = -Math.asin(ldy2 / ll);
-  var mWorld = mp(); setTRS(mWorld, (laserOrigin[0] + laserEnd[0]) / 2, (laserOrigin[1] + laserEnd[1]) / 2, (laserOrigin[2] + laserEnd[2]) / 2, lpitch + Math.PI / 2, lyaw, 0, 0.0015, ll, 0.0015); pushDraw(mWorld, MESH_CYL8, M_LASER);
-  var mDot = mp(); setTRS(mDot, laserEnd[0], laserEnd[1], laserEnd[2], 0, 0, 0, 0.02, 0.02, 0.02); pushDraw(mDot, MESH_SPH, M_RED_DOT);
-}
+            // 關閉自定義按鍵層
+            document.getElementById('btn-close-customizer').addEventListener('click', function() {
+                customizerLayer.classList.remove('active');
+                customizerLayer.style.display = 'none';
+            });
 
-function fireTracer(e) { var sx = e.muzzle[0], sy = e.muzzle[1], sz = e.muzzle[2]; var ex = player.x + (Math.random() - 0.5) * 0.9; var ey = player.y + player.curH * 0.75 + (Math.random() - 0.5) * 0.4; var ez = player.z + (Math.random() - 0.5) * 0.9; var dx = ex - sx, dy = ey - sy, dz = ez - sz; var len = Math.sqrt(dx * dx + dy * dy + dz * dz); if (len < 0.01) return; var yaw = Math.atan2(dx, dz); var pitch = -Math.asin(dy / len); var mx = (sx + ex) / 2, my = (sy + ey) / 2, mz = (sz + ez) / 2; setTRS(e.tracerM, mx, my, mz, pitch, yaw, 0, 0.015, 0.015, len); e.tracerT = 0.07; }
-function rayAABB(ox, oy, oz, dx, dy, dz, minx, miny, minz, maxx, maxy, maxz) { var tmin = 0, tmax = 1e9; var O = [ox, oy, oz], D = [dx, dy, dz], MN = [minx, miny, minz], MX = [maxx, maxy, maxz]; for (var i = 0; i < 3; i++) { if (Math.abs(D[i]) < 1e-7) { if (O[i] < MN[i] || O[i] > MX[i]) return null; } else { var t1 = (MN[i] - O[i]) / D[i]; var t2 = (MX[i] - O[i]) / D[i]; if (t1 > t2) { var tmp = t1; t1 = t2; t2 = tmp; } if (t1 > tmin) tmin = t1; if (t2 < tmax) tmax = t2; if (tmin > tmax) return null; } } return tmin; }
-function showHit() { crossEl.classList.add('hit'); clearTimeout(showHit._t); showHit._t = setTimeout(function() { crossEl.classList.remove('hit'); }, 90); }
+            // 打開設置彈窗
+            document.getElementById('btn-settings').addEventListener('click', function() {
+                settingsModal.style.display = 'flex';
+            });
 
-function playerShoot() {
-  if (reload.active || gun.inspecting) return; if (gun.mag <= 0) { sMagOut(); startReload(); return; } var now = performance.now() / 1000; if (now - gun.lastFire < gun.fireInterval) return; gun.lastFire = now; gun.mag--;
-  sGun(); gun.recoilZVel += 12.0; gun.recoilPitchVel -= 18.0; gun.recoilYawVel += (Math.random() - 0.5) * 8.0; gun.boltTimer = 0.08; hitFlash = 0.06; player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.25); player.fovPunch = -2.5;
-  spawnShell(player.x + Math.cos(player.yaw) * 0.1, player.y + player.curH - 0.1, player.z - Math.sin(player.yaw) * 0.1);
-  var cp = Math.cos(player.pitch), sp = Math.sin(player.pitch); var fx = -Math.sin(player.yaw) * cp, fy = sp, fz = -Math.cos(player.yaw) * cp; var eyeY = player.y + player.curH; var ox = player.x, oy = eyeY, oz = player.z;
-  var bestE = null, bestT = 1e9; for (var i = 0; i < enemies.length; i++) { var e = enemies[i]; if (!e.alive) continue; var t = rayAABB(ox, oy, oz, fx, fy, fz, e.x - 0.38, 0.0, e.z - 0.38, e.x + 0.38, 2.10, e.z + 0.38); if (t !== null && t < bestT) { bestT = t; bestE = e; } }
-  var hitX = 0, hitY = 0, hitZ = 0, nx = 0, ny = 1, nz = 0, hitWall = false; for (var i = 0; i < obstacles.length; i++) { var o = obstacles[i]; if (o.flat) continue; var t = rayAABB(ox, oy, oz, fx, fy, fz, o.x - o.hw, 0, o.z - o.hd, o.x + o.hw, o.h, o.z + o.hd); if (t !== null && t < bestT) { bestT = t; bestE = null; hitWall = true; hitX = ox + fx * t; hitY = oy + fy * t; hitZ = oz + fz * t; var d1 = Math.abs(hitX - (o.x - o.hw)), d2 = Math.abs(hitX - (o.x + o.hw)); var d3 = Math.abs(hitZ - (o.z - o.hd)), d4 = Math.abs(hitZ - (o.z + o.hd)); var d5 = Math.abs(hitY - o.h); var minD = Math.min(d1, d2, d3, d4, d5); if (minD === d1) { nx = -1; ny = 0; nz = 0; } else if (minD === d2) { nx = 1; ny = 0; nz = 0; } else if (minD === d3) { nx = 0; ny = 0; nz = -1; } else if (minD === d4) { nx = 0; ny = 0; nz = 1; } else if (minD === d5) { nx = 0; ny = 1; nz = 0; } } }
-  if (bestE) { bestE.hp -= 34; bestE.anim.flinch = 1; sHit(); showHit(); spawnParticles(bestE.x, bestE.y + 1.0, bestE.z, -fx, -fy, -fz, 1); if (bestE.hp <= 0) { bestE.alive = false; bestE.respawnT = 3; } } else if (hitWall) { spawnBulletHole(hitX, hitY, hitZ, nx, ny, nz); spawnParticles(hitX, hitY, hitZ, nx, ny, nz, 0); }
-  if (gun.mag === 0 && !reload.active && gun.reserve > 0) startReload();
-}
+            // 關閉設置彈窗
+            document.getElementById('btn-close-settings').addEventListener('click', function() {
+                settingsModal.style.display = 'none';
+            });
 
-function startReload() { if (reload.active || gun.inspecting) return; if (gun.mag >= gun.magSize) return; if (gun.reserve <= 0) return; reload.active = true; reload.t = 0; reload.phase = 0; firing = false; adsHold = false; player.ads = 0; player.tacSprintTimer = 0; reloadTxtEl.style.display = 'block'; sMagOut(); }
-function updateReload(dt) {
-  if (gun.inspecting) { gun.inspectT += dt; if (gun.inspectT > 3.5) { gun.inspecting = false; gun.inspectT = 0; } return; }
-  if (!reload.active) { if (reloadTxtEl.style.display !== 'none') reloadTxtEl.style.display = 'none'; return; }
-  reload.t += dt; var p = reload.t / reload.dur; if (p >= 1) { var need = gun.magSize - gun.mag; var take = Math.min(need, gun.reserve); gun.mag += take; gun.reserve -= take; reload.active = false; reload.t = 0; reload.phase = 0; reloadTxtEl.style.display = 'none'; return; }
-  if (reload.phase === 0 && p >= 0.28) { reload.phase = 1; sMagOut(); } else if (reload.phase === 1 && p >= 0.58) { reload.phase = 2; sMagIn(); } else if (reload.phase === 2 && p >= 0.71) { reload.phase = 3; sBolt(); }
-}
+            // 開關切換 UI 邏輯 (僅供視覺展示)
+            const toggles = document.querySelectorAll('.toggle-switch');
+            toggles.forEach(toggle => {
+                toggle.addEventListener('click', function() {
+                    this.classList.toggle('active');
+                });
+            });
 
-function updatePlayer(dt) {
-  var adsTarget = (adsHold && !reload.active && !player.sliding && player.sprintProg < 0.1 && player.tacSprintProg < 0.1 && !gun.inspecting) ? 1 : 0; var adsRes = spring(player.ads, adsTarget, player.adsVel, 550, 28, dt); player.ads = adsRes[0]; player.adsVel = adsRes[1];
-  var speedNow = Math.sqrt(player.vx * player.vx + player.vz * player.vz); var sprintTarget = (speedNow > 4.5 && !player.sliding && player.ads < 0.2 && !reload.active && player.tacSprintProg < 0.1) ? 1 : 0; var sprRes = spring(player.sprintProg, sprintTarget, player.sprintVel, 160, 22, dt); player.sprintProg = clamp(sprRes[0], 0, 1); player.sprintVel = sprRes[1];
-  if (sprintQ && player.tacSprintTimer <= 0 && !reload.active && !player.sliding && player.ads < 0.2) { player.tacSprintTimer = 3.5; player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.15); } if (player.tacSprintTimer > 0) player.tacSprintTimer -= dt; var tacSprintTarget = (player.tacSprintTimer > 0 && speedNow > 2.0) ? 1 : 0; var tacRes = spring(player.tacSprintProg, tacSprintTarget, player.tacSprintVel, 120, 20, dt); player.tacSprintProg = clamp(tacRes[0], 0, 1); player.tacSprintVel = tacRes[1];
-  if (crouchQ) { crouchQ = false; if (player.grounded && !player.sliding && speedNow > 3.0) { player.sliding = true; player.slideT = 0.70; player.tacSprintTimer = 0; } else { player.crouching = !player.crouching; } } if (jumpQ) { jumpQ = false; if (player.grounded) { player.vy = 6.6; player.grounded = false; if (player.sliding) { player.sliding = false; player.slideT = 0; } player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.1); } } if (player.sliding) { player.slideT -= dt; if (player.slideT <= 0) player.sliding = false; player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.05 * dt * 60); }
-  var targetH = 1.68; if (player.sliding || player.crouching) targetH = 0.96; player.curH = damp(player.curH, targetH, 0.18, dt);
-  var ix = stickX, iy = stickY; var mag = Math.sqrt(ix * ix + iy * iy); if (mag > 1) { ix /= mag; iy /= mag; mag = 1; } var cy = Math.cos(player.yaw), sy = Math.sin(player.yaw); var fwdX = -sy, fwdZ = -cy; var rgtX = cy, rgtZ = -sy; var wx = fwdX * (-iy) + rgtX * ix; var wz = fwdZ * (-iy) + rgtZ * ix;
-  var sp = 4.6; if (player.tacSprintProg > 0.5) sp = 10.2; else if (player.sprintProg > 0.8) sp *= 1.5; if (player.ads > 0.3) sp *= 0.58; if (player.sliding) sp = 8.4; if (reload.active) sp *= 0.6;
-  player.vx = damp(player.vx, wx * sp, 0.18, dt); player.vz = damp(player.vz, wz * sp, 0.18, dt); if (player.sliding) { player.vx *= (1 - 1.7 * dt); player.vz *= (1 - 1.7 * dt); } player.x += player.vx * dt; player.z += player.vz * dt;
-  var r = player.radius; for (var i = 0; i < obstacles.length; i++) { var o = obstacles[i]; if (o.flat) continue; var ox = clamp(player.x, o.x - o.hw, o.x + o.hw); var oz = clamp(player.z, o.z - o.hd, o.z + o.hd); var dx = player.x - ox, dz = player.z - oz; var distSq = dx * dx + dz * dz; if (distSq < r * r) { var dist = Math.sqrt(distSq); if (dist > 0.0001) { player.x += (dx / dist) * (r - dist); player.z += (dz / dist) * (r - dist); } else { var pushX = (o.hw + r) - Math.abs(player.x - o.x); var pushZ = (o.hd + r) - Math.abs(player.z - o.z); if (pushX < pushZ) player.x += (player.x > o.x ? 1 : -1) * pushX; else player.z += (player.z > o.z ? 1 : -1) * pushZ; } } }
-  if (!player.grounded) { player.vy -= 18 * dt; player.y += player.vy * dt; if (player.y <= 0) { player.y = 0; player.vy = 0; player.grounded = true; player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.4); } } if (player.x < -BOUND + r) player.x = -BOUND + r; if (player.x > BOUND - r) player.x = BOUND - r; if (player.z < -BOUND + r) player.z = -BOUND + r; if (player.z > BOUND - r) player.z = BOUND - r;
-  gun.recoilZ = damp(gun.recoilZ, 0, 0.2, dt); gun.recoilPitch = damp(gun.recoilPitch, 0, 0.2, dt); gun.recoilYaw = damp(gun.recoilYaw, 0, 0.2, dt); gun.recoilZVel += -gun.recoilZ * 300 * dt; gun.recoilZVel *= Math.exp(-25 * dt); gun.recoilZ += gun.recoilZVel * dt; gun.recoilPitchVel += -gun.recoilPitch * 350 * dt; gun.recoilPitchVel *= Math.exp(-25 * dt); gun.recoilPitch += gun.recoilPitchVel * dt; gun.recoilYawVel += -gun.recoilYaw * 400 * dt; gun.recoilYawVel *= Math.exp(-30 * dt); gun.recoilYaw += gun.recoilYawVel * dt;
-  player.cameraTrauma = Math.max(0, player.cameraTrauma - dt * 2.5); player.fovPunch = damp(player.fovPunch, 0, 0.3, dt); if (gun.boltTimer > 0) gun.boltTimer -= dt; if (hitFlash > 0) hitFlash -= dt;
-  if (player.ads > 0.8) crossEl.style.opacity = 0; else crossEl.style.opacity = 0.9; if (player.sprintProg > 0.5 || player.tacSprintProg > 0.5) crossEl.style.transform = 'scale(1.4)'; else crossEl.style.transform = 'scale(1.0)';
-  if (firing && !reload.active && !gun.inspecting) playerShoot();
-}
 
-function updateHUD() { var txt = gun.mag + ' / ' + gun.reserve; if (ammoEl.textContent !== txt) ammoEl.textContent = txt; if (gun.mag < 8) { if (!ammoEl.classList.contains('low')) ammoEl.classList.add('low'); } else { if (ammoEl.classList.contains('low')) ammoEl.classList.remove('low'); } }
+            /* --------------------------------------------------------
+               3. 非同步依賴加載器 (按 01 到 37 順序載入)
+               -------------------------------------------------------- */
+            const totalScripts = 37;
+            let loadedCount = 0;
+            
+            const progressBar = document.getElementById('load-progress-bar');
+            const progressGlow = document.getElementById('load-glow-head');
+            const progressText = document.getElementById('load-percentage');
+            const loadingLayer = document.getElementById('loading-layer');
 
-var projM = new Float32Array(16); var viewM = new Float32Array(16); var vpM = new Float32Array(16); var aspect = 1; var curFov = 72; var currentTexBound = null;
-function resize() { var w = window.innerWidth, h = window.innerHeight; var dpr = Math.min(window.devicePixelRatio || 1, 2); var cw = Math.floor(w * dpr), chh = Math.floor(h * dpr); if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; } gl.viewport(0, 0, cw, chh); aspect = w / h; }
-window.addEventListener('resize', resize); resize();
-function bindMeshAttributes(mesh) { gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo); gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0); gl.enableVertexAttribArray(aNrm); gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12); gl.enableVertexAttribArray(aUV); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 32, 24); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo); }
-function bindShadowMeshAttributes(mesh) { gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo); gl.enableVertexAttribArray(sAPos); gl.vertexAttribPointer(sAPos, 3, gl.FLOAT, false, 32, 0); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo); }
+            // 更新進度條 UI
+            function updateProgress() {
+                const percent = Math.round((loadedCount / totalScripts) * 100);
+                progressBar.style.width = percent + '%';
+                progressGlow.style.left = percent + '%';
+                progressText.textContent = percent + '%';
+            }
 
-function buildScene() {
-  var m = mp(); setTRS(m, 0, -0.10, 0, 0, 0, 0, GROUND, 0.20, GROUND); pushDraw(m, MESH_BOX, M_GROUND);
-  for (var i = 0; i < obstacles.length; i++) { var o = obstacles[i]; if (o.type === 'flat') { var mf = mp(); setTRS(mf, o.x, 0.016, o.z, 0, 0, 0, o.hw * 2, 0.03, o.hd * 2); pushDraw(mf, MESH_BOX, o.mat); } else if (o.type === 'sand') { var layers = o.layers, perRow = 4; for (var L = 0; L < layers; L++) { var rowW = o.w * (1 - L * 0.06), rowD = o.d * (1 - L * 0.05), cnt = perRow - (L % 2); for (var c = 0; c < cnt; c++) { var t = cnt === 1 ? 0.5 : c / (cnt - 1); var bx = o.x - rowW / 2 + t * rowW, by = L * 0.215 + 0.11, bz = o.z + (L % 2 ? 0.06 : -0.06); var mm = mp(); setTRS(mm, bx, by, bz, 0, (Math.random()-0.5)*0.1, 0, 0.20, 0.135, rowD * 0.5); pushDraw(mm, MESH_SPH, M_SANDBAG); } } } else { var mm2 = mp(); setTRS(mm2, o.x, o.h / 2, o.z, 0, 0, 0, o.hw * 2, o.h, o.hd * 2); pushDraw(mm2, MESH_BOX, o.mat); } }
-  var blds = [{ x: -26, z: -26, w: 8, h: 16, d: 6 }, { x: -14, z: -32, w: 9, h: 20, d: 7 }, { x: 4, z: -34, w: 11, h: 14, d: 6 }, { x: 18, z: -30, w: 8, h: 18, d: 6 }, { x: 30, z: -16, w: 6, h: 12, d: 5 }, { x: -30, z: 12, w: 6, h: 14, d: 5 }, { x: 32, z: 8, w: 7, h: 16, d: 6 }];
-  for (var b = 0; b < blds.length; b++) { var bd = blds[b]; var mb = mp(); setTRS(mb, bd.x, bd.h / 2, bd.z, 0, 0, 0, bd.w, bd.h, bd.d); pushDraw(mb, MESH_BOX, M_BRICK); var cols = Math.max(2, Math.floor(bd.w / 2.5)), rows = Math.floor(bd.h / 3.5); for (var r = 0; r < rows; r++) { for (var c2 = 0; c2 < cols; c2++) { var wx = bd.x - bd.w / 2 + (c2 + 0.5) * (bd.w / cols), wy = r * 3.5 + 2.0; var mw = mp(); setTRS(mw, wx, wy, bd.z - bd.d / 2 - 0.02, 0, 0, 0, bd.w / cols * 0.5, 1.2, 0.05); pushDraw(mw, MESH_BOX, M_GOGGLE); } } }
-  var wallPos = [{ x: 0, z: -BOUND - 1.2, w: GROUND + 4, d: 0.6, h: 3.0 }, { x: 0, z: BOUND + 1.2, w: GROUND + 4, d: 0.6, h: 3.0 }, { x: -BOUND - 1.2, z: 0, w: 0.6, d: GROUND + 4, h: 3.0 }, { x: BOUND + 1.2, z: 0, w: 0.6, d: GROUND + 4, h: 3.0 }];
-  for (var w2 = 0; w2 < wallPos.length; w2++) { var wp = wallPos[w2]; var mw2 = mp(); setTRS(mw2, wp.x, wp.h / 2, wp.z, 0, 0, 0, wp.w, wp.h, wp.d); pushDraw(mw2, MESH_BOX, M_BRICK); }
-}
+            // 依序加載腳本的函數
+            function loadNextScript(index) {
+                if (index > totalScripts) {
+                    // 全部加載完成
+                    setTimeout(() => {
+                        loadingLayer.classList.add('fade-out');
+                        setTimeout(() => {
+                            loadingLayer.style.display = 'none';
+                            // 加載完成後，顯示大廳層
+                            lobbyLayer.classList.add('active');
+                            // 觸發全局事件，通知腳本系統已就緒
+                            window.dispatchEvent(new CustomEvent('WZM_SCRIPTS_LOADED'));
+                        }, 500); // 等待淡出動畫
+                    }, 300);
+                    return;
+                }
 
-function updateShadowPass() {
-  if (!shadowsEnabled || !shadowProg) return; gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB); gl.viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE); gl.clearColor(1.0, 1.0, 1.0, 1.0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.useProgram(shadowProg); gl.uniformMatrix4fv(sULightVP, false, lightVP);
-  gl.disableVertexAttribArray(aNrm); gl.disableVertexAttribArray(aUV); gl.enableVertexAttribArray(sAPos); var lastMeshS = null;
-  for (var i = 0; i < drawCount; i++) { var ds = drawList[i]; if (ds.mat.noShadow) continue; if (ds.mesh !== lastMeshS) { bindShadowMeshAttributes(ds.mesh); lastMeshS = ds.mesh; } gl.uniformMatrix4fv(sUModel, false, ds.m); gl.drawElements(gl.TRIANGLES, ds.mesh.count, gl.UNSIGNED_SHORT, 0); }
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-}
+                // 格式化索引 (例如 1 -> "01", 37 -> "37")
+                const numStr = index.toString().padStart(2, '0');
+                const scriptSrc = `js/${numStr}.js`;
 
-function renderMainPass(eyeY) {
-  gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0.05, 0.08, 0.12, 1.0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); gl.useProgram(prog);
-  var time = performance.now() / 1000; var shake = player.cameraTrauma * player.cameraTrauma; var shakeX = (Math.sin(time * 45) + Math.sin(time * 82)) * 0.04 * shake; var shakeY = (Math.cos(time * 52) + Math.cos(time * 91)) * 0.04 * shake; var shakeRoll = (Math.sin(time * 38) + Math.cos(time * 73)) * 0.015 * shake;
-  var speed = Math.sqrt(player.vx * player.vx + player.vz * player.vz); var bob = Math.sin(player.bob) * 0.018 * Math.min(1, speed / 3);
-  var renderYaw = player.yaw + shakeX; var renderPitch = player.pitch + shakeY; var renderRoll = shakeRoll; buildView(viewM, player.x, eyeY + bob, player.z, renderYaw, renderPitch);
-  if (renderRoll !== 0) { var cosR = Math.cos(renderRoll), sinR = Math.sin(renderRoll); var v0 = viewM[0], v1 = viewM[1], v2 = viewM[2]; var v4 = viewM[4], v5 = viewM[5], v6 = viewM[6]; viewM[0] = v0 * cosR - v4 * sinR; viewM[1] = v1 * cosR - v5 * sinR; viewM[2] = v2 * cosR - v6 * sinR; viewM[4] = v0 * sinR + v4 * cosR; viewM[5] = v1 * sinR + v5 * cosR; viewM[6] = v2 * sinR + v6 * cosR; }
-  var targetFov = 72; if (player.ads > 0.5) targetFov = 50; else if (player.tacSprintProg > 0.5) targetFov = 86; else if (speed > 6) targetFov = 80; targetFov += player.fovPunch; curFov = damp(curFov, targetFov, 0.15, 1 / 60);
-  m4persp(projM, curFov * Math.PI / 180, aspect, 0.05, 190); m4mul(vpM, projM, viewM);
-  gl.uniformMatrix4fv(uVP, false, vpM); gl.uniformMatrix4fv(uLightVPm, false, lightVP); gl.uniform3f(uLightDir, LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_DIR[2]); gl.uniform3f(uLightCol, 1.0, 0.72, 0.42); gl.uniform3f(uAmbient, 0.12, 0.15, 0.20); gl.uniform3f(uCam, player.x, eyeY, player.z); gl.uniform3f(uFogCol, 0.12, 0.16, 0.22); gl.uniform1f(uFogNear, 40.0); gl.uniform1f(uFogFar, 120.0); gl.uniform1f(uToneExp, 1.05);
-  if (shadowsEnabled) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, shadowTex); gl.uniform1i(uShadowMap, 1); gl.uniform1f(uShadowOn, 1.0); } else { gl.uniform1f(uShadowOn, 0.0); }
-  gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aNrm); gl.enableVertexAttribArray(aUV); var lastMesh = null;
-  for (var i = 0; i < drawCount; i++) { var d = drawList[i]; if (d.mat.blend !== 0) continue; if (d.mesh !== lastMesh) { bindMeshAttributes(d.mesh); lastMesh = d.mesh; } gl.uniformMatrix4fv(uModel, false, d.m); gl.uniform3f(uColor, d.mat.c[0], d.mat.c[1], d.mat.c[2]); gl.uniform1f(uMetal, d.mat.metal); gl.uniform1f(uRough, d.mat.rough); gl.uniform1f(uAlpha, 1.0); gl.uniform2f(uTiling, d.mat.tiling[0], d.mat.tiling[1]); if (d.mat.tex) { if (currentTexBound !== d.mat.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, d.mat.tex); gl.uniform1i(uTex, 0); gl.uniform1f(uUseTex, 1.0); currentTexBound = d.mat.tex; } } else { gl.uniform1f(uUseTex, 0.0); currentTexBound = null; } gl.drawElements(gl.TRIANGLES, d.mesh.count, gl.UNSIGNED_SHORT, 0); }
-  gl.enable(gl.BLEND); gl.depthMask(false); lastMesh = null;
-  for (var i = 0; i < drawCount; i++) { var d = drawList[i]; if (d.mat.blend === 0) continue; if (d.mat.blend === 1) gl.blendFunc(gl.SRC_ALPHA, gl.ONE); else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); if (d.mesh !== lastMesh) { bindMeshAttributes(d.mesh); lastMesh = d.mesh; } gl.uniformMatrix4fv(uModel, false, d.m); gl.uniform3f(uColor, d.mat.c[0], d.mat.c[1], d.mat.c[2]); gl.uniform1f(uMetal, d.mat.metal); gl.uniform1f(uRough, d.mat.rough); gl.uniform1f(uAlpha, d.mat.alpha); gl.uniform2f(uTiling, d.mat.tiling[0], d.mat.tiling[1]); if (d.mat.tex) { if (currentTexBound !== d.mat.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, d.mat.tex); gl.uniform1i(uTex, 0); gl.uniform1f(uUseTex, 1.0); currentTexBound = d.mat.tex; } } else { gl.uniform1f(uUseTex, 0.0); currentTexBound = null; } gl.drawElements(gl.TRIANGLES, d.mesh.count, gl.UNSIGNED_SHORT, 0); }
-  gl.depthMask(true); gl.disable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE); bindMeshAttributes(MESH_BOX); gl.uniform1f(uUseTex, 0.0); gl.uniform1f(uRough, 0.5); gl.uniform1f(uMetal, 0.0); gl.uniform1f(uAlpha, 1.0); gl.uniform1f(uShadowOn, 0.0);
-  for (var i = 0; i < particles.length; i++) { var p = particles[i]; var pm = new Float32Array(16); setTRS(pm, p.x, p.y, p.z, 0, 0, 0, p.size, p.size, p.size); gl.uniformMatrix4fv(uModel, false, pm); if (p.type === 1) gl.uniform3f(uColor, 1.0, 0.6, 0.1); else gl.uniform3f(uColor, 0.3, 0.3, 0.3); gl.drawElements(gl.TRIANGLES, MESH_BOX.count, gl.UNSIGNED_SHORT, 0); }
-  if (shadowsEnabled) gl.uniform1f(uShadowOn, 1.0);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); bindMeshAttributes(MESH_CYL); gl.uniform3f(uColor, 0.8, 0.65, 0.2); gl.uniform1f(uMetal, 0.8); gl.uniform1f(uRough, 0.3); gl.uniform1f(uUseTex, 0.0);
-  for (var i = 0; i < shells.length; i++) { var s = shells[i]; var sm = new Float32Array(16); setTRS(sm, s.x, s.y, s.z, s.rx, s.ry, s.rz, 0.01, 0.03, 0.01); gl.uniformMatrix4fv(uModel, false, sm); gl.drawElements(gl.TRIANGLES, MESH_CYL.count, gl.UNSIGNED_SHORT, 0); }
-  gl.disable(gl.DEPTH_TEST); bindMeshAttributes(MESH_PLANE); gl.uniform3f(uColor, 0.02, 0.02, 0.02); gl.uniform1f(uAlpha, 0.9); gl.uniform1f(uShadowOn, 0.0);
-  for (var i = 0; i < bulletHoles.length; i++) { gl.uniformMatrix4fv(uModel, false, bulletHoles[i].m); gl.drawElements(gl.TRIANGLES, MESH_PLANE.count, gl.UNSIGNED_SHORT, 0); }
-  gl.enable(gl.DEPTH_TEST);
-  gl.enable(gl.BLEND); gl.depthMask(false); gl.blendFunc(gl.SRC_ALPHA, gl.ONE); bindMeshAttributes(MESH_CYL);
-  for (var k = 0; k < enemies.length; k++) { var e = enemies[k]; if (e.tracerT > 0 && e.alive) { gl.uniformMatrix4fv(uModel, false, e.tracerM); gl.uniform3f(uColor, 1.0, 0.85, 0.42); gl.uniform1f(uAlpha, 1.0); gl.uniform1f(uMetal, 0.0); gl.uniform1f(uRough, 0.5); gl.uniform1f(uUseTex, 0.0); gl.drawElements(gl.TRIANGLES, MESH_CYL.count, gl.UNSIGNED_SHORT, 0); } }
-  gl.depthMask(true); gl.disable(gl.BLEND);
-}
-function render(eyeY) { updateShadowPass(); renderMainPass(eyeY); }
+                // 創建 script 標籤
+                const script = document.createElement('script');
+                script.src = scriptSrc;
+                script.async = false; // 確保按順序執行
+                
+                script.onload = () => {
+                    loadedCount++;
+                    updateProgress();
+                    // 遞迴加載下一個
+                    loadNextScript(index + 1);
+                };
 
-var lastT = performance.now(); var fpsAcc = 0; var fpsFrames = 0;
-function loop(now) {
-  requestAnimationFrame(loop); var dt = (now - lastT) / 1000; lastT = now; if (dt > 0.05) dt = 0.05; if (dt <= 0) dt = 0.001; var time = now / 1000;
-  updatePlayer(dt); updateReload(dt); updateParticles(dt); updateHUD();
-  var bobSpeed = 8; if (player.tacSprintProg > 0.5) bobSpeed = 18; else if (Math.sqrt(player.vx * player.vx + player.vz * player.vz) > 5) bobSpeed = 13; player.bob += dt * bobSpeed;
-  for (var i = 0; i < enemies.length; i++) { updateEnemy(enemies[i], dt, time); if (enemies[i].tracerT > 0) enemies[i].tracerT -= dt; }
-  drawCount = 0; mpReset(); buildScene(); for (var j = 0; j < enemies.length; j++) { if (enemies[j].alive) buildSoldier(enemies[j]); }
-  var eyeY = player.y + player.curH; buildPlayerGun(eyeY);
-  render(eyeY);
-  fpsAcc += dt; fpsFrames++; if (fpsAcc >= 0.5) { var f = Math.round(fpsFrames / fpsAcc); fpsEl.textContent = 'FPS ' + f; fpsAcc = 0; fpsFrames = 0; }
-}
-requestAnimationFrame(loop);
+                script.onerror = () => {
+                    console.error(`[WZM] 無法加載腳本: ${scriptSrc}`);
+                    // 即使失敗也繼續加載下一個，防止卡死，但 UI 可以標記錯誤
+                    loadedCount++;
+                    updateProgress();
+                    loadNextScript(index + 1);
+                };
 
-document.getElementById('reset').addEventListener('click', function(ev) { ev.stopPropagation(); initEnemies(); gun.mag = 30; gun.reserve = 120; reload.active = false; reload.t = 0; reload.phase = 0; reloadTxtEl.style.display = 'none'; gun.inspecting = false; gun.inspectT = 0; player.tacSprintTimer = 0; player.cameraTrauma = 0; });
-document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
-document.addEventListener('dblclick', function(e) { e.preventDefault(); }, { passive: false });
-})();
-</script>
+                document.body.appendChild(script);
+            }
+
+            // 啟動加載過程 (延遲 100ms 確保 DOM 渲染完畢)
+            setTimeout(() => {
+                updateProgress();
+                loadNextScript(1);
+            }, 100);
+
+        })();
+    </script>
 </body>
 </html>
