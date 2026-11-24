@@ -2,6 +2,22 @@
 <html lang="zh-Hant">
 <head>
     <script>
+// 修復所有 37 個模組呼叫 Logger.system() 導致崩溃的關鍵補丁
+window.WZ = window.WZ || {};
+window.WZ.Utils = window.WZ.Utils || {
+  Logger: {
+    system: function() { console.log.apply(console, ['[SYSTEM]'].concat([].slice.call(arguments))); },
+    info:   function() { console.log.apply(console, ['[INFO]'].concat([].slice.call(arguments))); },
+    warn:   function() { console.warn.apply(console, ['[WARN]'].concat([].slice.call(arguments))); },
+    error:  function() { console.error.apply(console, ['[ERROR]'].concat([].slice.call(arguments))); },
+    debug:  function() { console.log.apply(console, ['[DEBUG]'].concat([].slice.call(arguments))); }
+  }
+};
+if (!console.system) console.system = console.log.bind(console, '[SYSTEM]');
+if (!console.info)   console.info   = console.log.bind(console, '[INFO]');
+</script>
+
+    <script>
 window.onerror = function(msg, url, line) {
   var b = document.getElementById('eb') || document.body.appendChild(Object.assign(document.createElement('div'), {
     id: 'eb', style: 'position:fixed;top:0;left:0;right:0;z-index:999999;background:rgba(180,0,0,.92);color:#fff;font:12px monospace;padding:10px;max-height:45vh;overflow:auto;'
