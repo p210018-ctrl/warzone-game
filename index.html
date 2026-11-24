@@ -1749,24 +1749,29 @@ window.onerror = function(msg, url, line) {
                 document.body.appendChild(script);
             }
 
-            // 優先載入 Three.js 0.128.0 引擎，成功後立刻啟動 37 個模組載入
+              // 優先載入 Three.js 0.128.0（雙高速 CDN + 2.5秒防卡死超時保護）
             setTimeout(() => {
                 updateProgress();
-                const threeScript = document.createElement('script');
-                threeScript.src = "https://jsdelivr.net";
-                threeScript.onload = () => {
+                let started = false;
+                function startModules() {
+                    if (started) return;
+                    started = true;
                     loadedCount++;
                     updateProgress();
                     loadNextScript(0);
-                };
+                }
+                const threeScript = document.createElement('script');
+                threeScript.src = "https://cloudflare.com";
+                threeScript.onload = startModules;
                 threeScript.onerror = () => {
-                    // 備用 CDN
                     const backupThree = document.createElement('script');
-                    backupThree.src = "https://cloudflare.com";
-                    backupThree.onload = () => { loadedCount++; updateProgress(); loadNextScript(0); };
+                    backupThree.src = "https://unpkg.com";
+                    backupThree.onload = startModules;
+                    backupThree.onerror = startModules;
                     document.body.appendChild(backupThree);
                 };
                 document.body.appendChild(threeScript);
+                setTimeout(startModules, 2500);
             }, 100);
 
         })();
