@@ -1710,5 +1710,35 @@ window.onerror = function(msg, url, line) {
 
         })();
     </script>
+    <script>
+// 強制喚醒 3D 畫布並接管「進入戰區」按鈕
+window.addEventListener('load', function() {
+  var c = document.getElementById('game-canvas') || document.querySelector('canvas');
+  if (c) {
+    c.style.visibility = 'visible';
+    c.style.opacity = '1';
+    c.style.zIndex = '2';
+  }
+  // 讓大廳背景變透明，露出背後的 3D 特種兵
+  var lobby = document.getElementById('lobby-layer');
+  if (lobby) lobby.style.background = 'transparent';
+
+  // 強制綁定「進入戰區 / DEPLOY」按鈕點擊事件
+  document.querySelectorAll('button, .btn, div').forEach(function(el) {
+    if (el.textContent && el.textContent.indexOf('DEPLOY') !== -1 && el.children.length === 0) {
+      el.parentElement.style.pointerEvents = 'auto';
+      el.style.pointerEvents = 'auto';
+      el.addEventListener('click', function() {
+        if (lobby) lobby.style.display = 'none';
+        var hud = document.getElementById('hud-layer');
+        if (hud) { hud.style.display = 'flex'; hud.classList.add('active'); }
+        if (window.WZ && WZ.bus) WZ.bus.emit('game:start');
+        if (window.WZ && WZ.State && WZ.State.setState) WZ.State.setState('PLAYING');
+      });
+    }
+  });
+});
+</script>
+
 </body>
 </html>
