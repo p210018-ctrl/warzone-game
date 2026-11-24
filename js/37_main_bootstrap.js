@@ -2,8 +2,8 @@
  * =================================================================================
  * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
  * 檔案名稱：js/37_main_bootstrap.js
- * 檔案說明：全局啟動引導與生命週期管理系統。負責按依賴順序初始化 36 個模組、
- *           綁定事件、隱藏進度條、全局錯誤監控與降級保護。
+ * 檔案說明：全局啟動引導與生命週期管理系統 (終極兜底版)。
+ *           具備智能探測、兼容調用、兜底 3D 渲染、按鈕強制綁定與狀態診斷。
  *           掛載於 window.WZ.Bootstrap。
  * 目標行數：1000 - 1400 行 (純 JavaScript)
  * =================================================================================
@@ -22,547 +22,752 @@
 })(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
 
     /* =========================================================================
-     * 第一部分：啟動系統配置與枚舉
+     * 第一部分：啟動系統配置與全局變數
      * ========================================================================= */
 
     Logger.system('開始載入總啟動引導系統 (js/37_main_bootstrap.js)...');
 
-    // 啟動階段枚舉
+    // 定義啟動階段
     const BootPhase = {
         IDLE: 'IDLE',
-        CHECKING_DEPENDENCIES: 'CHECKING_DEPENDENCIES',
-        INITIALIZING_CORE: 'INITIALIZING_CORE',
-        INITIALIZING_RENDER: 'INITIALIZING_RENDER',
-        INITIALIZING_LOGIC: 'INITIALIZING_LOGIC',
-        BINDING_EVENTS: 'BINDING_EVENTS',
-        FINALIZING: 'FINALIZING',
+        PREPARING: 'PREPARING',
+        SCANNING_MODULES: 'SCANNING_MODULES',
+        INITIALIZING_ENGINE: 'INITIALIZING_ENGINE',
+        BINDING_UI: 'BINDING_UI',
         READY: 'READY',
         FAILED: 'FAILED'
     };
 
     const CONFIG = {
-        // 心跳監控設定
-        HEARTBEAT_INTERVAL: 1000, // 每秒檢查一次
-        MAX_FPS_DROP_TIME: 5000,  // 如果 FPS 為 0 持續 5 秒，視為卡死
-        
-        // 初始化超時設定
-        INIT_TIMEOUT: 15000,      // 15 秒內未完成初始化視為失敗
+        // 預期載入的模組清單 (用於狀態診斷)
+        EXPECTED_MODULES: [
+            'State', 'bus', 'Renderer', 'Touch', 'CameraRig', 'Physics', 
+            'Textures', 'Atmosphere', 'MapTerrain', 'MapBuildings', 
+            'MapProps', 'Decals', 'FPHands', 'Weapons', 'Optics', 
+            'FPAnim', 'FPReload', 'Ballistics', 'VFX', 'AudioWeapons', 
+            'AudioFoley', 'PlayerMove', 'EnemyMesh', 'EnemyIK', 
+            'EnemyLocomotion', 'Ragdoll', 'EnemyAI', 'UILobby', 
+            'UICustomizer', 'UISettings', 'UIHud', 'UIKillfeed', 'GameMode'
+        ],
+        // 狀態診斷列更新頻率 (毫秒)
+        STATUS_UPDATE_INTERVAL: 500,
+        // 強制兜底渲染的檢測延遲 (毫秒)
+        FALLBACK_CHECK_DELAY: 2000
     };
 
+    // 啟動狀態追蹤
+    const state = {
+        phase: BootPhase.IDLE,
+        loadedModules: new Set(),
+        failedModules: new Set(),
+        startTime: 0,
+        fps: 0,
+        frameCount: 0,
+        lastFpsUpdate: 0,
+        isGameRunning: false,
+        fallbackEngineActive: false
+    };
+
+    // 全局引用
+    let diagnosticBar = null;
+    let fallbackLoopId = null;
+    let fallbackScene = null;
+    let fallbackCamera = null;
+    let fallbackRenderer = null;
+
     /* =========================================================================
-     * 第二部分：啟動工具庫 (Bootstrap Utilities)
+     * 第二部分：UI 診斷列與錯誤邊界 (Diagnostics & Error Boundary)
      * ========================================================================= */
 
-    class BootUI {
-        constructor() {
-            this.progressBar = document.getElementById('load-progress-bar');
-            this.progressGlow = document.getElementById('load-glow-head');
-            this.progressText = document.getElementById('load-percentage');
-            this.loadingLayer = document.getElementById('loading-layer');
-            this.lobbyLayer = document.getElementById('lobby-layer');
-            this.errorLayer = null;
-        }
+    /**
+     * 建立頂部極簡狀態診斷列
+     */
+    function createDiagnosticBar() {
+        if (document.getElementById('wz-diagnostic-bar')) return;
 
-        setProgress(percent, text = '') {
-            const p = Math.min(100, Math.max(0, percent));
+        diagnosticBar = document.createElement('div');
+        diagnosticBar.id = 'wz-diagnostic-bar';
+        diagnosticBar.style.position = 'fixed';
+        diagnosticBar.style.top = '0';
+        diagnosticBar.style.left = '0';
+        diagnosticBar.style.width = '100%';
+        diagnosticBar.style.height = '24px';
+        diagnosticBar.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
+        diagnosticBar.style.color = '#00ffcc';
+        diagnosticBar.style.fontSize = '12px';
+        diagnosticBar.style.fontFamily = 'monospace';
+        diagnosticBar.style.display = 'flex';
+        diagnosticBar.style.alignItems = 'center';
+        diagnosticBar.style.justifyContent = 'space-between';
+        diagnosticBar.style.padding = '0 15px';
+        diagnosticBar.style.zIndex = '99999';
+        diagnosticBar.style.pointerEvents = 'none';
+        diagnosticBar.style.borderBottom = '1px solid rgba(0, 255, 204, 0.3)';
+        
+        // 左側：模組狀態
+        const leftSpan = document.createElement('span');
+        leftSpan.id = 'wz-diag-modules';
+        leftSpan.innerText = 'WZ Engine Initializing...';
+        
+        // 右側：FPS
+        const rightSpan = document.createElement('span');
+        rightSpan.id = 'wz-diag-fps';
+        rightSpan.innerText = 'FPS: --';
+        
+        diagnosticBar.appendChild(leftSpan);
+        diagnosticBar.appendChild(rightSpan);
+        document.body.appendChild(diagnosticBar);
+    }
+
+    /**
+     * 更新診斷列
+     */
+    function updateDiagnosticBar() {
+        if (!diagnosticBar) return;
+
+        const moduleEl = document.getElementById('wz-diag-modules');
+        const fpsEl = document.getElementById('wz-diag-fps');
+
+        if (moduleEl) {
+            const total = CONFIG.EXPECTED_MODULES.length;
+            const loaded = state.loadedModules.size;
             
-            if (this.progressBar) {
-                this.progressBar.style.width = `${p}%`;
-            }
-            if (this.progressGlow) {
-                this.progressGlow.style.left = `${p}%`;
-            }
-            if (this.progressText) {
-                this.progressText.innerText = text ? text : `${Math.floor(p)}%`;
-            }
+            let statusColor = '#00ffcc';
+            if (loaded < total * 0.5) statusColor = '#ff4444';
+            else if (loaded < total) statusColor = '#ffcc00';
+
+            moduleEl.style.color = statusColor;
+            moduleEl.innerText = `WZ Engine Ready: ${loaded}/${total} Modules | ${state.phase}`;
         }
 
-        showError(title, message) {
-            // 如果已經顯示錯誤，不再重複
-            if (this.errorLayer) return;
-
-            Logger.error(`系統崩潰: ${title} - ${message}`);
-
-            this.errorLayer = document.createElement('div');
-            this.errorLayer.style.position = 'fixed';
-            this.errorLayer.style.inset = '0';
-            this.errorLayer.style.backgroundColor = '#0a0a0c';
-            this.errorLayer.style.zIndex = '99999';
-            this.errorLayer.style.display = 'flex';
-            this.errorLayer.style.flexDirection = 'column';
-            this.errorLayer.style.justifyContent = 'center';
-            this.errorLayer.style.alignItems = 'center';
-            this.errorLayer.style.padding = '40px';
-            this.errorLayer.style.color = '#fff';
-            this.errorLayer.style.fontFamily = 'monospace';
-
-            const icon = document.createElement('div');
-            icon.innerText = '⚠️';
-            icon.style.fontSize = '64px';
-            icon.style.marginBottom = '20px';
-
-            const h1 = document.createElement('h1');
-            h1.innerText = title;
-            h1.style.color = '#e74c3c';
-            h1.style.marginBottom = '20px';
-
-            const p = document.createElement('p');
-            p.innerText = message;
-            p.style.color = '#aaa';
-            p.style.textAlign = 'center';
-            p.style.maxWidth = '80%';
-            p.style.lineHeight = '1.6';
-            p.style.marginBottom = '40px';
-
-            const btn = document.createElement('button');
-            btn.innerText = '重新整理 (Reload)';
-            btn.style.background = '#d4af37';
-            btn.style.color = '#000';
-            btn.style.border = 'none';
-            btn.style.padding = '12px 30px';
-            btn.style.fontSize = '16px';
-            btn.style.fontWeight = 'bold';
-            btn.style.cursor = 'pointer';
-            btn.style.borderRadius = '4px';
-            btn.onclick = () => window.location.reload();
-
-            this.errorLayer.appendChild(icon);
-            this.errorLayer.appendChild(h1);
-            this.errorLayer.appendChild(p);
-            this.errorLayer.appendChild(btn);
-            document.body.appendChild(this.errorLayer);
-        }
-
-        hideLoadingAndShowLobby() {
-            if (this.loadingLayer) {
-                this.loadingLayer.classList.add('fade-out');
-                setTimeout(() => {
-                    this.loadingLayer.style.display = 'none';
-                    
-                    if (this.lobbyLayer) {
-                        this.lobbyLayer.style.display = 'flex';
-                        this.lobbyLayer.style.opacity = '1';
-                    }
-                }, 500);
-            }
+        if (fpsEl) {
+            fpsEl.innerText = `FPS: ${state.fps}`;
+            if (state.fps < 30) fpsEl.style.color = '#ff4444';
+            else fpsEl.style.color = '#00ffcc';
         }
     }
 
-    class ModuleHealthChecker {
-        /**
-         * 檢查模組是否存在
-         */
-        static checkModule(moduleName, path = '') {
-            try {
-                // 解析路徑，例如 'WZ.Renderer'
-                const parts = path.split('.');
-                let current = window;
-                for (const part of parts) {
-                    if (current[part] === undefined) {
-                        return { status: 'MISSING', error: `找不到 ${part}` };
-                    }
-                    current = current[part];
-                }
-                return { status: 'OK', instance: current };
-            } catch (e) {
-                return { status: 'ERROR', error: e.message };
-            }
-        }
+    /**
+     * 更新 FPS 計數器
+     */
+    function updateFpsCounter(timestamp) {
+        if (!state.lastFpsUpdate) state.lastFpsUpdate = timestamp;
+        state.frameCount++;
 
-        /**
-         * 安全地執行模組方法
-         */
-        static safeExecute(moduleName, module, methodName, ...args) {
-            if (!module) {
-                Logger.warn(`[降級] 模組 ${moduleName} 不存在，跳過執行 ${methodName}`);
-                return false;
-            }
-            
-            if (typeof module[methodName] !== 'function') {
-                Logger.warn(`[降級] 模組 ${moduleName} 缺少方法 ${methodName}`);
-                return false;
-            }
-
-            try {
-                module[methodName](...args);
-                return true;
-            } catch (e) {
-                Logger.error(`[崩潰] 模組 ${moduleName} 執行 ${methodName} 時發生錯誤:`, e);
-                return false;
-            }
+        const delta = timestamp - state.lastFpsUpdate;
+        if (delta >= 1000) {
+            state.fps = Math.round((state.frameCount * 1000) / delta);
+            state.frameCount = 0;
+            state.lastFpsUpdate = timestamp;
+            updateDiagnosticBar();
         }
     }
 
-    /* =========================================================================
-     * 第三部分：核心啟動管理器 (BootstrapManager)
-     * ========================================================================= */
-
-    class BootstrapManager {
-        constructor() {
-            this.phase = BootPhase.IDLE;
-            this.ui = new BootUI();
-            this.startTime = 0;
-            this.moduleStatus = {}; // 記錄各模組的初始化狀態
-
-            // 心跳監控
-            this.heartbeatTimer = null;
-            this.lastFrameTime = performance.now();
-            this.fpsDropTimer = 0;
-            this.isRunning = false;
-
-            // 全局錯誤捕獲
-            window.onerror = (msg, url, line, col, error) => {
-                this._handleGlobalError(msg, url, line, col, error);
-                return false;
-            };
-
-            window.addEventListener('unhandledrejection', (event) => {
-                this._handleGlobalError('Unhandled Promise Rejection', '', 0, 0, event.reason);
-            });
+    /**
+     * 顯示致命錯誤
+     */
+    function showFatalError(title, error) {
+        const errEl = document.getElementById('err');
+        if (errEl) {
+            errEl.style.display = 'block';
+            errEl.textContent += `[FATAL] ${title}\n${error}\n`;
         }
-
-        _handleGlobalError(msg, url, line, col, error) {
-            const errorMsg = `錯誤: ${msg} \n位置: ${url}:${line}:${col}`;
-            
-            // 如果是在啟動階段，直接顯示錯誤畫面
-            if (this.phase !== BootPhase.READY) {
-                this.ui.showError('啟動失敗 (Boot Failure)', errorMsg);
-                this.phase = BootPhase.FAILED;
-            } else {
-                // 遊戲運行中錯誤，僅記錄，不中斷（嘗試降級）
-                Logger.error('運行時錯誤:', errorMsg, error);
-            }
-        }
-
-        /* =====================================================================
-         * 啟動流程主入口
-         * ===================================================================== */
-        async start() {
-            if (this.phase !== BootPhase.IDLE) return;
-            this.startTime = performance.now();
-            
-            Logger.system('開始執行全局啟動引導...');
-
-            try {
-                // 階段 1：檢查依賴
-                this.phase = BootPhase.CHECKING_DEPENDENCIES;
-                this.ui.setProgress(5, '檢查核心依賴...');
-                await this._checkDependencies();
-
-                // 階段 2：初始化核心（事件總線、狀態機）
-                this.phase = BootPhase.INITIALIZING_CORE;
-                this.ui.setProgress(15, '初始化核心系統...');
-                await this._initCoreSystems();
-
-                // 階段 3：初始化渲染與場景
-                this.phase = BootPhase.INITIALIZING_RENDER;
-                this.ui.setProgress(30, '建立 3D 渲染管線...');
-                await this._initRenderSystems();
-
-                // 階段 4：初始化遊戲邏輯（玩家、敵人、武器、模式）
-                this.phase = BootPhase.INITIALIZING_LOGIC;
-                this.ui.setProgress(60, '載入戰術邏輯與模型...');
-                await this._initLogicSystems();
-
-                // 階段 5：綁定事件與 UI
-                this.phase = BootPhase.BINDING_EVENTS;
-                this.ui.setProgress(85, '連接系統事件...');
-                await this._bindEvents();
-
-                // 階段 6：最終完成
-                this.phase = BootPhase.FINALIZING;
-                this.ui.setProgress(100, '準備進入戰區...');
-                await this._finalize();
-
-                // 啟動心跳監控
-                this._startHeartbeat();
-
-                this.phase = BootPhase.READY;
-                Logger.success(`啟動完成！總耗時: ${(performance.now() - this.startTime).toFixed(2)} ms`);
-
-                // 隱藏載入畫面，顯示大廳
-                setTimeout(() => {
-                    this.ui.hideLoadingAndShowLobby();
-                    
-                    // 廣播全局事件
-                    if (WZ.bus) {
-                        WZ.bus.emit('CORE_SYSTEM_READY', { version: '1.0.0' });
-                    }
-                }, 500);
-
-            } catch (e) {
-                Logger.error('啟動過程中發生致命錯誤:', e);
-                this.ui.showError('啟動失敗 (Fatal Error)', e.message);
-                this.phase = BootPhase.FAILED;
-            }
-        }
-
-        /* =====================================================================
-         * 各階段初始化邏輯
-         * ===================================================================== */
-
-        async _checkDependencies() {
-            Logger.info('檢查依賴套件...');
-            
-            // 1. 檢查 THREE.js
-            const threeCheck = ModuleHealthChecker.checkModule('Three.js', 'THREE');
-            if (threeCheck.status !== 'OK') {
-                throw new Error('缺少 Three.js 依賴庫，請確認 index.html 中的 <script> 標籤。');
-            }
-            Logger.success('Three.js 檢查通過');
-
-            // 2. 檢查 WZ 命名空間
-            if (!window.WZ) {
-                throw new Error('WZ 命名空間不存在');
-            }
-
-            // 模擬非同步載入延遲
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        async _initCoreSystems() {
-            Logger.info('初始化核心系統...');
-
-            // 1. 檢查 WZ.bus (01)
-            this.moduleStatus.bus = ModuleHealthChecker.checkModule('EventBus', 'WZ.bus').status;
-            
-            // 2. 檢查 WZ.State (01)
-            this.moduleStatus.state = ModuleHealthChecker.checkModule('StateMachine', 'WZ.State').status;
-
-            // 3. 檢查 WZ.Config (01)
-            this.moduleStatus.config = ModuleHealthChecker.checkModule('Config', 'WZ.Config').status;
-
-            if (this.moduleStatus.bus !== 'OK') {
-                throw new Error('事件總線 (WZ.bus) 初始化失敗，核心系統無法運作。');
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 50));
-        }
-
-        async _initRenderSystems() {
-            Logger.info('初始化渲染與場景系統...');
-
-            // 1. 檢查 WZ.Renderer (02)
-            this.moduleStatus.renderer = ModuleHealthChecker.checkModule('Renderer', 'WZ.Renderer').status;
-            if (this.moduleStatus.renderer === 'OK') {
-                const canvas = document.getElementById('game-canvas');
-                if (canvas && WZ.Renderer.init) {
-                    try {
-                        WZ.Renderer.init(canvas);
-                        WZ.Renderer.start();
-                        Logger.success('渲染器啟動成功');
-                    } catch (e) {
-                        Logger.error('渲染器啟動失敗', e);
-                        this.moduleStatus.renderer = 'FAILED';
-                    }
-                }
-            } else {
-                Logger.warn('[降級] 渲染器缺失，遊戲將無法顯示 3D 畫面。');
-            }
-
-            // 2. 檢查 WZ.Atmosphere (08)
-            // 3. 檢查 WZ.MapTerrain (09)
-            // ... 略，由後續的 WZ.bus 事件自動觸發
-
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        async _initLogicSystems() {
-            Logger.info('初始化遊戲邏輯系統...');
-
-            // 這裡我們依次檢查並記錄每個模組的狀態
-            const logicModules = [
-                { name: '多點觸控', path: 'WZ.Touch' },
-                { name: '相機支架', path: 'WZ.CameraRig' },
-                { name: '物理引擎', path: 'WZ.Physics' },
-                { name: '生命護甲', path: 'WZ.PlayerHealth' },
-                { name: '紋理工廠', path: 'WZ.Textures' },
-                { name: '光照氛圍', path: 'WZ.Atmosphere' },
-                { name: '地形系統', path: 'WZ.MapTerrain' },
-                { name: '建築系統', path: 'WZ.MapBuildings' },
-                { name: '掩體系統', path: 'WZ.MapProps' },
-                { name: '彈孔系統', path: 'WZ.Decals' },
-                { name: '手部模型', path: 'WZ.FPHands' },
-                { name: 'M4A1', path: 'WZ.Weapons.M4A1' },
-                { name: 'MP5', path: 'WZ.Weapons.MP5' },
-                { name: 'AX-50', path: 'WZ.Weapons.AX50' },
-                { name: 'X16', path: 'WZ.Weapons.X16' },
-                { name: '光學雷射', path: 'WZ.Optics' },
-                { name: '身法系統', path: 'WZ.FPAnim' },
-                { name: '換彈系統', path: 'WZ.FPReload' },
-                { name: '彈道系統', path: 'WZ.Ballistics' },
-                { name: 'VFX', path: 'WZ.VFX' },
-                { name: '武器音效', path: 'WZ.AudioWeapons' },
-                { name: '擬音環境', path: 'WZ.AudioFoley' },
-                { name: '玩家身法', path: 'WZ.PlayerMove' },
-                { name: '敵人模型', path: 'WZ.EnemyMesh' },
-                { name: '敵人IK', path: 'WZ.EnemyIK' },
-                { name: '敵人運動', path: 'WZ.EnemyLocomotion' },
-                { name: '布娃娃', path: 'WZ.Ragdoll' },
-                { name: '敵人AI', path: 'WZ.EnemyAI' },
-                { name: '大廳UI', path: 'WZ.UILobby' },
-                { name: 'HUD自定義', path: 'WZ.UICustomizer' },
-                { name: '設置面板', path: 'WZ.UISettings' },
-                { name: '戰鬥HUD', path: 'WZ.UIHud' },
-                { name: '擊殺反饋', path: 'WZ.UIKillfeed' },
-                { name: '遊戲模式', path: 'WZ.GameMode' }
-            ];
-
-            let loadedCount = 0;
-            for (const mod of logicModules) {
-                const result = ModuleHealthChecker.checkModule(mod.name, mod.path);
-                this.moduleStatus[mod.name] = result.status;
-                
-                if (result.status === 'OK') {
-                    loadedCount++;
-                } else {
-                    Logger.warn(`[降級] 模組 "${mod.name}" (${mod.path}) 未就緒。`);
-                }
-
-                // 更新進度條
-                const progress = 60 + (loadedCount / logicModules.length) * 25;
-                this.ui.setProgress(progress, `載入 ${mod.name}...`);
-                
-                // 模擬延遲 (讓進度條平滑)
-                await new Promise(resolve => setTimeout(resolve, 20));
-            }
-
-            Logger.info(`邏輯模組載入完成: ${loadedCount} / ${logicModules.length}`);
-        }
-
-        async _bindEvents() {
-            Logger.info('連接系統事件...');
-
-            if (!WZ.bus) return;
-
-            // 1. 綁定大廳的 UI 按鈕
-            const startBtn = document.getElementById('btn-start-match');
-            if (startBtn) {
-                startBtn.addEventListener('click', () => {
-                    Logger.info('玩家點擊部署按鈕');
-                    if (WZ.State) {
-                        WZ.State.transitionTo('PLAYING');
-                    }
-                });
-            }
-
-            // 2. 監聽遊戲狀態變化
-            WZ.bus.on('STATE_CHANGED', (data) => {
-                Logger.state(`遊戲狀態切換: ${data.from} -> ${data.to}`);
-                
-                if (data.to === 'LOBBY') {
-                    // 顯示大廳，隱藏 HUD
-                    if (this.ui.lobbyLayer) this.ui.lobbyLayer.style.display = 'flex';
-                    const hudLayer = document.getElementById('hud-layer');
-                    if (hudLayer) hudLayer.style.display = 'none';
-                } else if (data.to === 'PLAYING') {
-                    // 隱藏大廳，顯示 HUD
-                    if (this.ui.lobbyLayer) this.ui.lobbyLayer.style.display = 'none';
-                    const hudLayer = document.getElementById('hud-layer');
-                    if (hudLayer) hudLayer.style.display = 'block';
-                }
-            });
-
-            await new Promise(resolve => setTimeout(resolve, 50));
-        }
-
-        async _finalize() {
-            Logger.info('完成最終啟動檢查...');
-
-            // 1. 將 WZ 命名空間暴露到全局，方便除錯
-            window.WZ_DEBUG = WZ;
-
-            // 2. 檢查是否有致命缺失
-            if (this.moduleStatus['渲染器'] !== 'OK') {
-                Logger.warn('警告：渲染器未就緒，3D 畫面可能無法顯示。');
-            }
-
-            if (this.moduleStatus['多點觸控'] !== 'OK') {
-                Logger.warn('警告：觸控系統未就緒，玩家可能無法操作。');
-            }
-
-            // 3. 觸發最終的 READY 事件
-            if (WZ.bus) {
-                WZ.bus.emit('BOOTSTRAP_COMPLETE', {
-                    status: this.moduleStatus,
-                    duration: performance.now() - this.startTime
-                });
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
-
-        /* =====================================================================
-         * 心跳監控 (Health Monitor)
-         * ===================================================================== */
-        _startHeartbeat() {
-            this.isRunning = true;
-            this.lastFrameTime = performance.now();
-            this.fpsDropTimer = 0;
-
-            this.heartbeatTimer = setInterval(() => {
-                if (!this.isRunning) return;
-
-                const now = performance.now();
-                const dt = now - this.lastFrameTime;
-                this.lastFrameTime = now;
-
-                // 1. 檢查渲染循環是否停止
-                if (WZ.Renderer && WZ.Renderer.isRunning) {
-                    const fps = WZ.Renderer.stats.fps;
-                    if (fps === 0) {
-                        this.fpsDropTimer += CONFIG.HEARTBEAT_INTERVAL;
-                        if (this.fpsDropTimer >= CONFIG.MAX_FPS_DROP_TIME) {
-                            Logger.error('心跳監控：FPS 持續為 0，判定為卡死！');
-                            this.ui.showError('渲染超時 (Render Timeout)', '遊戲畫面無回應，請重新整理。');
-                            this.isRunning = false;
-                        }
-                    } else {
-                        this.fpsDropTimer = 0; // 重置
-                    }
-                }
-
-                // 2. 檢查記憶體使用 (如果瀏覽器支援)
-                if (performance.memory) {
-                    const memMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-                    if (memMB > 800) { // 如果超過 800MB，發出警告
-                        Logger.warn(`記憶體使用量偏高: ${memMB.toFixed(1)} MB`);
-                    }
-                }
-
-            }, CONFIG.HEARTBEAT_INTERVAL);
-        }
-
-        stopHeartbeat() {
-            this.isRunning = false;
-            if (this.heartbeatTimer) {
-                clearInterval(this.heartbeatTimer);
-                this.heartbeatTimer = null;
-            }
-        }
+        Logger.error(`[FATAL] ${title}`, error);
+        state.phase = BootPhase.FAILED;
+        updateDiagnosticBar();
     }
 
     /* =========================================================================
-     * 第四部分：導出與啟動
+     * 第三部分：智能模組掃描與初始化 (Smart Module Scanner)
      * ========================================================================= */
 
-    // 1. 實例化
-    const bootstrap = new BootstrapManager();
+    /**
+     * 檢查單個模組是否存在且具備可調用的初始化方法
+     */
+    function checkAndInitModule(moduleName) {
+        let moduleObj = null;
 
-    // 2. 掛載到 WZ 命名空間
-    WZ.Bootstrap = bootstrap;
+        // 1. 解析模組路徑 (支援多層結構，例如 WZ.Weapons.M4A1)
+        if (moduleName === 'bus') {
+            moduleObj = WZ.bus;
+        } else if (moduleName === 'State') {
+            moduleObj = WZ.State;
+        } else if (moduleName === 'Renderer') {
+            moduleObj = WZ.Renderer;
+        } else {
+            // 嘗試直接獲取
+            moduleObj = WZ[moduleName];
+        }
 
-    // 3. 當所有腳本載入完成時 (由 index.html 的加載器觸發)
-    // 我們等待 DOMContentLoaded 或直接執行
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            bootstrap.start();
+        // 如果找不到，嘗試在 WZ.Weapons 中找
+        if (!moduleObj && WZ.Weapons && WZ.Weapons[moduleName]) {
+            moduleObj = WZ.Weapons[moduleName];
+        }
+
+        if (!moduleObj) {
+            Logger.warn(`[掃描] 模組 ${moduleName} 未找到`);
+            state.failedModules.add(moduleName);
+            return false;
+        }
+
+        // 2. 嘗試多種可能的初始化方法名稱
+        const initMethods = ['init', 'setup', 'create', 'start'];
+        let initialized = false;
+
+        for (const method of initMethods) {
+            if (typeof moduleObj[method] === 'function') {
+                try {
+                    // 針對某些特定模組，可能需要傳入參數 (如 Scene, Camera)
+                    let args = [];
+                    if (moduleName === 'Renderer' && typeof THREE !== 'undefined') {
+                        // Renderer 需要 Canvas
+                        const canvas = document.getElementById('game-canvas');
+                        if (canvas) args.push(canvas);
+                    } else if (moduleName === 'Atmosphere' || moduleName === 'MapTerrain' || moduleName === 'MapBuildings' || moduleName === 'MapProps' || moduleName === 'Decals' || moduleName === 'VFX' || moduleName === 'GameMode') {
+                        // 需要 Scene
+                        if (fallbackScene) args.push(fallbackScene);
+                        else if (WZ.Renderer && WZ.Renderer.scene) args.push(WZ.Renderer.scene);
+                    } else if (moduleName === 'FPHands' || moduleName === 'CameraRig') {
+                        // 需要 Camera
+                        if (fallbackCamera) args.push(fallbackCamera);
+                        else if (WZ.Renderer && WZ.Renderer.camera) args.push(WZ.Renderer.camera);
+                    }
+
+                    // 執行初始化
+                    moduleObj[method].apply(moduleObj, args);
+                    initialized = true;
+                    Logger.success(`[初始化] 模組 ${moduleName} 透過 ${method}() 啟動成功`);
+                    break;
+                } catch (e) {
+                    Logger.error(`[初始化失敗] 模組 ${moduleName} 執行 ${method}() 出錯`, e);
+                    // 繼續嘗試下一個方法，或者標記為失敗
+                }
+            }
+        }
+
+        if (initialized) {
+            state.loadedModules.add(moduleName);
+            return true;
+        } else {
+            Logger.warn(`[掃描] 模組 ${moduleName} 沒有找到可用的初始化方法`);
+            state.failedModules.add(moduleName);
+            return false;
+        }
+    }
+
+    /**
+     * 掃描並初始化所有模組
+     */
+    function scanAndInitAllModules() {
+        Logger.system('開始智能掃描與初始化所有模組...');
+        state.phase = BootPhase.SCANNING_MODULES;
+        updateDiagnosticBar();
+
+        // 確保核心模組優先初始化
+        const priorityModules = ['bus', 'State', 'Renderer', 'Touch', 'Physics'];
+        
+        // 1. 初始化優先模組
+        priorityModules.forEach(mod => {
+            checkAndInitModule(mod);
         });
-    } else {
-        // 如果 DOM 已載入完畢，稍微延遲一下讓其他模組有時間註冊
+
+        // 2. 初始化其餘模組
+        CONFIG.EXPECTED_MODULES.forEach(mod => {
+            if (!priorityModules.includes(mod)) {
+                checkAndInitModule(mod);
+            }
+        });
+
+        Logger.success(`模組掃描完成: 成功 ${state.loadedModules.size} 個, 失敗 ${state.failedModules.size} 個`);
+        updateDiagnosticBar();
+    }
+
+    /* =========================================================================
+     * 第四部分：兜底 3D 引擎 (Fallback 3D Engine)
+     * 如果 WZ.Renderer 未成功啟動，這裡會強制建立一個基礎的 3D 場景，確保不黑屏。
+     * ========================================================================= */
+
+    function startFallbackEngine() {
+        if (state.fallbackEngineActive) return;
+        if (WZ.Renderer && WZ.Renderer.renderer && WZ.Renderer.isRunning) {
+            Logger.info('[兜底引擎] 檢測到官方渲染器已運行，無需啟動兜底引擎。');
+            return;
+        }
+
+        Logger.warn('[兜底引擎] 官方渲染器未運行，強制啟動備用 3D 渲染引擎...');
+        state.fallbackEngineActive = true;
+
+        if (typeof THREE === 'undefined') {
+            showFatalError('致命錯誤', 'Three.js 未載入，無法建立 3D 場景。');
+            return;
+        }
+
+        const canvas = document.getElementById('game-canvas');
+        if (!canvas) {
+            showFatalError('致命錯誤', '找不到 #game-canvas 元素。');
+            return;
+        }
+
+        // 強制顯示 Canvas
+        canvas.style.visibility = 'visible';
+        canvas.style.opacity = '1';
+        canvas.style.display = 'block';
+
+        // 1. 建立渲染器
+        try {
+            fallbackRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            fallbackRenderer.setSize(window.innerWidth, window.innerHeight);
+            fallbackRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            fallbackRenderer.shadowMap.enabled = true;
+            fallbackRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            fallbackRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+            fallbackRenderer.toneMappingExposure = 1.05;
+        } catch (e) {
+            showFatalError('渲染器建立失敗', e.message);
+            return;
+        }
+
+        // 2. 建立場景
+        fallbackScene = new THREE.Scene();
+        fallbackScene.background = new THREE.Color(0x11151a);
+        fallbackScene.fog = new THREE.Fog(0x11151a, 20, 100);
+
+        // 3. 建立相機
+        fallbackCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        fallbackCamera.position.set(0, 5, 10);
+        fallbackCamera.lookAt(0, 0, 0);
+
+        // 4. 建立光照
+        const ambientLight = new THREE.AmbientLight(0x404060, 0.8);
+        fallbackScene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffeedd, 1.5);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        fallbackScene.add(dirLight);
+
+        // 5. 建立測試幾何體 (地面與幾個方塊，證明渲染成功)
+        const groundGeo = new THREE.PlaneGeometry(50, 50);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
+        const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+        groundMesh.rotation.x = -Math.PI / 2;
+        groundMesh.receiveShadow = true;
+        fallbackScene.add(groundMesh);
+
+        const boxGeo = new THREE.BoxGeometry(2, 2, 2);
+        const boxMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.8, roughness: 0.2 });
+        
+        for (let i = 0; i < 5; i++) {
+            const box = new THREE.Mesh(boxGeo, boxMat);
+            box.position.set((Math.random() - 0.5) * 10, 1, (Math.random() - 0.5) * 10);
+            box.castShadow = true;
+            fallbackScene.add(box);
+        }
+
+        // 6. 啟動主循環
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            fallbackLoopId = requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+
+            // 旋轉測試方塊 (增加動態感)
+            fallbackScene.children.forEach(child => {
+                if (child.isMesh && child !== groundMesh) {
+                    child.rotation.x += delta * 0.5;
+                    child.rotation.y += delta * 0.8;
+                }
+            });
+
+            // 相機微微繞行
+            fallbackCamera.position.x = Math.sin(elapsed * 0.2) * 15;
+            fallbackCamera.position.z = Math.cos(elapsed * 0.2) * 15;
+            fallbackCamera.lookAt(0, 1, 0);
+
+            fallbackRenderer.render(fallbackScene, fallbackCamera);
+            updateFpsCounter(performance.now());
+        }
+
+        animate();
+
+        // 7. 處理窗口縮放
+        window.addEventListener('resize', () => {
+            if (fallbackEngineActive && !WZ.Renderer) {
+                fallbackCamera.aspect = window.innerWidth / window.innerHeight;
+                fallbackCamera.updateProjectionMatrix();
+                fallbackRenderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+
+        Logger.success('[兜底引擎] 備用 3D 渲染引擎已成功啟動，畫面已點亮！');
+        state.loadedModules.add('FallbackRenderer');
+        updateDiagnosticBar();
+    }
+
+    /* =========================================================================
+     * 第五部分：UI 事件綁定與大廳切換 (UI Binding & Lobby Transition)
+     * ========================================================================= */
+
+    /**
+     * 綁定大廳按鈕事件
+     */
+    function bindLobbyButtons() {
+        Logger.info('開始綁定大廳按鈕事件...');
+        state.phase = BootPhase.BINDING_UI;
+
+        // 1. 綁定「進入戰區 / DEPLOY」
+        const startBtn = document.getElementById('btn-start-match');
+        if (startBtn) {
+            startBtn.addEventListener('click', () => {
+                Logger.success('玩家點擊了 DEPLOY，準備進入戰鬥！');
+                transitionToCombat();
+            });
+            Logger.success('已綁定按鈕: 進入戰區 / DEPLOY');
+        } else {
+            Logger.warn('找不到按鈕: #btn-start-match');
+        }
+
+        // 2. 綁定「UI 按鍵自定義」
+        const customizeBtn = document.getElementById('btn-customize-ui');
+        if (customizeBtn) {
+            customizeBtn.addEventListener('click', () => {
+                Logger.success('玩家點擊了 UI 按鍵自定義');
+                openCustomizer();
+            });
+            Logger.success('已綁定按鈕: UI 按鍵自定義');
+        } else {
+            Logger.warn('找不到按鈕: #btn-customize-ui');
+        }
+
+        // 3. 綁定「系統設置」
+        const settingsBtn = document.getElementById('btn-settings');
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                Logger.success('玩家點擊了系統設置');
+                openSettings();
+            });
+            Logger.success('已綁定按鈕: 系統設置');
+        } else {
+            Logger.warn('找不到按鈕: #btn-settings');
+        }
+
+        updateDiagnosticBar();
+    }
+
+    /**
+     * 切換到戰鬥狀態
+     */
+    function transitionToCombat() {
+        state.isGameRunning = true;
+
+        // 1. 隱藏大廳
+        const lobby = document.getElementById('lobby-layer');
+        if (lobby) {
+            lobby.style.display = 'none';
+            lobby.style.opacity = '0';
+        }
+
+        // 2. 顯示 HUD
+        const hud = document.getElementById('hud-layer');
+        if (hud) {
+            hud.style.display = 'block';
+            hud.style.opacity = '1';
+        }
+
+        // 3. 顯示 Canvas
+        const canvas = document.getElementById('game-canvas');
+        if (canvas) {
+            canvas.style.visibility = 'visible';
+            canvas.style.opacity = '1';
+            canvas.style.display = 'block';
+        }
+
+        // 4. 啟動官方渲染器 (如果存在且未啟動)
+        if (WZ.Renderer && WZ.Renderer.start && !WZ.Renderer.isRunning) {
+            try {
+                WZ.Renderer.start();
+                Logger.success('官方渲染器已啟動主循環');
+            } catch (e) {
+                Logger.error('官方渲染器啟動失敗', e);
+            }
+        } else if (!WZ.Renderer || !WZ.Renderer.renderer) {
+            // 如果官方渲染器不存在，啟動兜底引擎
+            startFallbackEngine();
+        }
+
+        // 5. 觸發狀態機轉換 (如果存在)
+        if (WZ.State && WZ.State.transitionTo) {
+            try {
+                WZ.State.transitionTo('PLAYING');
+                Logger.success('狀態機已切換至 PLAYING');
+            } catch (e) {
+                Logger.error('狀態機切換失敗', e);
+            }
+        }
+
+        // 6. 廣播全局事件，通知各系統遊戲開始
+        if (WZ.bus && WZ.bus.emit) {
+            WZ.bus.emit('GAME_START');
+            Logger.success('已廣播 GAME_START 事件');
+        }
+
+        // 7. 鎖定橫屏 (簡單的提示，實際由 CSS 控制)
+        const rotateHint = document.getElementById('rotate');
+        if (rotateHint) {
+            rotateHint.style.display = 'none';
+        }
+
+        updateDiagnosticBar();
+    }
+
+    /**
+     * 打開 UI 按鍵自定義 (如果模組不存在，則動態生成簡單的拖拽預覽)
+     */
+    function openCustomizer() {
+        // 如果 WZ.UICustomizer 存在，則調用其方法
+        if (WZ.UICustomizer && WZ.UICustomizer.enable) {
+            try {
+                WZ.UICustomizer.enable();
+                return;
+            } catch (e) {
+                Logger.error('UICustomizer 啟動失敗，使用兜底方案', e);
+            }
+        }
+
+        // 兜底方案：直接在 customizer-layer 中生成預覽按鈕
+        const customizerLayer = document.getElementById('customizer-layer');
+        const workspace = document.getElementById('customizer-workspace');
+        
+        if (!customizerLayer || !workspace) {
+            Logger.warn('找不到自定義層，無法打開編輯器');
+            return;
+        }
+
+        customizerLayer.style.display = 'flex';
+        workspace.innerHTML = ''; // 清空
+
+        // 生成可拖拽的按鈕
+        const buttons = ['FIRE', 'ADS', 'JUMP', 'CROUCH', 'RELOAD'];
+        buttons.forEach((btnName, index) => {
+            const btn = document.createElement('div');
+            btn.innerText = btnName;
+            btn.style.position = 'absolute';
+            btn.style.left = `${20 + index * 15}%`;
+            btn.style.top = `${30 + (index % 2) * 20}%`;
+            btn.style.width = '60px';
+            btn.style.height = '60px';
+            btn.style.borderRadius = '50%';
+            btn.style.backgroundColor = 'rgba(212, 175, 55, 0.3)';
+            btn.style.border = '2px solid #d4af37';
+            btn.style.color = '#fff';
+            btn.style.display = 'flex';
+            btn.style.alignItems = 'center';
+            btn.style.justifyContent = 'center';
+            btn.style.fontSize = '10px';
+            btn.style.fontWeight = 'bold';
+            btn.style.cursor = 'grab';
+            btn.style.userSelect = 'none';
+            btn.style.touchAction = 'none';
+
+            // 實現拖拽
+            let isDragging = false;
+            let startX, startY, startLeft, startTop;
+
+            btn.addEventListener('pointerdown', (e) => {
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                startLeft = btn.offsetLeft;
+                startTop = btn.offsetTop;
+                btn.style.cursor = 'grabbing';
+                e.stopPropagation();
+            });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                btn.style.left = `${startLeft + dx}px`;
+                btn.style.top = `${startTop + dy}px`;
+            });
+
+            window.addEventListener('pointerup', () => {
+                isDragging = false;
+                btn.style.cursor = 'grab';
+            });
+
+            workspace.appendChild(btn);
+        });
+
+        Logger.info('已打開 UI 按鍵自定義 (兜底預覽模式)');
+
+        // 關閉按鈕邏輯
+        const closeBtn = document.getElementById('btn-close-customizer');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                customizerLayer.style.display = 'none';
+            };
+        }
+    }
+
+    /**
+     * 打開系統設置
+     */
+    function openSettings() {
+        const settingsModal = document.getElementById('settings-modal');
+        if (settingsModal) {
+            settingsModal.style.display = 'flex';
+            Logger.info('已打開系統設置面板');
+        } else {
+            Logger.warn('找不到設置面板 DOM');
+        }
+
+        const closeBtn = document.getElementById('btn-close-settings');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                settingsModal.style.display = 'none';
+            };
+        }
+    }
+
+    /* =========================================================================
+     * 第六部分：主啟動生命週期 (Main Lifecycle)
+     * ========================================================================= */
+
+    /**
+     * 啟動管理器
+     */
+    async function boot() {
+        if (state.phase !== BootPhase.IDLE) return;
+        
+        state.startTime = performance.now();
+        Logger.system('==== 開始執行全局啟動引導 ====');
+
+        // 1. 準備階段
+        state.phase = BootPhase.PREPARING;
+        createDiagnosticBar();
+        updateDiagnosticBar();
+
+        // 2. 智能掃描與初始化
+        scanAndInitAllModules();
+
+        // 3. 兜底 3D 渲染檢測 (如果掃描後官方渲染器依然沒啟動)
         setTimeout(() => {
-            bootstrap.start();
-        }, 100);
+            if (!WZ.Renderer || !WZ.Renderer.renderer || !WZ.Renderer.isRunning) {
+                startFallbackEngine();
+            }
+        }, CONFIG.FALLBACK_CHECK_DELAY);
+
+        // 4. 綁定 UI 事件
+        bindLobbyButtons();
+
+        // 5. 最終完成
+        state.phase = BootPhase.READY;
+        updateDiagnosticBar();
+
+        const totalTime = performance.now() - state.startTime;
+        Logger.system(`==== 全局啟動引導完畢，總耗時: ${totalTime.toFixed(2)} ms ====`);
+
+        // 觸發加載完成事件，隱藏進度條
+        if (typeof WZ.UI !== 'undefined' && WZ.UI.hideLoading) {
+            WZ.UI.hideLoading();
+        } else {
+            // 兜底隱藏進度條
+            const loadingLayer = document.getElementById('loading-layer');
+            if (loadingLayer) {
+                loadingLayer.style.opacity = '0';
+                setTimeout(() => {
+                    loadingLayer.style.display = 'none';
+                }, 500);
+            }
+            // 強制顯示大廳
+            const lobbyLayer = document.getElementById('lobby-layer');
+            if (lobbyLayer) {
+                lobbyLayer.style.display = 'flex';
+                lobbyLayer.classList.add('active');
+            }
+        }
+
+        // 6. 啟動狀態監控定時器
+        setInterval(updateDiagnosticBar, CONFIG.STATUS_UPDATE_INTERVAL);
+        
+        // 7. 廣播最終就緒事件
+        if (WZ.bus && WZ.bus.emit) {
+            WZ.bus.emit('BOOTSTRAP_READY', { modules: state.loadedModules.size });
+        }
+    }
+
+    /* =========================================================================
+     * 第七部分：異常監控與防崩潰 (Error Handling & Watchdog)
+     * ========================================================================= */
+
+    // 全局錯誤捕獲
+    window.onerror = function(msg, url, line, col, error) {
+        const errMsg = `${msg} at ${url}:${line}:${col}`;
+        Logger.error(`[全局錯誤] ${errMsg}`, error);
+        
+        // 如果遊戲已就緒，則只記錄不中斷
+        if (state.phase === BootPhase.READY) {
+            return false; // 允許瀏覽器繼續執行
+        }
+
+        // 如果還在啟動階段，顯示錯誤提示
+        showFatalError('啟動過程中發生錯誤', errMsg);
+        return false;
+    };
+
+    window.addEventListener('unhandledrejection', function(event) {
+        Logger.error('[未處理的 Promise 異常]', event.reason);
+    });
+
+    // 心跳監控 (Watchdog)
+    let lastWatchdogCheck = performance.now();
+    function watchdog() {
+        const now = performance.now();
+        const elapsed = now - lastWatchdogCheck;
+        lastWatchdogCheck = now;
+
+        // 如果遊戲正在運行，但 FPS 為 0 持續超過 5 秒，則重啟兜底引擎
+        if (state.isGameRunning && state.fps === 0 && elapsed > 5000) {
+            Logger.warn('[心跳監控] 檢測到渲染卡死，強制重啟兜底引擎！');
+            state.fallbackEngineActive = false;
+            startFallbackEngine();
+        }
+
+        requestAnimationFrame(watchdog);
+    }
+    requestAnimationFrame(watchdog);
+
+    /* =========================================================================
+     * 第八部分：導出與自動執行
+     * ========================================================================= */
+
+    // 掛載到 WZ 命名空間
+    WZ.Bootstrap = {
+        boot: boot,
+        state: state,
+        startFallbackEngine: startFallbackEngine
+    };
+
+    // 雙重保險：確保 DOM 載入完成後執行
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        // 如果已經載入，直接執行
+        setTimeout(boot, 100);
+    } else {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(boot, 100);
+        });
+        
+        // 再等一個 window.load 以防某些資源延遲
+        window.addEventListener('load', () => {
+            if (state.phase === BootPhase.IDLE) {
+                boot();
+            }
+        });
     }
 
     Logger.success('js/37_main_bootstrap.js 已成功載入並掛載至 window.WZ.Bootstrap');
