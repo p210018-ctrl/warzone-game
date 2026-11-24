@@ -3124,3 +3124,955 @@ document.addEventListener('dblclick', function(e) {
 </script>
 </body>
 </html>
+/* ============================================================
+   第三部分：渲染管線、遊戲邏輯收尾與主迴圈
+   ============================================================ */
+
+/* ============================================================
+   全局渲染狀態與矩陣定義
+   ============================================================ */
+var projM = new Float32Array(16);
+var viewM = new Float32Array(16);
+var vpM = new Float32Array(16);
+var aspect = 1;
+var curFov = 72;
+var currentTexBound = null;
+var lastMeshBound = null;
+
+/* ============================================================
+   畫面尺寸調整與事件監聽
+   ============================================================ */
+function resize() {
+  var w = window.innerWidth;
+  var h = window.innerHeight;
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var cw = Math.floor(w * dpr);
+  var chh = Math.floor(h * dpr);
+  
+  if (canvas.width !== cw || canvas.height !== chh) {
+    canvas.width = cw;
+    canvas.height = chh;
+  }
+  
+  gl.viewport(0, 0, cw, chh);
+  aspect = w / h;
+}
+
+window.addEventListener('resize', resize);
+resize();
+
+/* ============================================================
+   WebGL 頂點屬性綁定輔助函數 (完全展開)
+   ============================================================ */
+function bindMeshAttributes(mesh) {
+  // 綁定頂點緩衝區
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+  
+  // 位置 (Pos) - 3 個浮點數
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
+  
+  // 法線 (Normal) - 3 個浮點數，偏移 12 字節
+  gl.enableVertexAttribArray(aNrm);
+  gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12);
+  
+  // 紋理座標 (UV) - 2 個浮點數，偏移 24 字節
+  gl.enableVertexAttribArray(aUV);
+  gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 32, 24);
+  
+  // 綁定索引緩衝區
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
+}
+
+function bindShadowMeshAttributes(mesh) {
+  // 陰影 Pass 只需要位置資訊
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+  gl.enableVertexAttribArray(sAPos);
+  gl.vertexAttribPointer(sAPos, 3, gl.FLOAT, false, 32, 0);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
+}
+
+/* ============================================================
+   遊戲邏輯：場景構建
+   ============================================================ */
+function buildScene() {
+  // 1. 地面
+  var m = mp();
+  setTRS(m, 0, -0.10, 0, 0, 0, 0, GROUND, 0.20, GROUND);
+  pushDraw(m, MESH_BOX, M_GROUND);
+
+  // 2. 遍歷所有障礙物
+  for (var i = 0; i < obstacles.length; i++) {
+    var o = obstacles[i];
+    
+    if (o.type === 'flat') {
+      // 平面物件 (如警戒線)
+      var mf = mp();
+      setTRS(mf, o.x, 0.016, o.z, 0, 0, 0, o.hw * 2, 0.03, o.hd * 2);
+      pushDraw(mf, MESH_BOX, o.mat);
+    } else if (o.type === 'sand') {
+      // 沙袋堆 (由多個球體組成)
+      var layers = o.layers;
+      var perRow = 4;
+      for (var L = 0; L < layers; L++) {
+        var rowW = o.w * (1 - L * 0.06);
+        var rowD = o.d * (1 - L * 0.05);
+        var cnt = perRow - (L % 2);
+        for (var c = 0; c < cnt; c++) {
+          var t = cnt === 1 ? 0.5 : c / (cnt - 1);
+          var bx = o.x - rowW / 2 + t * rowW;
+          var by = L * 0.215 + 0.11;
+          var bz = o.z + (L % 2 ? 0.06 : -0.06);
+          var mm = mp();
+          setTRS(mm, bx, by, bz, 0, (Math.random() - 0.5) * 0.1, 0, 0.20, 0.135, rowD * 0.5);
+          pushDraw(mm, MESH_SPH, M_SANDBAG);
+        }
+      }
+    } else {
+      // 一般方塊障礙物
+      var mm2 = mp();
+      setTRS(mm2, o.x, o.h / 2, o.z, 0, 0, 0, o.hw * 2, o.h, o.hd * 2);
+      pushDraw(mm2, MESH_BOX, o.mat);
+    }
+  }
+
+  // 3. 背景城市建築
+  var blds = [
+    { x: -26, z: -26, w: 8, h: 16, d: 6 },
+    { x: -14, z: -32, w: 9, h: 20, d: 7 },
+    { x: 4, z: -34, w: 11, h: 14, d: 6 },
+    { x: 18, z: -30, w: 8, h: 18, d: 6 },
+    { x: 30, z: -16, w: 6, h: 12, d: 5 },
+    { x: -30, z: 12, w: 6, h: 14, d: 5 },
+    { x: 32, z: 8, w: 7, h: 16, d: 6 }
+  ];
+  
+  for (var b = 0; b < blds.length; b++) {
+    var bd = blds[b];
+    var mb = mp();
+    setTRS(mb, bd.x, bd.h / 2, bd.z, 0, 0, 0, bd.w, bd.h, bd.d);
+    pushDraw(mb, MESH_BOX, M_BRICK);
+
+    // 窗戶
+    var cols = Math.max(2, Math.floor(bd.w / 2.5));
+    var rows = Math.floor(bd.h / 3.5);
+    for (var r = 0; r < rows; r++) {
+      for (var c2 = 0; c2 < cols; c2++) {
+        var wx = bd.x - bd.w / 2 + (c2 + 0.5) * (bd.w / cols);
+        var wy = r * 3.5 + 2.0;
+        var mw = mp();
+        setTRS(mw, wx, wy, bd.z - bd.d / 2 - 0.02, 0, 0, 0, bd.w / cols * 0.5, 1.2, 0.05);
+        pushDraw(mw, MESH_BOX, M_GOGGLE);
+      }
+    }
+  }
+
+  // 4. 外圍圍牆
+  var wallPos = [
+    { x: 0, z: -BOUND - 1.2, w: GROUND + 4, d: 0.6, h: 3.0 },
+    { x: 0, z: BOUND + 1.2, w: GROUND + 4, d: 0.6, h: 3.0 },
+    { x: -BOUND - 1.2, z: 0, w: 0.6, d: GROUND + 4, h: 3.0 },
+    { x: BOUND + 1.2, z: 0, w: 0.6, d: GROUND + 4, h: 3.0 }
+  ];
+  
+  for (var w2 = 0; w2 < wallPos.length; w2++) {
+    var wp = wallPos[w2];
+    var mw2 = mp();
+    setTRS(mw2, wp.x, wp.h / 2, wp.z, 0, 0, 0, wp.w, wp.h, wp.d);
+    pushDraw(mw2, MESH_BOX, M_BRICK);
+  }
+}
+
+/* ============================================================
+   遊戲邏輯：曳光彈與射線檢測
+   ============================================================ */
+function fireTracer(e) {
+  var sx = e.muzzle[0];
+  var sy = e.muzzle[1];
+  var sz = e.muzzle[2];
+  var ex = player.x + (Math.random() - 0.5) * 0.9;
+  var ey = player.y + player.curH * 0.75 + (Math.random() - 0.5) * 0.4;
+  var ez = player.z + (Math.random() - 0.5) * 0.9;
+  var dx = ex - sx;
+  var dy = ey - sy;
+  var dz = ez - sz;
+  var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  
+  if (len < 0.01) return;
+  
+  var yaw = Math.atan2(dx, dz);
+  var pitch = -Math.asin(dy / len);
+  var mx = (sx + ex) / 2;
+  var my = (sy + ey) / 2;
+  var mz = (sz + ez) / 2;
+  
+  setTRS(e.tracerM, mx, my, mz, pitch, yaw, 0, 0.015, 0.015, len);
+  e.tracerT = 0.07;
+}
+
+function rayAABB(ox, oy, oz, dx, dy, dz, minx, miny, minz, maxx, maxy, maxz) {
+  var tmin = 0;
+  var tmax = 1e9;
+  var O = [ox, oy, oz];
+  var D = [dx, dy, dz];
+  var MN = [minx, miny, minz];
+  var MX = [maxx, maxy, maxz];
+  
+  for (var i = 0; i < 3; i++) {
+    if (Math.abs(D[i]) < 1e-7) {
+      if (O[i] < MN[i] || O[i] > MX[i]) return null;
+    } else {
+      var t1 = (MN[i] - O[i]) / D[i];
+      var t2 = (MX[i] - O[i]) / D[i];
+      if (t1 > t2) {
+        var tmp = t1;
+        t1 = t2;
+        t2 = tmp;
+      }
+      if (t1 > tmin) tmin = t1;
+      if (t2 < tmax) tmax = t2;
+      if (tmin > tmax) return null;
+    }
+  }
+  
+  return tmin;
+}
+
+function showHit() {
+  crossEl.classList.add('hit');
+  clearTimeout(showHit._t);
+  showHit._t = setTimeout(function() {
+    crossEl.classList.remove('hit');
+  }, 90);
+}
+
+/* ============================================================
+   遊戲邏輯：玩家開火
+   ============================================================ */
+function playerShoot() {
+  if (reload.active || gun.inspecting) return;
+  
+  if (gun.mag <= 0) {
+    playMagOutSound();
+    startReload();
+    return;
+  }
+  
+  var now = performance.now() / 1000;
+  if (now - gun.lastFire < gun.fireInterval) return;
+  
+  gun.lastFire = now;
+  gun.mag--;
+
+  playGunSound();
+  gun.recoilZVel += 10.0;
+  gun.recoilPitchVel -= 15.0;
+  gun.boltTimer = 0.08;
+  hitFlash = 0.06;
+
+  spawnShell(
+    player.x + Math.cos(player.yaw) * 0.1,
+    player.y + player.curH - 0.1,
+    player.z - Math.sin(player.yaw) * 0.1
+  );
+
+  var cp = Math.cos(player.pitch);
+  var sp = Math.sin(player.pitch);
+  var fx = -Math.sin(player.yaw) * cp;
+  var fy = sp;
+  var fz = -Math.cos(player.yaw) * cp;
+
+  var eyeY = player.y + player.curH;
+  var ox = player.x;
+  var oy = eyeY;
+  var oz = player.z;
+
+  var bestE = null;
+  var bestT = 1e9;
+
+  for (var i = 0; i < enemies.length; i++) {
+    var e = enemies[i];
+    if (!e.alive) continue;
+    var t = rayAABB(
+      ox, oy, oz, fx, fy, fz,
+      e.x - 0.38, 0.0, e.z - 0.38,
+      e.x + 0.38, 2.10, e.z + 0.38
+    );
+    if (t !== null && t < bestT) {
+      bestT = t;
+      bestE = e;
+    }
+  }
+
+  var hitX = 0, hitY = 0, hitZ = 0;
+  var nx = 0, ny = 1, nz = 0;
+  var hitWall = false;
+
+  for (var i = 0; i < obstacles.length; i++) {
+    var o = obstacles[i];
+    if (o.flat) continue;
+    var t = rayAABB(
+      ox, oy, oz, fx, fy, fz,
+      o.x - o.hw, 0, o.z - o.hd,
+      o.x + o.hw, o.h, o.z + o.hd
+    );
+    if (t !== null && t < bestT) {
+      bestT = t;
+      bestE = null;
+      hitWall = true;
+      hitX = ox + fx * t;
+      hitY = oy + fy * t;
+      hitZ = oz + fz * t;
+
+      var d1 = Math.abs(hitX - (o.x - o.hw));
+      var d2 = Math.abs(hitX - (o.x + o.hw));
+      var d3 = Math.abs(hitZ - (o.z - o.hd));
+      var d4 = Math.abs(hitZ - (o.z + o.hd));
+      var d5 = Math.abs(hitY - o.h);
+      var minD = Math.min(d1, d2, d3, d4, d5);
+
+      if (minD === d1) { nx = -1; ny = 0; nz = 0; }
+      else if (minD === d2) { nx = 1; ny = 0; nz = 0; }
+      else if (minD === d3) { nx = 0; ny = 0; nz = -1; }
+      else if (minD === d4) { nx = 0; ny = 0; nz = 1; }
+      else if (minD === d5) { nx = 0; ny = 1; nz = 0; }
+    }
+  }
+
+  if (bestE) {
+    bestE.hp -= 34;
+    bestE.anim.flinch = 1;
+    playHitSound();
+    showHit();
+    spawnParticles(bestE.x, bestE.y + 1.0, bestE.z, -fx, -fy, -fz, 1);
+    if (bestE.hp <= 0) {
+      bestE.alive = false;
+      bestE.respawnT = 3;
+    }
+  } else if (hitWall) {
+    spawnBulletHole(hitX, hitY, hitZ, nx, ny, nz);
+    spawnParticles(hitX, hitY, hitZ, nx, ny, nz, 0);
+  }
+
+  if (gun.mag === 0 && !reload.active && gun.reserve > 0) {
+    startReload();
+  }
+}
+
+/* ============================================================
+   遊戲邏輯：換彈系統
+   ============================================================ */
+function startReload() {
+  if (reload.active || gun.inspecting) return;
+  if (gun.mag >= gun.magSize) return;
+  if (gun.reserve <= 0) return;
+  
+  reload.active = true;
+  reload.t = 0;
+  reload.phase = 0;
+  firing = false;
+  adsHold = false;
+  player.ads = 0;
+  reloadTxtEl.style.display = 'block';
+  playMagOutSound();
+}
+
+function updateReload(dt) {
+  if (gun.inspecting) {
+    gun.inspectT += dt;
+    if (gun.inspectT > 3.5) {
+      gun.inspecting = false;
+      gun.inspectT = 0;
+    }
+    return;
+  }
+  
+  if (!reload.active) {
+    if (reloadTxtEl.style.display !== 'none') {
+      reloadTxtEl.style.display = 'none';
+    }
+    return;
+  }
+  
+  reload.t += dt;
+  var p = reload.t / reload.dur;
+  
+  if (p >= 1) {
+    var need = gun.magSize - gun.mag;
+    var take = Math.min(need, gun.reserve);
+    gun.mag += take;
+    gun.reserve -= take;
+    reload.active = false;
+    reload.t = 0;
+    reload.phase = 0;
+    reloadTxtEl.style.display = 'none';
+    return;
+  }
+  
+  if (reload.phase === 0 && p >= 0.28) {
+    reload.phase = 1;
+    playMagOutSound();
+  } else if (reload.phase === 1 && p >= 0.58) {
+    reload.phase = 2;
+    playMagInSound();
+  } else if (reload.phase === 2 && p >= 0.71) {
+    reload.phase = 3;
+    playBoltSound();
+  }
+}
+
+/* ============================================================
+   遊戲邏輯：玩家更新與碰撞
+   ============================================================ */
+function updatePlayer(dt) {
+  var adsTarget = (adsHold && !reload.active && !player.sliding && player.sprintProg < 0.1 && !gun.inspecting) ? 1 : 0;
+  var adsRes = spring(player.ads, adsTarget, player.adsVel, 420, 32, dt);
+  player.ads = adsRes[0];
+  player.adsVel = adsRes[1];
+
+  var speedNow = Math.sqrt(player.vx * player.vx + player.vz * player.vz);
+  var sprintTarget = (speedNow > 4.5 && !player.sliding && player.ads < 0.2 && !reload.active && !gun.inspecting) ? 1 : 0;
+  var sprRes = spring(player.sprintProg, sprintTarget, player.sprintVel, 160, 22, dt);
+  player.sprintProg = clamp(sprRes[0], 0, 1);
+  player.sprintVel = sprRes[1];
+
+  if (crouchQ) {
+    crouchQ = false;
+    if (player.grounded && !player.sliding && speedNow > 3.0) {
+      player.sliding = true;
+      player.slideT = 0.70;
+    } else {
+      player.crouching = !player.crouching;
+    }
+  }
+
+  if (jumpQ) {
+    jumpQ = false;
+    if (player.grounded) {
+      player.vy = 6.6;
+      player.grounded = false;
+      if (player.sliding) {
+        player.sliding = false;
+        player.slideT = 0;
+      }
+    }
+  }
+
+  if (player.sliding) {
+    player.slideT -= dt;
+    if (player.slideT <= 0) player.sliding = false;
+  }
+
+  var targetH = 1.68;
+  if (player.sliding || player.crouching) targetH = 0.96;
+  player.curH = damp(player.curH, targetH, 0.18, dt);
+
+  var ix = stickX;
+  var iy = stickY;
+  var mag = Math.sqrt(ix * ix + iy * iy);
+  if (mag > 1) {
+    ix /= mag;
+    iy /= mag;
+    mag = 1;
+  }
+
+  var cy = Math.cos(player.yaw);
+  var sy = Math.sin(player.yaw);
+  var fwdX = -sy, fwdZ = -cy;
+  var rgtX = cy, rgtZ = -sy;
+
+  var wx = fwdX * (-iy) + rgtX * ix;
+  var wz = fwdZ * (-iy) + rgtZ * ix;
+
+  var sp = 4.6;
+  if (player.sprintProg > 0.8) sp *= 1.5;
+  if (player.ads > 0.3) sp *= 0.58;
+  if (player.sliding) sp = 8.4;
+  if (reload.active) sp *= 0.6;
+
+  player.vx = damp(player.vx, wx * sp, 0.18, dt);
+  player.vz = damp(player.vz, wz * sp, 0.18, dt);
+
+  if (player.sliding) {
+    player.vx *= (1 - 1.7 * dt);
+    player.vz *= (1 - 1.7 * dt);
+  }
+
+  player.x += player.vx * dt;
+  player.z += player.vz * dt;
+
+  var r = player.radius;
+  for (var i = 0; i < obstacles.length; i++) {
+    var o = obstacles[i];
+    if (o.flat) continue;
+    
+    var ox = clamp(player.x, o.x - o.hw, o.x + o.hw);
+    var oz = clamp(player.z, o.z - o.hd, o.z + o.hd);
+    var dx = player.x - ox;
+    var dz = player.z - oz;
+    var distSq = dx * dx + dz * dz;
+
+    if (distSq < r * r) {
+      var dist = Math.sqrt(distSq);
+      if (dist > 0.0001) {
+        player.x += (dx / dist) * (r - dist);
+        player.z += (dz / dist) * (r - dist);
+      } else {
+        var pushX = (o.hw + r) - Math.abs(player.x - o.x);
+        var pushZ = (o.hd + r) - Math.abs(player.z - o.z);
+        if (pushX < pushZ) {
+          player.x += (player.x > o.x ? 1 : -1) * pushX;
+        } else {
+          player.z += (player.z > o.z ? 1 : -1) * pushZ;
+        }
+      }
+    }
+  }
+
+  if (!player.grounded) {
+    player.vy -= 18 * dt;
+    player.y += player.vy * dt;
+    if (player.y <= 0) {
+      player.y = 0;
+      player.vy = 0;
+      player.grounded = true;
+    }
+  }
+
+  if (player.x < -BOUND + r) player.x = -BOUND + r;
+  if (player.x > BOUND - r) player.x = BOUND - r;
+  if (player.z < -BOUND + r) player.z = -BOUND + r;
+  if (player.z > BOUND - r) player.z = BOUND - r;
+
+  gun.recoilZ = damp(gun.recoilZ, 0, 0.2, dt);
+  gun.recoilPitch = damp(gun.recoilPitch, 0, 0.2, dt);
+  gun.recoilZVel += -gun.recoilZ * 300 * dt;
+  gun.recoilZVel *= Math.exp(-25 * dt);
+  gun.recoilZ += gun.recoilZVel * dt;
+
+  gun.recoilPitchVel += -gun.recoilPitch * 300 * dt;
+  gun.recoilPitchVel *= Math.exp(-25 * dt);
+  gun.recoilPitch += gun.recoilPitchVel * dt;
+
+  if (gun.boltTimer > 0) gun.boltTimer -= dt;
+  if (hitFlash > 0) hitFlash -= dt;
+
+  var cs = 1.0;
+  if (player.ads > 0.8) {
+    crossEl.style.opacity = 0;
+  } else {
+    crossEl.style.opacity = 0.9;
+  }
+  if (player.sprintProg > 0.5) {
+    crossEl.style.transform = 'scale(1.3)';
+  } else {
+    crossEl.style.transform = 'scale(1.0)';
+  }
+
+  if (firing && !reload.active && !gun.inspecting) playerShoot();
+}
+
+/* ============================================================
+   遊戲邏輯：HUD 更新
+   ============================================================ */
+function updateHUD() {
+  var txt = gun.mag + ' / ' + gun.reserve;
+  if (ammoEl.textContent !== txt) {
+    ammoEl.textContent = txt;
+  }
+  if (gun.mag < 8) {
+    if (!ammoEl.classList.contains('low')) {
+      ammoEl.classList.add('low');
+    }
+  } else {
+    if (ammoEl.classList.contains('low')) {
+      ammoEl.classList.remove('low');
+    }
+  }
+}
+
+/* ============================================================
+   渲染管線：陰影 Pass
+   ============================================================ */
+function updateShadowPass() {
+  if (!shadowsEnabled || !shadowProg) return;
+  
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB);
+  gl.viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+  gl.clearColor(1.0, 1.0, 1.0, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  
+  gl.useProgram(shadowProg);
+  gl.uniformMatrix4fv(sULightVP, false, lightVP);
+  
+  gl.disableVertexAttribArray(aNrm);
+  gl.disableVertexAttribArray(aUV);
+  gl.enableVertexAttribArray(sAPos);
+  
+  var lastMeshS = null;
+  
+  for (var i = 0; i < drawCount; i++) {
+    var ds = drawList[i];
+    
+    if (ds.mat.noShadow) continue;
+    
+    if (ds.mesh !== lastMeshS) {
+      bindShadowMeshAttributes(ds.mesh);
+      lastMeshS = ds.mesh;
+    }
+    
+    gl.uniformMatrix4fv(sUModel, false, ds.m);
+    gl.drawElements(gl.TRIANGLES, ds.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+  
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+/* ============================================================
+   渲染管線：主 Pass
+   ============================================================ */
+function renderMainPass(eyeY) {
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0.05, 0.08, 0.12, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  
+  gl.useProgram(prog);
+  
+  var shakeX = (Math.random() - 0.5) * player.shake;
+  var shakeY = (Math.random() - 0.5) * player.shake;
+  var speed = Math.sqrt(player.vx * player.vx + player.vz * player.vz);
+  var bob = Math.sin(player.bob) * 0.018 * Math.min(1, speed / 3);
+  
+  buildView(
+    viewM,
+    player.x + shakeX,
+    eyeY + bob + shakeY,
+    player.z,
+    player.yaw,
+    player.pitch
+  );
+  
+  var targetFov = 72;
+  if (player.ads > 0.5) {
+    targetFov = 50;
+  } else if (speed > 6) {
+    targetFov = 80;
+  }
+  curFov = damp(curFov, targetFov, 0.15, 1 / 60);
+  
+  m4persp(projM, curFov * Math.PI / 180, aspect, 0.05, 190);
+  m4mul(vpM, projM, viewM);
+  
+  gl.uniformMatrix4fv(uVP, false, vpM);
+  gl.uniformMatrix4fv(uLightVPm, false, lightVP);
+  
+  gl.uniform3f(uLightDir, LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_DIR[2]);
+  gl.uniform3f(uLightCol, 1.0, 0.72, 0.42);
+  gl.uniform3f(uAmbient, 0.12, 0.15, 0.20);
+  gl.uniform3f(uCam, player.x, eyeY, player.z);
+  
+  gl.uniform3f(uFogCol, 0.12, 0.16, 0.22);
+  gl.uniform1f(uFogNear, 40.0);
+  gl.uniform1f(uFogFar, 120.0);
+  gl.uniform1f(uToneExp, 1.05);
+  
+  if (shadowsEnabled) {
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, shadowTex);
+    gl.uniform1i(uShadowMap, 1);
+    gl.uniform1f(uShadowOn, 1.0);
+  } else {
+    gl.uniform1f(uShadowOn, 0.0);
+  }
+  
+  gl.enableVertexAttribArray(aPos);
+  gl.enableVertexAttribArray(aNrm);
+  gl.enableVertexAttribArray(aUV);
+  
+  // ------------------------------------------------------------
+  // 第一階段：不透明物體
+  // ------------------------------------------------------------
+  var lastMesh = null;
+  
+  for (var i = 0; i < drawCount; i++) {
+    var d = drawList[i];
+    
+    if (d.mat.blend !== 0) continue;
+    
+    if (d.mesh !== lastMesh) {
+      bindMeshAttributes(d.mesh);
+      lastMesh = d.mesh;
+    }
+    
+    gl.uniformMatrix4fv(uModel, false, d.m);
+    gl.uniform3f(uColor, d.mat.c[0], d.mat.c[1], d.mat.c[2]);
+    gl.uniform1f(uMetal, d.mat.metal);
+    gl.uniform1f(uRough, d.mat.rough);
+    gl.uniform1f(uAlpha, 1.0);
+    gl.uniform2f(uTiling, d.mat.tiling[0], d.mat.tiling[1]);
+    
+    if (d.mat.tex) {
+      if (currentTexBound !== d.mat.tex) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, d.mat.tex);
+        gl.uniform1i(uTex, 0);
+        gl.uniform1f(uUseTex, 1.0);
+        currentTexBound = d.mat.tex;
+      }
+    } else {
+      gl.uniform1f(uUseTex, 0.0);
+      currentTexBound = null;
+    }
+    
+    gl.drawElements(gl.TRIANGLES, d.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+  
+  // ------------------------------------------------------------
+  // 第二階段：透明物體
+  // ------------------------------------------------------------
+  gl.enable(gl.BLEND);
+  gl.depthMask(false);
+  
+  lastMesh = null;
+  
+  for (var i = 0; i < drawCount; i++) {
+    var d = drawList[i];
+    
+    if (d.mat.blend === 0) continue;
+    
+    if (d.mat.blend === 1) {
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    } else {
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    }
+    
+    if (d.mesh !== lastMesh) {
+      bindMeshAttributes(d.mesh);
+      lastMesh = d.mesh;
+    }
+    
+    gl.uniformMatrix4fv(uModel, false, d.m);
+    gl.uniform3f(uColor, d.mat.c[0], d.mat.c[1], d.mat.c[2]);
+    gl.uniform1f(uMetal, d.mat.metal);
+    gl.uniform1f(uRough, d.mat.rough);
+    gl.uniform1f(uAlpha, d.mat.alpha);
+    gl.uniform2f(uTiling, d.mat.tiling[0], d.mat.tiling[1]);
+    
+    if (d.mat.tex) {
+      if (currentTexBound !== d.mat.tex) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, d.mat.tex);
+        gl.uniform1i(uTex, 0);
+        gl.uniform1f(uUseTex, 1.0);
+        currentTexBound = d.mat.tex;
+      }
+    } else {
+      gl.uniform1f(uUseTex, 0.0);
+      currentTexBound = null;
+    }
+    
+    gl.drawElements(gl.TRIANGLES, d.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+  
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  
+  // ------------------------------------------------------------
+  // 第三階段：粒子
+  // ------------------------------------------------------------
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  
+  bindMeshAttributes(MESH_BOX);
+  
+  gl.uniform1f(uUseTex, 0.0);
+  gl.uniform1f(uRough, 0.5);
+  gl.uniform1f(uMetal, 0.0);
+  gl.uniform1f(uAlpha, 1.0);
+  gl.uniform1f(uShadowOn, 0.0);
+  
+  for (var i = 0; i < particles.length; i++) {
+    var p = particles[i];
+    var pm = new Float32Array(16);
+    setTRS(pm, p.x, p.y, p.z, 0, 0, 0, p.size, p.size, p.size);
+    
+    gl.uniformMatrix4fv(uModel, false, pm);
+    
+    if (p.type === 1) {
+      gl.uniform3f(uColor, 1.0, 0.6, 0.1);
+    } else {
+      gl.uniform3f(uColor, 0.3, 0.3, 0.3);
+    }
+    
+    gl.drawElements(gl.TRIANGLES, MESH_BOX.count, gl.UNSIGNED_SHORT, 0);
+  }
+  
+  if (shadowsEnabled) {
+    gl.uniform1f(uShadowOn, 1.0);
+  }
+  
+  // ------------------------------------------------------------
+  // 第四階段：拋出的彈殼
+  // ------------------------------------------------------------
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  
+  bindMeshAttributes(MESH_CYL);
+  
+  gl.uniform3f(uColor, 0.8, 0.65, 0.2);
+  gl.uniform1f(uMetal, 0.8);
+  gl.uniform1f(uRough, 0.3);
+  gl.uniform1f(uUseTex, 0.0);
+  
+  for (var i = 0; i < shells.length; i++) {
+    var s = shells[i];
+    var sm = new Float32Array(16);
+    setTRS(sm, s.x, s.y, s.z, s.rx, s.ry, s.rz, 0.01, 0.03, 0.01);
+    
+    gl.uniformMatrix4fv(uModel, false, sm);
+    gl.drawElements(gl.TRIANGLES, MESH_CYL.count, gl.UNSIGNED_SHORT, 0);
+  }
+  
+  // ------------------------------------------------------------
+  // 第五階段：立體彈孔
+  // ------------------------------------------------------------
+  gl.disable(gl.DEPTH_TEST);
+  
+  bindMeshAttributes(MESH_PLANE);
+  
+  gl.uniform3f(uColor, 0.02, 0.02, 0.02);
+  gl.uniform1f(uAlpha, 0.9);
+  gl.uniform1f(uShadowOn, 0.0);
+  
+  for (var i = 0; i < bulletHoles.length; i++) {
+    gl.uniformMatrix4fv(uModel, false, bulletHoles[i].m);
+    gl.drawElements(gl.TRIANGLES, MESH_PLANE.count, gl.UNSIGNED_SHORT, 0);
+  }
+  
+  gl.enable(gl.DEPTH_TEST);
+  
+  // ------------------------------------------------------------
+  // 第六階段：曳光彈
+  // ------------------------------------------------------------
+  gl.enable(gl.BLEND);
+  gl.depthMask(false);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  
+  bindMeshAttributes(MESH_CYL);
+  
+  for (var k = 0; k < enemies.length; k++) {
+    var e = enemies[k];
+    if (e.tracerT > 0 && e.alive) {
+      gl.uniformMatrix4fv(uModel, false, e.tracerM);
+      gl.uniform3f(uColor, 1.0, 0.85, 0.42);
+      gl.uniform1f(uAlpha, 1.0);
+      gl.uniform1f(uMetal, 0.0);
+      gl.uniform1f(uRough, 0.5);
+      gl.uniform1f(uUseTex, 0.0);
+      gl.drawElements(gl.TRIANGLES, MESH_CYL.count, gl.UNSIGNED_SHORT, 0);
+    }
+  }
+  
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+}
+
+/* ============================================================
+   渲染入口
+   ============================================================ */
+function render(eyeY) {
+  updateShadowPass();
+  renderMainPass(eyeY);
+}
+
+/* ============================================================
+   主遊戲循環
+   ============================================================ */
+var lastT = performance.now();
+var fpsAcc = 0;
+var fpsFrames = 0;
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  
+  var dt = (now - lastT) / 1000;
+  lastT = now;
+  
+  if (dt > 0.05) dt = 0.05;
+  if (dt <= 0) dt = 0.001;
+  
+  var time = now / 1000;
+  
+  updatePlayer(dt);
+  updateReload(dt);
+  updateParticles(dt);
+  updateHUD();
+  
+  player.bob += dt * (Math.sqrt(player.vx * player.vx + player.vz * player.vz) > 5 ? 13 : 8);
+  
+  for (var i = 0; i < enemies.length; i++) {
+    updateEnemy(enemies[i], dt, time);
+    if (enemies[i].tracerT > 0) {
+      enemies[i].tracerT -= dt;
+    }
+  }
+  
+  drawCount = 0;
+  mpReset();
+  
+  buildScene();
+  
+  for (var j = 0; j < enemies.length; j++) {
+    if (enemies[j].alive) {
+      buildSoldier(enemies[j]);
+    }
+  }
+  
+  var eyeY = player.y + player.curH;
+  buildPlayerGun(eyeY);
+  
+  render(eyeY);
+  
+  fpsAcc += dt;
+  fpsFrames++;
+  
+  if (fpsAcc >= 0.5) {
+    var f = Math.round(fpsFrames / fpsAcc);
+    fpsEl.textContent = 'FPS ' + f;
+    fpsAcc = 0;
+    fpsFrames = 0;
+  }
+}
+
+requestAnimationFrame(loop);
+
+/* ============================================================
+   全局事件綁定
+   ============================================================ */
+document.getElementById('reset').addEventListener('click', function(ev) {
+  ev.stopPropagation();
+  
+  initEnemies();
+  
+  gun.mag = 30;
+  gun.reserve = 120;
+  
+  reload.active = false;
+  reload.t = 0;
+  reload.phase = 0;
+  reloadTxtEl.style.display = 'none';
+  
+  gun.inspecting = false;
+  gun.inspectT = 0;
+});
+
+document.addEventListener('gesturestart', function(e) {
+  e.preventDefault();
+});
+
+document.addEventListener('dblclick', function(e) {
+  e.preventDefault();
+}, { passive: false });
+
+})();
+</script>
+</body>
+</html>
