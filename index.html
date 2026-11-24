@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
+    <script>
+window.onerror = function(msg, url, line) {
+  var b = document.getElementById('eb') || document.body.appendChild(Object.assign(document.createElement('div'), {
+    id: 'eb', style: 'position:fixed;top:0;left:0;right:0;z-index:999999;background:rgba(180,0,0,.92);color:#fff;font:12px monospace;padding:10px;max-height:45vh;overflow:auto;'
+  }));
+  b.innerHTML += '<div>❌ <b>' + (url ? url.split('/').pop() : 'HTML') + '</b> (第' + line + '行): ' + msg + '</div>';
+};
+</script>
+
     <!-- ============================================================
          Meta 標籤：全方位行動端與 iOS 防護設定
          ============================================================ -->
