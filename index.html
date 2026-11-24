@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>WZ 戰術 · 寫實曲面重製版</title>
+<title>WZ 戰術 · 現代戰爭重構版</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
   html,body{width:100%;height:100%;overflow:hidden;background:#000;touch-action:none;overscroll-behavior:none;position:fixed}
@@ -15,12 +15,13 @@
   #err{position:fixed;left:0;right:0;bottom:0;z-index:9999;background:rgba(120,0,0,.94);color:#fff;font:12px/1.5 monospace;padding:10px 14px;white-space:pre-wrap;display:none;max-height:40%;overflow:auto}
   #rotate{position:fixed;inset:0;z-index:999;background:#0b0b0d;color:#ddd;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-size:18px;text-align:center;padding:30px}
   @media (orientation:portrait){#rotate{display:flex}}
-  #cross{position:fixed;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;opacity:.9;transition:transform .06s}
+  /* 開鏡時隱藏原十字準心，使用全息鏡內的紅點 */
+  #cross{position:fixed;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;opacity:0.9;transition:opacity .1s, transform .06s;pointer-events:none}
   #cross i{position:absolute;background:#eee;box-shadow:0 0 3px #000;border-radius:1px}
   #cross .h{width:8px;height:2px;top:14px}#cross .hl{left:0}#cross .hr{right:0}
   #cross .v{width:2px;height:8px;left:14px}#cross .vt{top:0}#cross .vb{bottom:0}
   #cross .d{position:absolute;left:13px;top:13px;width:4px;height:4px;border-radius:50%;background:#eee;box-shadow:0 0 4px #000}
-  #cross.hit i{background:#ff3b3b}
+  #cross.hit i{background:#ff3b3b;box-shadow:0 0 8px #ff3b3b}
   #stick{position:fixed;left:calc(24px + env(safe-area-inset-left));bottom:calc(30px + env(safe-area-inset-bottom));width:118px;height:118px;border-radius:50%;border:2px solid rgba(255,255,255,.22);background:rgba(255,255,255,.05);pointer-events:auto;opacity:.75}
   #knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:rgba(255,255,255,.3);border:1px solid rgba(255,255,255,.45)}
   #btns{position:fixed;right:calc(18px + env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:flex-end;gap:8px}
@@ -35,7 +36,6 @@
   #ammo{pointer-events:none;color:#fff;font:700 16px/1 monospace;text-shadow:0 0 8px #000,0 0 3px #000;letter-spacing:.03em;background:rgba(0,0,0,.35);padding:7px 12px;border-radius:6px;border:1px solid rgba(255,255,255,.15)}
   #ammo.low{color:#ff3b3b;animation:pulse .5s infinite}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  #sblack{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .1s;background:radial-gradient(circle at 50% 50%,transparent 26%,rgba(0,0,0,.92) 27%);z-index:9}
   #reloadTxt{position:fixed;left:50%;bottom:calc(120px + env(safe-area-inset-bottom));transform:translateX(-50%);color:#ffc850;font:800 14px/1 -apple-system,sans-serif;text-shadow:0 0 8px #000;display:none;letter-spacing:.1em;z-index:11}
 </style>
 </head>
@@ -51,7 +51,6 @@
     <div class="row"><button class="b ads" id="bAds">ADS</button><button class="b fire" id="bFire">FIRE</button></div>
   </div>
 </div>
-<div id="sblack"></div>
 <div id="reloadTxt">RELOADING</div>
 <div id="rotate"><div style="font-size:56px;transform:rotate(90deg)">📱</div><div style="font-weight:700">請橫置裝置遊玩</div></div>
 <div id="err"></div>
@@ -153,22 +152,16 @@ function mp(){
 }
 function mpReset(){ MI=0; }
 
+/* 彈性阻尼 (Spring) */
+function spring(cur, tgt, vel, stiff, damp, dt){
+  var force = (tgt - cur) * stiff;
+  vel += force * dt;
+  vel *= Math.exp(-damp * dt);
+  cur += vel * dt;
+  return [cur, vel];
+}
 function damp(a,b,rate,dt){ return a+(b-a)*(1-Math.pow(1-rate,dt*60)); }
 function clamp(x,a,b){ return x<a?a:(x>b?b:x); }
-function lerp(a,b,t){ return a+(b-a)*t; }
-function smoothstep(t){ return t*t*(3-2*t); }
-
-function keyframeValue(p, keys){
-  if(p <= keys[0][0]) return keys[0][1];
-  for(var i=0;i<keys.length-1;i++){
-    if(p >= keys[i][0] && p <= keys[i+1][0]){
-      var t = (p - keys[i][0]) / (keys[i+1][0] - keys[i][0] || 1);
-      t = smoothstep(t);
-      return lerp(keys[i][1], keys[i+1][1], t);
-    }
-  }
-  return keys[keys.length-1][1];
-}
 
 /* ============================================================
    WebGL 初始化
@@ -181,9 +174,7 @@ try{
 }catch(e){}
 if(!gl){ showErr('此環境不支援 WebGL。'); return; }
 
-/* ============================================================
-   主頂點著色器
-   ============================================================ */
+/* ---- 著色器 ---- */
 var VS = [
 'attribute vec3 aPos;',
 'attribute vec3 aNrm;',
@@ -205,14 +196,12 @@ var VS = [
 '}'
 ].join('\n');
 
-/* ============================================================
-   主片元著色器（PBR + 陰影 + ACES）
-   ============================================================ */
 var FS = [
 'precision highp float;',
 'uniform vec3 uColor;',
 'uniform float uMetal;',
 'uniform float uRough;',
+'uniform float uAlpha;',
 'uniform sampler2D uTex;',
 'uniform float uUseTex;',
 'uniform vec2 uTiling;',
@@ -247,7 +236,7 @@ var FS = [
 '  float rough = uRough;',
 '  if(uUseTex > 0.5){',
 '    vec4 t = texture2D(uTex, vUV * uTiling);',
-'    albedo = uColor * t.rgb * 1.65;',
+'    albedo = uColor * t.rgb * 1.8;',
 '    rough = clamp(rough * (0.75 + 0.5*t.a), 0.06, 1.0);',
 '  }',
 '  float NdotL = max(dot(N,L), 0.0);',
@@ -260,7 +249,7 @@ var FS = [
 '    sc = sc * 0.5 + 0.5;',
 '    if(sc.x > 0.002 && sc.x < 0.998 && sc.y > 0.002 && sc.y < 0.998 && sc.z < 1.0){',
 '      float d = unpackD(texture2D(uShadowMap, sc.xy));',
-'      float bias = max(0.0018 * (1.0 - NdotL), 0.0005);',
+'      float bias = max(0.0022 * (1.0 - NdotL), 0.0006);',
 '      shadow = (sc.z - bias > d) ? 0.0 : 1.0;',
 '    }',
 '  }',
@@ -272,54 +261,24 @@ var FS = [
 '  float k = (rough+1.0)*(rough+1.0)/8.0;',
 '  float G = (NdotL/(NdotL*(1.0-k)+k)) * (NdotV/(NdotV*(1.0-k)+k));',
 '  vec3 F = F0 + (1.0-F0)*pow(1.0-VdotH, 5.0);',
-'  vec3 spec = D*G*F/(4.0*NdotV*NdotL+0.001) * NdotL * uLightCol * 2.4 * shadow;',
+'  vec3 spec = D*G*F/(4.0*NdotV*NdotL+0.001) * NdotL * uLightCol * 2.8 * shadow;',
 '  vec3 diff = albedo*(1.0-metal)*NdotL*uLightCol * shadow;',
-'  vec3 skyA = vec3(0.40,0.50,0.66);',
-'  vec3 gndA = vec3(0.20,0.19,0.17);',
+'  vec3 skyA = vec3(0.25,0.32,0.45);',
+'  vec3 gndA = vec3(0.10,0.10,0.12);',
 '  vec3 amb = mix(gndA, skyA, 0.5+0.5*N.y) * albedo * (1.0-metal) * uAmbient;',
-'  vec3 envCol = mix(vec3(0.20,0.22,0.26), vec3(0.62,0.68,0.76), 0.5+0.5*N.y);',
+'  vec3 envCol = mix(vec3(0.15,0.18,0.22), vec3(0.45,0.50,0.58), 0.5+0.5*N.y);',
 '  vec3 refl = envCol * (F0 + (1.0-F0)*pow(1.0-NdotV,5.0)) * (1.0-rough*0.85);',
 '  vec3 col = diff + spec + amb + refl*mix(0.35,1.0,metal);',
 '  float d = length(vW-uCam);',
 '  float fog = clamp((d-uFogNear)/(uFogFar-uFogNear), 0.0, 1.0);',
 '  fog = fog*fog*(3.0-2.0*fog);',
-'  col = mix(col, uFogCol, fog*0.9);',
+'  col = mix(col, uFogCol, fog*0.95);',
 '  col = aces(col * uToneExp);',
 '  col = pow(col, vec3(1.0/2.2));',
-'  gl_FragColor = vec4(col, 1.0);',
+'  gl_FragColor = vec4(col, uAlpha);',
 '}'
 ].join('\n');
 
-/* ============================================================
-   槍口火舌專用著色器（Additive Blending）
-   ============================================================ */
-var FLASH_VS = [
-'attribute vec3 aPos;',
-'attribute vec2 aUV;',
-'uniform mat4 uModel;',
-'uniform mat4 uVP;',
-'varying vec2 vUV;',
-'void main(){',
-'  vUV = aUV;',
-'  gl_Position = uVP * uModel * vec4(aPos, 1.0);',
-'}'
-].join('\n');
-
-var FLASH_FS = [
-'precision mediump float;',
-'uniform sampler2D uTex;',
-'uniform float uAlpha;',
-'uniform vec3 uTint;',
-'varying vec2 vUV;',
-'void main(){',
-'  vec4 c = texture2D(uTex, vUV);',
-'  gl_FragColor = vec4(c.rgb * uTint, c.a * uAlpha);',
-'}'
-].join('\n');
-
-/* ============================================================
-   陰影深度著色器
-   ============================================================ */
 var DVS = [
 'attribute vec3 aPos;',
 'uniform mat4 uModel;',
@@ -371,32 +330,10 @@ if(!vsObj || !fsObj) return;
 var prog = linkProg(vsObj,fsObj);
 if(!prog) return;
 
-/* 火舌程序 */
-var flashVsObj = compile(gl.VERTEX_SHADER,FLASH_VS);
-var flashFsObj = compile(gl.FRAGMENT_SHADER,FLASH_FS);
-var flashProg = (flashVsObj && flashFsObj) ? linkProg(flashVsObj, flashFsObj) : null;
-
-var fAPos = -1, fAUV = -1, fUModel = null, fUVP = null, fUTex = null, fUAlpha = null, fUTint = null;
-if(flashProg){
-  gl.useProgram(flashProg);
-  fAPos = gl.getAttribLocation(flashProg, 'aPos');
-  fAUV = gl.getAttribLocation(flashProg, 'aUV');
-  fUModel = gl.getUniformLocation(flashProg, 'uModel');
-  fUVP = gl.getUniformLocation(flashProg, 'uVP');
-  fUTex = gl.getUniformLocation(flashProg, 'uTex');
-  fUAlpha = gl.getUniformLocation(flashProg, 'uAlpha');
-  fUTint = gl.getUniformLocation(flashProg, 'uTint');
-  gl.useProgram(prog);
-}
-
-/* 陰影程序 */
 var dvsObj = compile(gl.VERTEX_SHADER,DVS);
 var dfsObj = compile(gl.FRAGMENT_SHADER,DFS);
 var shadowProg = (dvsObj && dfsObj) ? linkProg(dvsObj,dfsObj) : null;
 
-/* ============================================================
-   主程式 attribute / uniform
-   ============================================================ */
 gl.useProgram(prog);
 var aPos = gl.getAttribLocation(prog,'aPos');
 var aNrm = gl.getAttribLocation(prog,'aNrm');
@@ -407,6 +344,7 @@ var uLightVPm = gl.getUniformLocation(prog,'uLightVP');
 var uColor = gl.getUniformLocation(prog,'uColor');
 var uMetal = gl.getUniformLocation(prog,'uMetal');
 var uRough = gl.getUniformLocation(prog,'uRough');
+var uAlpha = gl.getUniformLocation(prog,'uAlpha');
 var uTex = gl.getUniformLocation(prog,'uTex');
 var uUseTex = gl.getUniformLocation(prog,'uUseTex');
 var uTiling = gl.getUniformLocation(prog,'uTiling');
@@ -421,7 +359,6 @@ var uToneExp = gl.getUniformLocation(prog,'uToneExp');
 var uShadowMap = gl.getUniformLocation(prog,'uShadowMap');
 var uShadowOn = gl.getUniformLocation(prog,'uShadowOn');
 
-/* 陰影程式 attribute/uniform */
 var sAPos = -1, sUModel = null, sULightVP = null;
 if(shadowProg){
   gl.useProgram(shadowProg);
@@ -435,10 +372,10 @@ gl.enable(gl.DEPTH_TEST);
 gl.depthFunc(gl.LEQUAL);
 gl.enable(gl.CULL_FACE);
 gl.cullFace(gl.BACK);
-gl.clearColor(0.68,0.72,0.78,1);
+gl.clearColor(0.05,0.08,0.12,1); // 深沉夜幕
 
 /* ============================================================
-   幾何網格庫（交錯式：pos3 + nrm3 + uv2 = 8 floats）
+   幾何網格庫
    ============================================================ */
 function newMeshData(){ return {v:[], i:[]}; }
 function pushVert(d,px,py,pz,nx,ny,nz,u,v){
@@ -530,37 +467,25 @@ function makeSphereMesh(latSeg, lonSeg, latMax){
   return buildMesh(d);
 }
 
-/* 槍口火舌交叉平面網格：5 個繞 Z 旋轉的平面 */
-function makeFlashCrossMesh(){
+function makePlaneMesh(){
   var d = newMeshData();
-  var angles = [0, Math.PI/3, -Math.PI/3, Math.PI/2, -Math.PI/2];
-  for(var ai = 0; ai < angles.length; ai++){
-    var rot = angles[ai];
-    var c = Math.cos(rot), s = Math.sin(rot);
-    var pts = [[-0.5,-0.5],[0.5,-0.5],[0.5,0.5],[-0.5,0.5]];
-    var base = d.v.length / 8;
-    for(var k=0; k<4; k++){
-      var px = pts[k][0]*c - pts[k][1]*s;
-      var py = pts[k][0]*s + pts[k][1]*c;
-      var u = (k===1||k===2) ? 1 : 0;
-      var v = (k>=2) ? 0 : 1;
-      pushVert(d, px, py, 0, 0, 0, 1, u, v);
-    }
-    d.i.push(base, base+1, base+2, base, base+2, base+3);
-  }
+  pushVert(d, -0.5,0, 0.5, 0,1,0, 0,1);
+  pushVert(d,  0.5,0, 0.5, 0,1,0, 1,1);
+  pushVert(d,  0.5,0,-0.5, 0,1,0, 1,0);
+  pushVert(d, -0.5,0,-0.5, 0,1,0, 0,0);
+  d.i.push(0,1,2, 0,2,3);
   return buildMesh(d);
 }
 
 var MESH_BOX  = makeBoxMesh();
 var MESH_CYL  = makeCylinderMesh(18);
 var MESH_CYL8 = makeCylinderMesh(10);
-var MESH_CYL24 = makeCylinderMesh(24);
 var MESH_SPH  = makeSphereMesh(14,18);
 var MESH_DOME = makeSphereMesh(8,18,Math.PI*0.56);
-var MESH_FLASH = makeFlashCrossMesh();
+var MESH_PLANE= makePlaneMesh();
 
 /* ============================================================
-   程序化紋理（Canvas 512 / 128）
+   程序化紋理（Canvas 512）
    ============================================================ */
 function makeTexFromCanvas(cv){
   var tex = gl.createTexture();
@@ -575,326 +500,223 @@ function makeTexFromCanvas(cv){
   return tex;
 }
 
-function makeGroundCanvas(){
+/* 深色混凝土磚牆 */
+function makeBrickCanvas(){
   var s = 512;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
   var x = cv.getContext('2d');
-  x.fillStyle = '#4c4f4a';
+  x.fillStyle = '#2b2b2b';
   x.fillRect(0,0,s,s);
-  var img = x.getImageData(0,0,s,s);
-  var d = img.data;
-  for(var i=0;i<d.length;i+=4){
-    var n = (Math.random()-0.5)*52;
-    d[i]   = Math.max(0,Math.min(255,d[i]+n));
-    d[i+1] = Math.max(0,Math.min(255,d[i+1]+n*0.95));
-    d[i+2] = Math.max(0,Math.min(255,d[i+2]+n*0.85));
-  }
-  x.putImageData(img,0,0);
-  x.strokeStyle = 'rgba(16,16,15,0.62)';
-  x.lineWidth = 1;
-  for(var k=0;k<24;k++){
-    x.beginPath();
-    var sx = Math.random()*s, sy = Math.random()*s;
-    x.moveTo(sx,sy);
-    for(var j=0;j<8;j++){
-      sx += (Math.random()-0.5)*90;
-      sy += (Math.random()-0.5)*90;
-      x.lineTo(sx,sy);
-    }
-    x.stroke();
-  }
-  x.fillStyle = 'rgba(0,0,0,0.30)';
-  for(var k2=0;k2<520;k2++){
-    x.beginPath();
-    x.arc(Math.random()*s, Math.random()*s, Math.random()*2.2+0.4, 0, 6.283);
-    x.fill();
-  }
-  x.fillStyle = 'rgba(160,140,105,0.10)';
-  for(var k3=0;k3<40;k3++){
-    x.beginPath();
-    x.arc(Math.random()*s, Math.random()*s, Math.random()*38+8, 0, 6.283);
-    x.fill();
-  }
-  x.fillStyle = 'rgba(255,255,255,0.05)';
-  for(var k4=0;k4<200;k4++){
-    x.fillRect(Math.random()*s, Math.random()*s, 2, 2);
-  }
-  return cv;
-}
-
-function makeConcreteCanvas(){
-  var s = 512;
-  var cv = document.createElement('canvas'); cv.width = cv.height = s;
-  var x = cv.getContext('2d');
-  x.fillStyle = '#6a6a63';
-  x.fillRect(0,0,s,s);
-  var img = x.getImageData(0,0,s,s);
-  var d = img.data;
-  for(var i=0;i<d.length;i+=4){
-    var n = (Math.random()-0.5)*40;
-    d[i]   = Math.max(0,Math.min(255,d[i]+n));
-    d[i+1] = Math.max(0,Math.min(255,d[i+1]+n));
-    d[i+2] = Math.max(0,Math.min(255,d[i+2]+n*0.92));
-  }
-  x.putImageData(img,0,0);
-  x.strokeStyle = 'rgba(26,26,24,0.32)';
-  for(var k=0;k<14;k++){
-    x.lineWidth = 1 + Math.random()*1.8;
-    x.beginPath();
-    var sx = Math.random()*s, sy = Math.random()*s;
-    x.moveTo(sx,sy);
-    for(var j=0;j<7;j++){
-      sx += (Math.random()-0.5)*70;
-      sy += (Math.random()-0.5)*70;
-      x.lineTo(sx,sy);
-    }
-    x.stroke();
-  }
-  x.fillStyle = 'rgba(12,12,12,0.68)';
-  for(var k2=0;k2<22;k2++){
-    x.beginPath();
-    x.arc(Math.random()*s, Math.random()*s, Math.random()*3.4+1.2, 0, 6.283);
-    x.fill();
-  }
-  x.fillStyle = 'rgba(255,255,255,0.06)';
-  for(var k3=0;k3<380;k3++){
-    x.fillRect(Math.random()*s, Math.random()*s, 1, 1);
-  }
-  return cv;
-}
-
-function makeSandbagCanvas(){
-  var s = 512;
-  var cv = document.createElement('canvas'); cv.width = cv.height = s;
-  var x = cv.getContext('2d');
-  x.fillStyle = '#8a7650';
-  x.fillRect(0,0,s,s);
-  for(var row=0;row<8;row++){
-    for(var col=0;col<8;col++){
-      var bx = col*64 + (row%2?32:0);
-      var by = row*64;
-      var g = x.createLinearGradient(bx, by, bx, by+64);
-      g.addColorStop(0,'rgba(150,132,95,0.92)');
-      g.addColorStop(0.5,'rgba(128,110,78,0.92)');
-      g.addColorStop(1,'rgba(96,82,56,0.92)');
-      x.fillStyle = g;
+  var bw = 128, bh = 64;
+  for(var row=0; row<8; row++){
+    for(var col=0; col<5; col++){
+      var bx = col*bw + (row%2 ? bw/2 : 0);
+      var by = row*bh;
+      x.fillStyle = (Math.random()>0.5) ? '#3a3a3a' : '#353535';
+      x.fillRect(bx+2, by+2, bw-4, bh-4);
+      // 風化污漬
+      x.fillStyle = 'rgba(0,0,0,'+(0.1+Math.random()*0.2)+')';
       x.beginPath();
-      x.moveTo(bx+4, by+34);
-      x.quadraticCurveTo(bx+32, by+2, bx+60, by+34);
-      x.quadraticCurveTo(bx+32, by+62, bx+4, by+34);
-      x.fill();
-      x.strokeStyle = 'rgba(66,54,34,0.85)';
-      x.lineWidth = 2;
-      x.stroke();
-      x.fillStyle = 'rgba(180,162,120,0.22)';
-      x.beginPath();
-      x.ellipse(bx+26, by+24, 14, 7, -0.3, 0, 6.283);
+      x.arc(bx+bw/2, by+bh/2, 20+Math.random()*20, 0, 6.283);
       x.fill();
     }
   }
-  var img = x.getImageData(0,0,s,s);
-  var d = img.data;
-  for(var i=0;i<d.length;i+=4){
-    var n = (Math.random()-0.5)*24;
-    d[i]   = Math.max(0,Math.min(255,d[i]+n));
-    d[i+1] = Math.max(0,Math.min(255,d[i+1]+n));
-    d[i+2] = Math.max(0,Math.min(255,d[i+2]+n*0.9));
+  // 雨水漬
+  x.fillStyle = 'rgba(10,10,10,0.4)';
+  for(var i=0;i<30;i++){
+    x.fillRect(Math.random()*s, 0, 2+Math.random()*8, s);
   }
-  x.putImageData(img,0,0);
   return cv;
 }
 
-function makeWoodCanvas(){
+/* 深色柏油地面 */
+function makeAsphaltCanvas(){
   var s = 512;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
   var x = cv.getContext('2d');
-  x.fillStyle = '#6b4f32';
+  x.fillStyle = '#1a1c1f';
   x.fillRect(0,0,s,s);
-  for(var p=0;p<8;p++){
-    var y0 = p*64;
-    var g = x.createLinearGradient(0,y0,0,y0+64);
-    g.addColorStop(0,'rgba(120,90,58,1)');
-    g.addColorStop(0.5,'rgba(96,70,44,1)');
-    g.addColorStop(1,'rgba(76,55,34,1)');
-    x.fillStyle = g;
-    x.fillRect(0,y0+2,s,60);
-    x.strokeStyle = 'rgba(38,26,16,0.85)';
-    x.lineWidth = 3;
-    x.beginPath(); x.moveTo(0,y0); x.lineTo(s,y0); x.stroke();
-    x.strokeStyle = 'rgba(52,36,22,0.45)';
-    x.lineWidth = 1;
-    for(var l=0;l<14;l++){
-      x.beginPath();
-      var yy = y0 + 6 + Math.random()*50;
-      x.moveTo(0,yy);
-      for(var q=1;q<=8;q++) x.lineTo(q*s/8, yy + (Math.random()-0.5)*4);
-      x.stroke();
-    }
-  }
+  // 輪胎印
+  x.strokeStyle = 'rgba(0,0,0,0.5)';
+  x.lineWidth = 20;
+  x.beginPath(); x.moveTo(-50,100); x.lineTo(s+50, 180); x.stroke();
+  x.beginPath(); x.moveTo(-50,200); x.lineTo(s+50, 280); x.stroke();
+  // 顆粒
   var img = x.getImageData(0,0,s,s);
   var d = img.data;
   for(var i=0;i<d.length;i+=4){
-    var n = (Math.random()-0.5)*20;
-    d[i]   = Math.max(0,Math.min(255,d[i]+n));
-    d[i+1] = Math.max(0,Math.min(255,d[i+1]+n*0.9));
-    d[i+2] = Math.max(0,Math.min(255,d[i+2]+n*0.8));
-  }
-  x.putImageData(img,0,0);
-  return cv;
-}
-
-function makeRustCanvas(){
-  var s = 512;
-  var cv = document.createElement('canvas'); cv.width = cv.height = s;
-  var x = cv.getContext('2d');
-  x.fillStyle = '#6d7074';
-  x.fillRect(0,0,s,s);
-  var img = x.getImageData(0,0,s,s);
-  var d = img.data;
-  for(var i=0;i<d.length;i+=4){
-    var n = (Math.random()-0.5)*26;
+    var n = (Math.random()-0.5)*30;
     d[i]   = Math.max(0,Math.min(255,d[i]+n));
     d[i+1] = Math.max(0,Math.min(255,d[i+1]+n));
     d[i+2] = Math.max(0,Math.min(255,d[i+2]+n));
   }
   x.putImageData(img,0,0);
-  for(var k=0;k<70;k++){
-    var cx = Math.random()*s, cy = Math.random()*s;
-    var rr = Math.random()*60+10;
-    var g = x.createRadialGradient(cx,cy,0,cx,cy,rr);
-    g.addColorStop(0,'rgba(122,64,26,0.55)');
-    g.addColorStop(0.6,'rgba(96,52,22,0.28)');
-    g.addColorStop(1,'rgba(96,52,22,0)');
-    x.fillStyle = g;
-    x.beginPath(); x.arc(cx,cy,rr,0,6.283); x.fill();
+  // 裂縫
+  x.strokeStyle = 'rgba(0,0,0,0.8)';
+  x.lineWidth = 2;
+  for(var k=0;k<15;k++){
+    x.beginPath();
+    var sx = Math.random()*s, sy = Math.random()*s;
+    x.moveTo(sx,sy);
+    for(var j=0;j<6;j++){
+      sx += (Math.random()-0.5)*80;
+      sy += (Math.random()-0.5)*80;
+      x.lineTo(sx,sy);
+    }
+    x.stroke();
   }
-  x.fillStyle = 'rgba(20,20,20,0.35)';
-  for(var k2=0;k2<300;k2++){
-    x.fillRect(Math.random()*s, Math.random()*s, 2, 2);
+  // 戰術警示條紋
+  x.fillStyle = '#b8960c';
+  x.fillRect(0, 400, s, 40);
+  x.fillStyle = '#111';
+  for(var j=0;j<10;j++){
+    x.beginPath();
+    x.moveTo(j*60, 440);
+    x.lineTo(j*60+30, 400);
+    x.lineTo(j*60+60, 400);
+    x.lineTo(j*60+30, 440);
+    x.fill();
   }
   return cv;
 }
 
-/* 槍口火舌專用紋理（128x128，橘黃放射星形漸層，透明背景） */
-function makeFlashCanvas(){
-  var s = 128;
+/* 深色木紋 */
+function makeWoodCanvas(){
+  var s = 512;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
   var x = cv.getContext('2d');
-  x.clearRect(0, 0, s, s);
-  var cx = s/2, cy = s/2;
-
-  var g = x.createRadialGradient(cx, cy, 0, cx, cy, s/2);
-  g.addColorStop(0,   'rgba(255, 255, 230, 1)');
-  g.addColorStop(0.15,'rgba(255, 235, 160, 0.95)');
-  g.addColorStop(0.35,'rgba(255, 180, 60, 0.70)');
-  g.addColorStop(0.65,'rgba(255, 110, 20, 0.30)');
-  g.addColorStop(1,   'rgba(255, 60, 0, 0)');
-  x.fillStyle = g;
-  x.fillRect(0, 0, s, s);
-
-  /* 放射尖刺（8 道） */
-  for(var i=0; i<8; i++){
-    var a = (i / 8) * Math.PI * 2;
-    x.save();
-    x.translate(cx, cy);
-    x.rotate(a);
-    var sg = x.createLinearGradient(0, 0, 0, -62);
-    sg.addColorStop(0, 'rgba(255, 235, 150, 0.85)');
-    sg.addColorStop(0.5,'rgba(255, 160, 40, 0.45)');
-    sg.addColorStop(1, 'rgba(255, 90, 0, 0)');
-    x.fillStyle = sg;
-    x.beginPath();
-    x.moveTo(-6, 0);
-    x.lineTo(0, -62);
-    x.lineTo(6, 0);
-    x.closePath();
-    x.fill();
-    x.restore();
+  x.fillStyle = '#3b2a1c';
+  x.fillRect(0,0,s,s);
+  for(var p=0;p<8;p++){
+    var y0 = p*64;
+    x.fillStyle = (p%2===0) ? '#422f1f' : '#362619';
+    x.fillRect(0,y0+2,s,60);
+    x.strokeStyle = 'rgba(0,0,0,0.6)';
+    x.lineWidth = 2;
+    x.beginPath(); x.moveTo(0,y0); x.lineTo(s,y0); x.stroke();
+    // 木紋
+    x.strokeStyle = 'rgba(0,0,0,0.2)';
+    x.lineWidth = 1;
+    for(var l=0;l<10;l++){
+      x.beginPath();
+      var yy = y0 + 8 + Math.random()*48;
+      x.moveTo(0,yy);
+      for(var q=1;q<=8;q++) x.lineTo(q*s/8, yy + (Math.random()-0.5)*6);
+      x.stroke();
+    }
   }
-
-  /* 細小尖刺（12 道） */
-  for(var i=0; i<12; i++){
-    var a = (i / 12) * Math.PI * 2 + 0.13;
-    x.save();
-    x.translate(cx, cy);
-    x.rotate(a);
-    x.fillStyle = 'rgba(255, 210, 110, ' + (0.30 + Math.random()*0.25) + ')';
-    x.beginPath();
-    x.moveTo(-3, 0);
-    x.lineTo(0, -42 - Math.random()*15);
-    x.lineTo(3, 0);
-    x.closePath();
-    x.fill();
-    x.restore();
-  }
-
   return cv;
 }
 
-var texGround   = makeTexFromCanvas(makeGroundCanvas());
-var texConcrete = makeTexFromCanvas(makeConcreteCanvas());
-var texSandbag  = makeTexFromCanvas(makeSandbagCanvas());
-var texWood     = makeTexFromCanvas(makeWoodCanvas());
-var texRust     = makeTexFromCanvas(makeRustCanvas());
-var texFlash    = makeTexFromCanvas(makeFlashCanvas());
-
-/* ============================================================
-   材質
-   ============================================================ */
-function makeMat(c,metal,rough,tex,tiling){
-  return {c:c, metal:metal, rough:rough, tex:tex||null, tiling:tiling||[1,1]};
+/* 深軍綠帆布沙袋 */
+function makeSandbagCanvas(){
+  var s = 512;
+  var cv = document.createElement('canvas'); cv.width = cv.height = s;
+  var x = cv.getContext('2d');
+  x.fillStyle = '#3c4234';
+  x.fillRect(0,0,s,s);
+  for(var row=0;row<8;row++){
+    for(var col=0;col<8;col++){
+      var bx = col*64 + (row%2?32:0);
+      var by = row*64;
+      x.fillStyle = 'rgba(45,50,40,0.9)';
+      x.beginPath();
+      x.ellipse(bx+32, by+32, 30, 20, 0, 0, 6.283);
+      x.fill();
+      x.strokeStyle = 'rgba(20,25,15,0.8)';
+      x.lineWidth = 2;
+      x.stroke();
+      // 粗糙褶皺
+      x.strokeStyle = 'rgba(80,90,70,0.3)';
+      x.beginPath();
+      x.moveTo(bx+10, by+20);
+      x.quadraticCurveTo(bx+30, by+40, bx+50, by+25);
+      x.stroke();
+    }
+  }
+  return cv;
 }
 
-var M_GROUND   = makeMat([1.0,1.0,1.0], 0.00, 0.94, texGround,  [14,14]);
-var M_CONCRETE = makeMat([1.0,1.0,1.0], 0.05, 0.88, texConcrete,[2,2]);
-var M_CONC2    = makeMat([0.95,0.95,0.92],0.05,0.88, texConcrete,[1,1]);
-var M_SANDBAG  = makeMat([1.0,1.0,1.0], 0.00, 0.93, texSandbag, [1,1]);
-var M_WOOD     = makeMat([1.0,1.0,1.0], 0.02, 0.86, texWood,    [1,1]);
-var M_BARREL   = makeMat([1.0,1.0,1.0], 0.70, 0.42, texRust,    [1,1]);
-var M_CAMO     = makeMat([0.255,0.285,0.225],0.02,0.86,null,null);
-var M_CAMO2    = makeMat([0.205,0.235,0.185],0.02,0.86,null,null);
-var M_VEST     = makeMat([0.165,0.180,0.145],0.10,0.80,null,null);
-var M_HELMET   = makeMat([0.125,0.145,0.120],0.55,0.44,null,null);
-var M_SKIN     = makeMat([0.560,0.455,0.360],0.00,0.70,null,null);
-var M_GOGGLE   = makeMat([0.150,0.260,0.340],0.88,0.12,null,null);
-var M_BOOT     = makeMat([0.085,0.078,0.070],0.10,0.82,null,null);
-var M_GLOVE    = makeMat([0.115,0.108,0.092],0.14,0.76,null,null);
-var M_GLOVE_L  = makeMat([0.185,0.170,0.145],0.12,0.78,null,null);
-var M_GUN_BLK  = makeMat([0.075,0.082,0.092],0.86,0.26,null,null);
-var M_GUN_SAND = makeMat([0.500,0.430,0.310],0.35,0.60,null,null);
-var M_GUN_POLY = makeMat([0.130,0.138,0.148],0.72,0.42,null,null);
-var M_GUN_MET  = makeMat([0.300,0.315,0.330],0.92,0.24,null,null);
-var M_GUN_DARK = makeMat([0.040,0.042,0.048],0.88,0.22,null,null);
-var M_RED_DOT  = makeMat([1.000,0.120,0.060],0.30,0.25,null,null);
-var M_RED_RING = makeMat([1.000,0.180,0.080],0.30,0.15,null,null);
-var M_TRACER   = makeMat([1.000,0.870,0.450],0.00,0.45,null,null);
-var M_SHADOW   = makeMat([0.060,0.070,0.060],0.00,1.00,null,null);
-var M_YELLOW   = makeMat([0.780,0.650,0.090],0.10,0.72,null,null);
-var M_BLACKLN  = makeMat([0.045,0.045,0.045],0.10,0.78,null,null);
-var M_BUILDING = makeMat([0.520,0.500,0.470],0.05,0.82,null,null);
-var M_BUILDING2= makeMat([0.430,0.420,0.400],0.05,0.84,null,null);
-var M_WINDOW   = makeMat([0.120,0.170,0.220],0.90,0.12,null,null);
-var M_METAL_GRY= makeMat([0.300,0.310,0.320],0.80,0.38,null,null);
-var M_RADIO    = makeMat([0.100,0.110,0.095],0.30,0.55,null,null);
-var M_RADIO_ANT= makeMat([0.020,0.020,0.020],0.20,0.60,null,null);
-var M_HOLSTER  = makeMat([0.075,0.070,0.060],0.10,0.82,null,null);
-var M_WATCH    = makeMat([0.100,0.110,0.120],0.70,0.28,null,null);
-var M_CARBON   = makeMat([0.080,0.085,0.090],0.50,0.45,null,null);
+/* 深迷彩作戰服 */
+function makeCamoCanvas(){
+  var s = 512;
+  var cv = document.createElement('canvas'); cv.width = cv.height = s;
+  var x = cv.getContext('2d');
+  x.fillStyle = '#2d3325'; // 深底
+  x.fillRect(0,0,s,s);
+  var colors = ['#1a1f16', '#3a4230', '#4b5341', '#161911'];
+  for(var i=0;i<120;i++){
+    x.fillStyle = colors[Math.floor(Math.random()*colors.length)];
+    x.beginPath();
+    var cx = Math.random()*s, cy = Math.random()*s;
+    var r = 15 + Math.random()*45;
+    x.moveTo(cx + r, cy);
+    for(var a=1; a<=6; a++){
+      var th = a/6 * Math.PI*2;
+      var rr = r * (0.5 + Math.random()*0.5);
+      x.lineTo(cx + Math.cos(th)*rr, cy + Math.sin(th)*rr);
+    }
+    x.fill();
+  }
+  return cv;
+}
+
+var texBrick   = makeTexFromCanvas(makeBrickCanvas());
+var texAsphalt = makeTexFromCanvas(makeAsphaltCanvas());
+var texWood    = makeTexFromCanvas(makeWoodCanvas());
+var texSandbag = makeTexFromCanvas(makeSandbagCanvas());
+var texCamo    = makeTexFromCanvas(makeCamoCanvas());
+
+/* ============================================================
+   材質系統
+   ============================================================ */
+function makeMat(c,metal,rough,tex,tiling,alpha,blend,noShadow){
+  return {
+    c:c, metal:metal, rough:rough,
+    tex:tex||null, tiling:tiling||[1,1],
+    alpha:(alpha!==undefined)?alpha:1.0,
+    blend:(blend!==undefined)?blend:0, // 0=none, 1=additive, 2=alpha
+    noShadow:!!noShadow
+  };
+}
+
+var M_GROUND   = makeMat([1.0,1.0,1.0], 0.00, 0.94, texAsphalt,  [12,12]);
+var M_BRICK    = makeMat([1.0,1.0,1.0], 0.05, 0.88, texBrick,    [2,2]);
+var M_BRICK2   = makeMat([0.9,0.9,0.9], 0.05, 0.88, texBrick,    [1,1]);
+var M_WOOD     = makeMat([1.0,1.0,1.0], 0.02, 0.86, texWood,     [1,1]);
+var M_SANDBAG  = makeMat([1.0,1.0,1.0], 0.00, 0.95, texSandbag,  [1,1]);
+var M_CAMO     = makeMat([1.0,1.0,1.0], 0.02, 0.86, texCamo,     [1,1]);
+var M_VEST     = makeMat([0.12,0.14,0.10],0.10,0.80,null,null);
+var M_HELMET   = makeMat([0.09,0.11,0.08],0.55,0.45,null,null);
+var M_SKIN     = makeMat([0.45,0.35,0.28],0.00,0.70,null,null);
+var M_GOGGLE   = makeMat([0.10,0.20,0.30],0.90,0.10,null,null);
+var M_BOOT     = makeMat([0.06,0.06,0.05],0.10,0.82,null,null);
+var M_GLOVE    = makeMat([0.08,0.08,0.07],0.14,0.76,null,null);
+
+var M_GUN_BLK  = makeMat([0.06,0.07,0.08],0.86,0.26,null,null);
+var M_GUN_SAND = makeMat([0.40,0.35,0.25],0.35,0.55,null,null);
+var M_GUN_POLY = makeMat([0.10,0.11,0.12],0.72,0.42,null,null);
+var M_GUN_MET  = makeMat([0.25,0.26,0.28],0.92,0.24,null,null);
+
+var M_SHADOW   = makeMat([0.00,0.00,0.00],0.00,1.00,null,null,0.5,2,true);
+var M_TRACER   = makeMat([1.00,0.80,0.40],0.00,0.45,null,null,1.0,1,true);
+var M_FLASH    = makeMat([1.00,0.85,0.50],0.00,0.35,null,null,1.0,1,true);
+var M_RED_DOT  = makeMat([1.00,0.10,0.05],0.00,0.20,null,null,1.0,1,true);
+var M_GLASS    = makeMat([0.30,0.60,0.80],0.80,0.10,null,null,0.12,2,true);
+var M_SHELL    = makeMat([0.80,0.65,0.20],0.80,0.30,null,null);
+var M_BULLET_HOLE = makeMat([0.02,0.02,0.02],0.00,0.90,null,null,0.9,2,true);
 
 /* ============================================================
    繪製列表
    ============================================================ */
 var drawList = [];
 var drawCount = 0;
-function pushDraw(m, mesh, mat, noShadow, additive, alpha){
+function pushDraw(m,mesh,mat){
   var d = drawList[drawCount];
-  if(!d){ d = {m:new Float32Array(16),mesh:null,mat:null,noShadow:false,additive:false,alpha:1}; drawList[drawCount]=d; }
+  if(!d){ d = {m:new Float32Array(16),mesh:null,mat:null}; drawList[drawCount]=d; }
   d.m.set(m);
   d.mesh = mesh;
   d.mat = mat;
-  d.noShadow = !!noShadow;
-  d.additive = !!additive;
-  d.alpha = alpha || 1;
   drawCount++;
 }
 
@@ -935,7 +757,7 @@ var shadowTex = null, shadowFB = null, shadowsEnabled = false;
 var lightView = new Float32Array(16);
 var lightProj = new Float32Array(16);
 var lightVP   = new Float32Array(16);
-var LIGHT_DIR = [0.46, 0.76, 0.44];
+var LIGHT_DIR = [0.6, 0.8, 0.4]; // 斜射夕陽
 
 function updateLightMatrices(){
   var lx=LIGHT_DIR[0], ly=LIGHT_DIR[1], lz=LIGHT_DIR[2];
@@ -944,92 +766,51 @@ function updateLightMatrices(){
   LIGHT_DIR[0]=lx; LIGHT_DIR[1]=ly; LIGHT_DIR[2]=lz;
 
   var cx=0, cy=0, cz=0;
-  var dist = 62;
+  var dist = 60;
   m4lookAt(lightView, cx + lx*dist, cy + ly*dist, cz + lz*dist, cx, cy, cz, 0,1,0);
-  m4ortho(lightProj, -30, 30, -30, 30, 1, 130);
+  m4ortho(lightProj, -32, 32, -32, 32, 1, 130);
   m4mul(lightVP, lightProj, lightView);
 }
 updateLightMatrices();
 
 /* ============================================================
-   場景
+   場景與障礙物
    ============================================================ */
-var GROUND = 56;
+var GROUND = 64;
 var BOUND = GROUND/2 - 1.5;
 var obstacles = [];
 
 function addBoxObs(x,z,w,h,d,mat){
   obstacles.push({x:x,z:z,hw:w/2,hd:d/2,h:h,mat:mat,type:'box'});
 }
-function addBarrel(x,z,r,h){
-  obstacles.push({x:x,z:z,hw:r,hd:r,h:h,mat:M_BARREL,type:'barrel',r:r});
-}
 function addSandbagPile(x,z,w,d,layers){
-  obstacles.push({x:x,z:z,hw:w/2,hd:d/2,h:layers*0.215,mat:M_SANDBAG,type:'sand',w:w,d:d,layers:layers});
+  obstacles.push({x:x,z:z,hw:w/2,hd:d/2,h:layers*0.22,mat:M_SANDBAG,type:'sand',w:w,d:d,layers:layers});
 }
 
-addBoxObs(-7,-5, 6,1.15,1.0, M_CONC2);
-addBoxObs( 7, 5, 6,1.15,1.0, M_CONC2);
-addBoxObs(10,-10, 1.0,1.15,6, M_CONC2);
-addBoxObs(-10,10, 1.0,1.15,6, M_CONC2);
+/* 掩體 */
+addBoxObs(-8,-5, 6,1.2,1.0, M_BRICK2);
+addBoxObs( 8, 5, 6,1.2,1.0, M_BRICK2);
+addBoxObs(10,-10, 1.0,1.2,6, M_BRICK2);
+addBoxObs(-10,10, 1.0,1.2,6, M_BRICK2);
+addBoxObs(-15, 2, 1.0,4.0,10, M_BRICK);
+addBoxObs(  0,14, 10,4.0,1.0, M_BRICK);
+addBoxObs( 16, 0, 1.0,4.0,12, M_BRICK);
+addBoxObs(-2, -14, 1.4,1.2,1.4, M_WOOD);
+addBoxObs(-1, -15, 1.2,1.0,1.2, M_WOOD);
+addSandbagPile(-5, 3, 2.6, 1.4, 5);
+addSandbagPile( 5,-3, 2.6, 1.4, 5);
 
-addBoxObs(-13, 2, 1.0,3.8,10, M_CONCRETE);
-addBoxObs(  0,12, 10,3.8,1.0, M_CONCRETE);
-addBoxObs( 14, 0, 1.0,3.4,11, M_CONCRETE);
-addBoxObs( 19, 0, 1.0,3.4,11, M_CONCRETE);
-addBoxObs(-20,-8, 1.0,3.2,9,  M_CONCRETE);
-
-addSandbagPile(-4, 3, 2.6, 1.4, 5);
-addSandbagPile( 4,-3, 2.6, 1.4, 5);
-addSandbagPile( 9, 9, 2.2, 1.2, 4);
-addSandbagPile(-9,-9, 2.2, 1.2, 4);
-
-addBarrel(-16, -4, 0.34, 0.95);
-addBarrel(-16.8, -4.7, 0.34, 0.95);
-addBarrel(16, 6, 0.34, 0.95);
-addBarrel(16.7, 6.6, 0.34, 0.95);
-addBarrel(6, -13, 0.34, 0.95);
-
-addBoxObs(-2, -12, 1.3, 1.1, 1.3, M_WOOD);
-addBoxObs(-1.0, -13.2, 1.1, 0.9, 1.1, M_WOOD);
-addBoxObs(12, 10, 1.4, 1.2, 1.4, M_WOOD);
-
+/* 警告線 */
 (function(){
-  var lineCfg = [
-    [-7, -7.5, 5, 0.02, 0.34],
-    [ 7,  7.5, 5, 0.02, 0.34],
-    [-15, 0, 0.34, 0.02, 5]
-  ];
-  for(var lc=0;lc<lineCfg.length;lc++){
-    var cfg = lineCfg[lc];
-    var horiz = cfg[2] > cfg[4];
-    for(var seg=0;seg<6;seg++){
-      var off = (seg - 2.5) * ((horiz ? cfg[2] : cfg[4]) / 6);
-      var isY = seg%2===0;
-      obstacles.push({
-        x: cfg[0] + (horiz ? off : 0),
-        z: cfg[1] + (horiz ? 0 : off),
-        hw: horiz ? cfg[2]/12 : cfg[2]/2,
-        hd: horiz ? cfg[4]/2 : cfg[4]/12,
-        h: 0.012,
-        mat: isY ? M_YELLOW : M_BLACKLN,
-        flat: true,
-        type:'flat'
-      });
-    }
+  for(var i=0;i<8;i++){
+    obstacles.push({
+      x: -10 + i*2.5, z: -8,
+      hw: 1.0, hd: 0.2, h: 0.01,
+      mat: (i%2===0) ? M_WOOD : M_GUN_BLK,
+      flat: true, type:'flat'
+    });
   }
 })();
-
-var buildings = [
-  {x:-26,z:-26,w:8, h:13,d:6},
-  {x:-14,z:-32,w:9, h:17,d:7},
-  {x:  2,z:-34,w:11,h:11,d:6},
-  {x: 16,z:-30,w:8, h:15,d:6},
-  {x: 28,z:-16,w:6, h:10,d:5},
-  {x:-30,z: 12,w:6, h:12,d:5},
-  {x: 30,z:  8,w:7, h:14,d:6},
-  {x:-24,z: 30,w:9, h:9, d:6}
-];
 
 /* ============================================================
    音效
@@ -1059,7 +840,7 @@ function sGun(){
   var buf = actx.createBuffer(1,n,sr);
   var d = buf.getChannelData(0);
   for(var i=0;i<n;i++){
-    var env = Math.pow(1-i/n,3);
+    var env = Math.pow(1-i/n,4);
     d[i] = (Math.random()*2-1)*env;
   }
   var src = actx.createBufferSource(); src.buffer = buf;
@@ -1084,16 +865,13 @@ function sGun(){
 function sHit(){
   if(!audioReady()) return;
   var t = actx.currentTime;
-  var freqs = [1350,2000];
-  for(var i=0;i<2;i++){
-    var o = actx.createOscillator();
-    o.type='sine'; o.frequency.value = freqs[i];
-    var g = actx.createGain();
-    g.gain.setValueAtTime(0.10,t+i*0.016);
-    g.gain.exponentialRampToValueAtTime(0.001,t+0.05+i*0.016);
-    o.connect(g); g.connect(actx.destination);
-    o.start(t+i*0.016); o.stop(t+0.08+i*0.016);
-  }
+  var o = actx.createOscillator();
+  o.type='sine'; o.frequency.value = 1500;
+  var g = actx.createGain();
+  g.gain.setValueAtTime(0.1,t);
+  g.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+  o.connect(g); g.connect(actx.destination);
+  o.start(t); o.stop(t+0.06);
 }
 
 function sEnemyShot(){
@@ -1121,13 +899,6 @@ function sMagOut(){
   g.gain.exponentialRampToValueAtTime(0.001,t+0.08);
   o.connect(g); g.connect(actx.destination);
   o.start(t); o.stop(t+0.09);
-  var o2 = actx.createOscillator();
-  o2.type='triangle'; o2.frequency.value = 320;
-  var g2 = actx.createGain();
-  g2.gain.setValueAtTime(0.12,t);
-  g2.gain.exponentialRampToValueAtTime(0.001,t+0.05);
-  o2.connect(g2); g2.connect(actx.destination);
-  o2.start(t); o2.stop(t+0.06);
 }
 
 function sMagIn(){
@@ -1141,53 +912,23 @@ function sMagIn(){
   g.gain.exponentialRampToValueAtTime(0.001,t+0.06);
   o.connect(g); g.connect(actx.destination);
   o.start(t); o.stop(t+0.07);
-  var o2 = actx.createOscillator();
-  o2.type='triangle'; o2.frequency.value = 500;
-  var g2 = actx.createGain();
-  g2.gain.setValueAtTime(0.14,t+0.02);
-  g2.gain.exponentialRampToValueAtTime(0.001,t+0.06);
-  o2.connect(g2); g2.connect(actx.destination);
-  o2.start(t+0.02); o2.stop(t+0.07);
 }
 
 function sBolt(){
   if(!audioReady()) return;
   var t = actx.currentTime;
-  var dur = 0.14;
-  var sr = actx.sampleRate;
-  var n = Math.floor(sr*dur);
-  var buf = actx.createBuffer(1,n,sr);
-  var d = buf.getChannelData(0);
-  for(var i=0;i<n;i++){
-    var env = Math.pow(1-i/n,2);
-    var sq = Math.sin(i*0.5)>0 ? 1 : -1;
-    d[i] = (Math.random()*0.6 + sq*0.4) * env;
-  }
-  var src = actx.createBufferSource(); src.buffer = buf;
-  var bp = actx.createBiquadFilter();
-  bp.type='bandpass'; bp.frequency.value=2400; bp.Q.value=1.2;
-  var g = actx.createGain();
-  g.gain.setValueAtTime(0.20,t);
-  g.gain.exponentialRampToValueAtTime(0.001,t+dur);
-  src.connect(bp); bp.connect(g); g.connect(actx.destination);
-  src.start(t);
-}
-
-function sEmpty(){
-  if(!audioReady()) return;
-  var t = actx.currentTime;
   var o = actx.createOscillator();
-  o.type='square'; o.frequency.setValueAtTime(1200,t);
-  o.frequency.exponentialRampToValueAtTime(700,t+0.03);
+  o.type='square'; o.frequency.setValueAtTime(900,t);
+  o.frequency.exponentialRampToValueAtTime(500,t+0.04);
   var g = actx.createGain();
-  g.gain.setValueAtTime(0.06,t);
+  g.gain.setValueAtTime(0.12,t);
   g.gain.exponentialRampToValueAtTime(0.001,t+0.04);
   o.connect(g); g.connect(actx.destination);
   o.start(t); o.stop(t+0.05);
 }
 
 /* ============================================================
-   玩家狀態
+   玩家與武器狀態
    ============================================================ */
 var player = {
   x:0, z:14, y:0,
@@ -1197,42 +938,34 @@ var player = {
   curH:1.68,
   crouching:false,
   sliding:false, slideT:0,
-  ads:0,
-  shake:0, bob:0,
-  recoil:0, recoilH:0,
-  sprinting:false
+  ads:0, adsVel:0,
+  sprintProg:0, sprintVel:0,
+  bob:0, shake:0
 };
-
-var EYE_BASE = 1.68;
-var CROUCH_H = 0.96;
-var GRAVITY = 18;
-var JUMP_V  = 6.6;
 
 var gun = {
   mag:30, magSize:30, reserve:120,
-  lastFire:-1, fireInterval:0.092
+  lastFire:-1, fireInterval:0.09,
+  recoilZ:0, recoilZVel:0,
+  recoilPitch:0, recoilPitchVel:0,
+  boltTimer:0
 };
 
-var reload = { active:false, t:0, dur:1.8, phase:0 };
-
-var gunSwayX = 0, gunSwayY = 0;
-var prevYaw = 0, prevPitch = 0;
+var reload = { active:false, t:0, dur:2.2, phase:0 };
 
 var stickX=0, stickY=0, stickId=null;
 var lookId=null, lookLX=0, lookLY=0;
 var firing=false, adsHold=false, jumpQ=false, crouchQ=false;
 var hitFlash = 0;
-var boltCycle = 0;          // 抛壳窗往复
-var lastShotTime = -100;
 
 var stickEl = document.getElementById('stick');
 var knobEl = document.getElementById('knob');
 var crossEl = document.getElementById('cross');
-var sblackEl = document.getElementById('sblack');
 var reloadTxtEl = document.getElementById('reloadTxt');
 var ammoEl = document.getElementById('ammo');
 var fpsEl = document.getElementById('fps');
 
+/* UI 事件 */
 stickEl.addEventListener('pointerdown',function(e){
   e.preventDefault(); e.stopPropagation();
   if(stickId!==null) return;
@@ -1244,13 +977,11 @@ stickEl.addEventListener('pointerdown',function(e){
   try{ stickEl.setPointerCapture(e.pointerId); }catch(x){}
   updateStick(e.clientX,e.clientY);
 },{passive:false});
-
 stickEl.addEventListener('pointermove',function(e){
   if(e.pointerId!==stickId) return;
   e.preventDefault();
   updateStick(e.clientX,e.clientY);
 },{passive:false});
-
 function endStick(e){
   if(e.pointerId!==stickId) return;
   stickId=null; stickX=0; stickY=0;
@@ -1258,7 +989,6 @@ function endStick(e){
 }
 stickEl.addEventListener('pointerup',endStick);
 stickEl.addEventListener('pointercancel',endStick);
-
 function updateStick(cx,cy){
   var dx = cx - stickEl._cx;
   var dy = cy - stickEl._cy;
@@ -1313,7 +1043,72 @@ bindBtn('bCrouch',function(){ crouchQ=true; });
 bindBtn('bReload',function(){ startReload(); });
 
 /* ============================================================
-   敵人資料
+   粒子與拋殼系統
+   ============================================================ */
+var particles = [];
+var shells = [];
+var bulletHoles = [];
+
+function spawnParticles(x,y,z,nx,ny,nz,type){
+  for(var i=0;i<8;i++){
+    particles.push({
+      x:x, y:y, z:z,
+      vx:(Math.random()-0.5)*3 + nx*2,
+      vy:(Math.random()-0.5)*3 + ny*2 + 1,
+      vz:(Math.random()-0.5)*3 + nz*2,
+      life:0.3+Math.random()*0.3,
+      maxLife:0.6,
+      type:type, // 0=dust, 1=spark
+      size:0.02+Math.random()*0.03
+    });
+  }
+}
+function spawnShell(x,y,z){
+  shells.push({
+    x:x, y:y, z:z,
+    vx:(Math.random()-0.5)*2 + 1.5,
+    vy:Math.random()*2 + 1,
+    vz:(Math.random()-0.5)*2,
+    rx:0, ry:0, rz:0,
+    vrx:Math.random()*10, vry:Math.random()*10, vrz:Math.random()*10,
+    life:1.5
+  });
+}
+function spawnBulletHole(x,y,z,nx,ny,nz){
+  var m = new Float32Array(16);
+  // 簡單對齊法線
+  var yaw = Math.atan2(nx, nz);
+  var pitch = -Math.asin(ny);
+  setTRS(m, x+nx*0.01, y+ny*0.01, z+nz*0.01, pitch, yaw, 0, 0.08, 0.08, 0.08);
+  bulletHoles.push({m:m, life:5.0});
+  if(bulletHoles.length > 40) bulletHoles.shift();
+}
+
+function updateParticles(dt){
+  for(var i=particles.length-1;i>=0;i--){
+    var p = particles[i];
+    p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt;
+    p.vy -= 9.8*dt;
+    p.life -= dt;
+    if(p.life <= 0) particles.splice(i,1);
+  }
+  for(var i=shells.length-1;i>=0;i--){
+    var s = shells[i];
+    s.x += s.vx*dt; s.y += s.vy*dt; s.z += s.vz*dt;
+    s.vy -= 9.8*dt;
+    s.rx += s.vrx*dt; s.ry += s.vry*dt; s.rz += s.vrz*dt;
+    if(s.y < 0){ s.y = 0; s.vy *= -0.3; s.vx*=0.8; s.vz*=0.8; }
+    s.life -= dt;
+    if(s.life <= 0) shells.splice(i,1);
+  }
+  for(var i=bulletHoles.length-1;i>=0;i--){
+    bulletHoles[i].life -= dt;
+    if(bulletHoles[i].life <= 0) bulletHoles.splice(i,1);
+  }
+}
+
+/* ============================================================
+   敵人
    ============================================================ */
 var enemies = [];
 
@@ -1406,7 +1201,7 @@ function updateEnemy(e,dt,time){
   var nx = dx/dist, nz = dz/dist;
 
   var targetYaw = Math.atan2(-nx,-nz);
-  e.yaw += angDiff(targetYaw, e.yaw) * Math.min(1, dt*8);
+  e.yaw += angDiff(targetYaw, e.yaw) * Math.min(1, dt*10);
 
   var mvx=0, mvz=0, spd=0;
   var pose='normal';
@@ -1419,12 +1214,12 @@ function updateEnemy(e,dt,time){
     }
     mvx = nz * e.ai.strafeDir;
     mvz = -nx * e.ai.strafeDir;
-    spd = 0.95;
+    spd = 1.0;
     if(dist > 9){ mvx += nx*0.35; mvz += nz*0.35; }
     if(dist < 4){ mvx -= nx*0.55; mvz -= nz*0.55; }
 
     e.ai.fireCd -= dt;
-    if(e.ai.fireCd <= 0 && dist < 22){
+    if(e.ai.fireCd <= 0 && dist < 25){
       e.ai.fireCd = 0.55 + Math.random()*0.5;
       fireTracer(e);
       sEnemyShot();
@@ -1432,10 +1227,10 @@ function updateEnemy(e,dt,time){
   } else if(e.mode === 1){
     e.ai.timer -= dt;
     if(e.ai.state === 0){
-      mvx = nx; mvz = nz; spd = 1.5; pose = 'sprint';
+      mvx = nx; mvz = nz; spd = 1.6; pose = 'sprint';
       if(e.ai.timer <= 0){ e.ai.state=1; e.ai.timer=0.62; }
     } else if(e.ai.state === 1){
-      mvx = nx; mvz = nz; spd = 1.15; pose = 'slide';
+      mvx = nx; mvz = nz; spd = 1.2; pose = 'slide';
       if(e.ai.timer <= 0){ e.ai.state=2; e.ai.timer=0.28; }
     } else if(e.ai.state === 2){
       pose = 'slideEnd';
@@ -1445,7 +1240,7 @@ function updateEnemy(e,dt,time){
       if(e.ai.strafeTimer <= 0){ e.ai.strafeDir *= -1; e.ai.strafeTimer = 0.5; }
       mvx = nz * e.ai.strafeDir;
       mvz = -nx * e.ai.strafeDir;
-      spd = 0.82;
+      spd = 0.85;
       if(e.ai.timer <= 0){ e.ai.state=0; e.ai.timer=1.3; }
     }
   } else {
@@ -1456,10 +1251,10 @@ function updateEnemy(e,dt,time){
       var tz = Math.sin(ang)*7;
       var tdx = tx-e.x, tdz = tz-e.z;
       var tl = Math.sqrt(tdx*tdx+tdz*tdz) || 1;
-      mvx = tdx/tl; mvz = tdz/tl; spd = 1.15; pose = 'sprint';
+      mvx = tdx/tl; mvz = tdz/tl; spd = 1.2; pose = 'sprint';
       if(dist < 9 && e.ai.timer <= 0){ e.ai.state=1; e.ai.timer=0.85; }
     } else if(e.ai.state === 1){
-      mvx = nx; mvz = nz; spd = 1.55; pose = 'dive';
+      mvx = nx; mvz = nz; spd = 1.6; pose = 'dive';
       if(e.ai.timer <= 0){ e.ai.state=2; e.ai.timer=1.1; }
     } else {
       spd = 0; pose = 'prone';
@@ -1478,7 +1273,6 @@ function updateEnemy(e,dt,time){
 
   var strafe = mvx*nz - mvz*nx;
 
-  /* 重置目標姿勢 */
   a.pelvisYawT = 0;
   a.pelvisYT   = 0.95;
   a.spinePitchT= 0.04;
@@ -1489,19 +1283,18 @@ function updateEnemy(e,dt,time){
   a.armLXT = 1.20; a.armLEXT = 0.45; a.armLZT = 0.85;
   a.bankT  = -strafe * 0.14;
 
-  /* ---- 關鍵：滑鏟姿勢修正（不再向後折腰） ---- */
   if(pose === 'slide'){
-    a.pelvisYT = 0.45;                // 骨盆降低至 0.45
-    a.spinePitchT = 0.25;             // 正值！身體微微前傾，絕不向後仰
-    a.hipRT = -1.20; a.kneeRT = 0.05; // 右腿向前伸直
-    a.hipLT =  0.80; a.kneeLT = 1.40; // 左腿向後折疊跪地
-    a.armRXT = 1.35; a.armREXT = 0.45;
-    a.armLXT = 1.30; a.armLEXT = 0.40;
+    a.pelvisYT = 0.44;
+    a.hipRT = 1.25; a.kneeRT = -1.55;
+    a.hipLT = 0.35; a.kneeLT = -0.90;
+    a.spinePitchT = 0.16;
+    a.armRXT = 1.45; a.armREXT = 0.35;
+    a.armLXT = 1.40; a.armLEXT = 0.30;
   } else if(pose === 'slideEnd'){
-    a.pelvisYT = 0.75;
-    a.spinePitchT = 0.18;
+    a.pelvisYT = 0.78;
     a.hipRT = 0.55; a.kneeRT = -1.15;
     a.hipLT = 0.25; a.kneeLT = -0.70;
+    a.spinePitchT = 0.10;
   } else if(pose === 'dive'){
     a.pelvisYT = 0.62;
     a.spinePitchT = 1.28;
@@ -1567,7 +1360,7 @@ function updateEnemy(e,dt,time){
 }
 
 /* ============================================================
-   敵人模型：膠囊關節 + 複雜戰術裝備
+   敵人模型與繪製
    ============================================================ */
 var tL = new Float32Array(16);
 
@@ -1592,213 +1385,79 @@ function buildSoldier(e){
   var mRoot = mp();
   setTRS(mRoot, e.x, 0, e.z, 0, e.yaw, 0, 1,1,1);
 
-  /* ---- 骨盆 ---- */
+  /* 貼地陰影 */
+  var mShadow = mp();
+  var shR = 0.44 + (a.pelvisY < 0.7 ? 0.30 : 0);
+  setTRS(tL, 0, 0.014, 0, 0,0,0, shR, 0.006, shR);
+  m4mul(mShadow, mRoot, tL);
+  pushDraw(mShadow, MESH_SPH, M_SHADOW);
+
+  /* 骨盆 */
   var mPelvis = mp();
   setTRS(tL, 0, a.pelvisY, 0, 0, a.pelvisYaw, 0, 1,1,1);
   m4mul(mPelvis, mRoot, tL);
 
-  var m = mp();
-  setTRS(tL, 0, 0, 0, 0,0,0, 0.150, 0.125, 0.115);
-  m4mul(m, mPelvis, tL);
-  pushDraw(m, MESH_SPH, M_CAMO2);
+  drawPart(mPelvis, 0,0,0, 0,0,0, 0.150, 0.125, 0.115, MESH_SPH, M_CAMO);
+  drawPart(mPelvis, 0,0.045,0, 0,0,0, 0.158, 0.055, 0.122, MESH_CYL, M_VEST);
 
-  /* 戰術腰帶 */
-  m = mp();
-  setTRS(tL, 0, 0.045, 0, 0,0,0, 0.158, 0.055, 0.122);
-  m4mul(m, mPelvis, tL);
-  pushDraw(m, MESH_CYL, M_VEST);
-
-  /* 腰帶扣 */
-  m = mp();
-  setTRS(tL, 0, 0.045, -0.115, 0,0,0, 0.045, 0.045, 0.014);
-  m4mul(m, mPelvis, tL);
-  pushDraw(m, MESH_BOX, M_METAL_GRY);
-
-  /* ---- 脊椎 ---- */
+  /* 脊椎 */
   var mSpine = mp();
   setTRS(tL, 0, 0.06, 0, a.spinePitch, 0, a.spineRoll, 1,1,1);
   m4mul(mSpine, mPelvis, tL);
 
-  /* 下軀幹 */
-  m = mp();
-  setTRS(tL, 0, 0.13, 0, 0,0,0, 0.148, 0.30, 0.104);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_CYL, M_CAMO);
+  drawPart(mSpine, 0,0.13,0, 0,0,0, 0.148, 0.30, 0.104, MESH_CYL, M_CAMO);
+  drawPart(mSpine, 0,0.255,-0.008, 0,0,0, 0.172, 0.24, 0.118, MESH_CYL, M_CAMO);
+  drawPart(mSpine, 0,0.235,-0.010, 0,0,0, 0.184, 0.235, 0.132, MESH_CYL, M_VEST);
 
-  /* 上胸 */
-  m = mp();
-  setTRS(tL, 0, 0.255, -0.008, 0,0,0, 0.172, 0.24, 0.118);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_CYL, M_CAMO);
-
-  /* JPC 戰術背心 */
-  m = mp();
-  setTRS(tL, 0, 0.235, -0.010, 0,0,0, 0.184, 0.235, 0.132);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_CYL, M_VEST);
-
-  /* 背心上防彈板痕跡 */
-  m = mp();
-  setTRS(tL, 0, 0.235, -0.138, 0,0,0, 0.165, 0.20, 0.012);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_BOX, M_CAMO2);
-
-  /* 三個獨立彈匣袋 */
-  var magPos = [[-0.075, 0.16], [0, 0.16], [0.075, 0.16]];
-  for(var mi=0; mi<3; mi++){
-    m = mp();
-    setTRS(tL, magPos[mi][0], magPos[mi][1], -0.128, 0,0,0, 0.060, 0.105, 0.045);
-    m4mul(m, mSpine, tL);
-    pushDraw(m, MESH_BOX, M_VEST);
-    /* 彈匣袋上蓋 */
-    m = mp();
-    setTRS(tL, magPos[mi][0], magPos[mi][1] + 0.06, -0.132, 0,0,0, 0.058, 0.02, 0.040);
-    m4mul(m, mSpine, tL);
-    pushDraw(m, MESH_BOX, M_CAMO2);
+  /* 彈匣袋 */
+  var magPos = [[-0.105,0.16],[-0.035,0.16],[0.035,0.16],[0.105,0.16]];
+  for(var mi=0;mi<4;mi++){
+    drawPart(mSpine, magPos[mi][0], magPos[mi][1], -0.128, 0,0,0, 0.055, 0.095, 0.040, MESH_BOX, M_VEST);
   }
 
-  /* 對講機（胸前左側） */
-  m = mp();
-  setTRS(tL, -0.135, 0.30, -0.095, 0, -0.15, 0, 0.040, 0.075, 0.030);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_BOX, M_RADIO);
+  /* 頸部 */
+  drawPart(mSpine, 0, 0.395, 0, 0,0,0, 0.056, 0.11, 0.056, MESH_CYL, M_SKIN);
 
-  /* 對講機天線 */
-  m = mp();
-  setTRS(tL, -0.135, 0.37, -0.095, 0, 0, 0, 0.012, 0.10, 0.012);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_CYL8, M_RADIO_ANT);
-
-  /* 雙肩護甲 */
-  m = mp();
-  setTRS(tL, 0.155, 0.325, 0, 0, 0, -0.15, 0.085, 0.115, 0.135);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_SPH, M_VEST);
-  m = mp();
-  setTRS(tL, -0.155, 0.325, 0, 0, 0, 0.15, 0.085, 0.115, 0.135);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_SPH, M_VEST);
-
-  /* 肩帶 */
-  m = mp();
-  setTRS(tL, 0.09, 0.345, -0.02, 0,0,0.35, 0.045, 0.16, 0.09);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_BOX, M_VEST);
-  m = mp();
-  setTRS(tL, -0.09, 0.345, -0.02, 0,0,-0.35, 0.045, 0.16, 0.09);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_BOX, M_VEST);
-
-  /* ---- 頸部 ---- */
-  m = mp();
-  setTRS(tL, 0, 0.395, 0, 0,0,0, 0.056, 0.11, 0.056);
-  m4mul(m, mSpine, tL);
-  pushDraw(m, MESH_CYL, M_SKIN);
-
-  /* ---- 頭部 ---- */
+  /* 頭部 */
   var mHead = mp();
   setTRS(tL, 0, 0.46, 0, a.headPitch, a.headYaw, 0, 1,1,1);
   m4mul(mHead, mSpine, tL);
 
-  /* 頭 */
-  m = mp();
-  setTRS(tL, 0, 0.028, 0, 0,0,0, 0.104, 0.122, 0.108);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_SPH, M_SKIN);
+  drawPart(mHead, 0, 0.028, 0, 0,0,0, 0.104, 0.122, 0.108, MESH_SPH, M_SKIN);
+  drawPart(mHead, 0, 0.030, -0.004, 0,0,0, 0.136, 0.128, 0.140, MESH_DOME, M_HELMET);
+  drawPart(mHead, 0, 0.026, -0.004, 0,0,0, 0.138, 0.020, 0.142, MESH_CYL, M_HELMET);
+  drawPart(mHead, 0, 0.040, -0.098, 0.10,0,0, 0.104, 0.042, 0.028, MESH_BOX, M_GOGGLE);
 
-  /* 頭盔穹頂 */
-  m = mp();
-  setTRS(tL, 0, 0.030, -0.004, 0,0,0, 0.136, 0.128, 0.140);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_DOME, M_HELMET);
-
-  /* 頭盔下緣 */
-  m = mp();
-  setTRS(tL, 0, 0.026, -0.004, 0,0,0, 0.138, 0.020, 0.142);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_CYL, M_HELMET);
-
-  /* 頭盔戰術導軌（左右兩側） */
-  m = mp();
-  setTRS(tL, 0.130, 0.055, 0.005, 0,0,0, 0.020, 0.018, 0.095);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_BOX, M_METAL_GRY);
-  m = mp();
-  setTRS(tL, -0.130, 0.055, 0.005, 0,0,0, 0.020, 0.018, 0.095);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_BOX, M_METAL_GRY);
-
-  /* 護目鏡（帶反光） */
-  m = mp();
-  setTRS(tL, 0, 0.040, -0.098, 0.10,0,0, 0.104, 0.042, 0.028);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_BOX, M_GOGGLE);
-
-  /* 護目鏡框架 */
-  m = mp();
-  setTRS(tL, 0, 0.040, -0.108, 0.10,0,0, 0.110, 0.050, 0.012);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_BOX, M_BOOT);
-
-  /* 夜視儀支架 */
-  m = mp();
-  setTRS(tL, 0, 0.098, -0.098, 0.30,0,0, 0.032, 0.055, 0.055);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_BOX, M_HELMET);
-
-  /* 夜視儀鏡筒 */
-  m = mp();
-  setTRS(tL, 0, 0.112, -0.128, Math.PI/2,0,0, 0.026, 0.070, 0.026);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_CYL8, M_GUN_MET);
-
-  /* 耳罩式戰術耳機 */
-  m = mp();
-  setTRS(tL, 0.118, 0.020, 0.005, 0,0,Math.PI/2, 0.048, 0.032, 0.048);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_CYL8, M_HELMET);
-  m = mp();
-  setTRS(tL, -0.118, 0.020, 0.005, 0,0,Math.PI/2, 0.048, 0.032, 0.048);
-  m4mul(m, mHead, tL);
-  pushDraw(m, MESH_CYL8, M_HELMET);
-
-  /* ---- 右臂 ---- */
+  /* 右臂 */
   var mShR = mp();
   setTRS(tL, 0.195, 0.305, 0, a.armRX, 0, a.armRZ, 1,1,1);
   m4mul(mShR, mSpine, tL);
-
   drawJoint(mShR, 0,0,0, 0,0,0, 0.082, M_CAMO);
   drawPart(mShR, 0,-0.14,0, 0,0,0, 0.060, 0.28, 0.060, MESH_CYL, M_CAMO);
 
   var mElR = mp();
   setTRS(tL, 0, -0.28, 0, a.armREX, 0, 0, 1,1,1);
   m4mul(mElR, mShR, tL);
-
-  drawJoint(mElR, 0,0,0, 0,0,0, 0.062, M_CAMO2);
+  drawJoint(mElR, 0,0,0, 0,0,0, 0.062, M_CAMO);
   drawPart(mElR, 0,-0.125,0, 0,0,0, 0.053, 0.25, 0.053, MESH_CYL, M_GLOVE);
-  drawPart(mElR, 0,-0.265,0, 0.20,0,0, 0.062, 0.070, 0.080, MESH_SPH, M_GLOVE);
 
-  /* ---- 左臂 ---- */
+  /* 左臂 */
   var mShL = mp();
   setTRS(tL, -0.195, 0.305, 0, a.armLX, 0, a.armLZ, 1,1,1);
   m4mul(mShL, mSpine, tL);
-
   drawJoint(mShL, 0,0,0, 0,0,0, 0.082, M_CAMO);
   drawPart(mShL, 0,-0.14,0, 0,0,0, 0.060, 0.28, 0.060, MESH_CYL, M_CAMO);
 
   var mElL = mp();
   setTRS(tL, 0, -0.28, 0, a.armLEX, 0, 0, 1,1,1);
   m4mul(mElL, mShL, tL);
-
-  drawJoint(mElL, 0,0,0, 0,0,0, 0.062, M_CAMO2);
+  drawJoint(mElL, 0,0,0, 0,0,0, 0.062, M_CAMO);
   drawPart(mElL, 0,-0.125,0, 0,0,0, 0.053, 0.25, 0.053, MESH_CYL, M_GLOVE);
-  drawPart(mElL, 0,-0.265,0, 0.20,0,0, 0.062, 0.070, 0.080, MESH_SPH, M_GLOVE);
 
-  /* ---- 步槍（貼胸抱持） ---- */
+  /* 步槍 */
   var mGun = mp();
   setTRS(tL, 0.135, 0.215, -0.40, -0.05, 0.06, 0, 1,1,1);
   m4mul(mGun, mSpine, tL);
-
   drawPart(mGun, 0,0,0.02, 0,0,0, 0.048, 0.070, 0.26, MESH_BOX, M_GUN_BLK);
   drawPart(mGun, 0,0.048,0.02, 0,0,0, 0.040, 0.020, 0.24, MESH_BOX, M_GUN_MET);
   drawPart(mGun, 0,-0.004,-0.20, Math.PI/2,0,0, 0.040, 0.22, 0.040, MESH_CYL, M_GUN_SAND);
@@ -1807,70 +1466,41 @@ function buildSoldier(e){
   drawPart(mGun, 0,-0.078,0.115, 0.32,0,0, 0.030, 0.085, 0.042, MESH_BOX, M_GUN_POLY);
   drawPart(mGun, 0,-0.004,0.215, 0,0,0, 0.038, 0.055, 0.12, MESH_BOX, M_GUN_POLY);
 
-  /* 槍口世界座標 */
   var gx = 0, gy = 0.002, gz = -0.46;
   e.muzzle[0] = mGun[0]*gx + mGun[4]*gy + mGun[8]*gz + mGun[12];
   e.muzzle[1] = mGun[1]*gx + mGun[5]*gy + mGun[9]*gz + mGun[13];
   e.muzzle[2] = mGun[2]*gx + mGun[6]*gy + mGun[10]*gz + mGun[14];
 
-  /* ---- 右腿 ---- */
+  /* 右腿 */
   var mHipR = mp();
   setTRS(tL, 0.098, -0.055, 0, a.hipR, 0, 0, 1,1,1);
   m4mul(mHipR, mPelvis, tL);
-
-  drawJoint(mHipR, 0,0,0, 0,0,0, 0.084, M_CAMO2);
+  drawJoint(mHipR, 0,0,0, 0,0,0, 0.084, M_CAMO);
   drawPart(mHipR, 0,-0.22,0, 0,0,0, 0.078, 0.44, 0.078, MESH_CYL, M_CAMO);
-
-  /* 大腿槍套（右腿外側） */
-  m = mp();
-  setTRS(tL, 0.080, -0.22, 0.0, 0,0,0, 0.032, 0.155, 0.075);
-  m4mul(m, mHipR, tL);
-  pushDraw(m, MESH_BOX, M_HOLSTER);
-  /* 槍套綁帶 */
-  m = mp();
-  setTRS(tL, 0.084, -0.16, 0.0, 0,0,0, 0.014, 0.062, 0.085);
-  m4mul(m, mHipR, tL);
-  pushDraw(m, MESH_BOX, M_BLACKLN);
 
   var mKnR = mp();
   setTRS(tL, 0, -0.44, 0, a.kneeR, 0, 0, 1,1,1);
   m4mul(mKnR, mHipR, tL);
-
-  drawJoint(mKnR, 0,0,0, 0,0,0, 0.068, M_CAMO2);
-  drawPart(mKnR, 0,-0.01,-0.058, 0,0,0, 0.070, 0.075, 0.048, MESH_SPH, M_VEST);
+  drawJoint(mKnR, 0,0,0, 0,0,0, 0.068, M_CAMO);
   drawPart(mKnR, 0,-0.20,0, 0,0,0, 0.060, 0.40, 0.060, MESH_CYL, M_CAMO);
 
-  /* 分段式軍靴（右） */
   var mFootR = mp();
   setTRS(tL, 0, -0.40, 0, 0,0,0, 1,1,1);
   m4mul(mFootR, mKnR, tL);
   drawJoint(mFootR, 0,0,0, 0,0,0, 0.060, M_BOOT);
   drawPart(mFootR, 0,-0.035,-0.045, 0,0,0, 0.072, 0.075, 0.20, MESH_BOX, M_BOOT);
-  drawPart(mFootR, 0,-0.028,-0.135, 0,0,0, 0.062, 0.055, 0.06, MESH_SPH, M_BOOT);
-  /* 鞋底分段 */
-  m = mp();
-  setTRS(tL, 0, -0.078, -0.045, 0,0,0, 0.076, 0.012, 0.21);
-  m4mul(m, mFootR, tL);
-  pushDraw(m, MESH_BOX, M_BLACKLN);
-  m = mp();
-  setTRS(tL, 0, -0.062, -0.135, 0,0,0, 0.066, 0.012, 0.07);
-  m4mul(m, mFootR, tL);
-  pushDraw(m, MESH_BOX, M_BLACKLN);
 
-  /* ---- 左腿 ---- */
+  /* 左腿 */
   var mHipL = mp();
   setTRS(tL, -0.098, -0.055, 0, a.hipL, 0, 0, 1,1,1);
   m4mul(mHipL, mPelvis, tL);
-
-  drawJoint(mHipL, 0,0,0, 0,0,0, 0.084, M_CAMO2);
+  drawJoint(mHipL, 0,0,0, 0,0,0, 0.084, M_CAMO);
   drawPart(mHipL, 0,-0.22,0, 0,0,0, 0.078, 0.44, 0.078, MESH_CYL, M_CAMO);
 
   var mKnL = mp();
   setTRS(tL, 0, -0.44, 0, a.kneeL, 0, 0, 1,1,1);
   m4mul(mKnL, mHipL, tL);
-
-  drawJoint(mKnL, 0,0,0, 0,0,0, 0.068, M_CAMO2);
-  drawPart(mKnL, 0,-0.01,-0.058, 0,0,0, 0.070, 0.075, 0.048, MESH_SPH, M_VEST);
+  drawJoint(mKnL, 0,0,0, 0,0,0, 0.068, M_CAMO);
   drawPart(mKnL, 0,-0.20,0, 0,0,0, 0.060, 0.40, 0.060, MESH_CYL, M_CAMO);
 
   var mFootL = mp();
@@ -1878,15 +1508,6 @@ function buildSoldier(e){
   m4mul(mFootL, mKnL, tL);
   drawJoint(mFootL, 0,0,0, 0,0,0, 0.060, M_BOOT);
   drawPart(mFootL, 0,-0.035,-0.045, 0,0,0, 0.072, 0.075, 0.20, MESH_BOX, M_BOOT);
-  drawPart(mFootL, 0,-0.028,-0.135, 0,0,0, 0.062, 0.055, 0.06, MESH_SPH, M_BOOT);
-  m = mp();
-  setTRS(tL, 0, -0.078, -0.045, 0,0,0, 0.076, 0.012, 0.21);
-  m4mul(m, mFootL, tL);
-  pushDraw(m, MESH_BOX, M_BLACKLN);
-  m = mp();
-  setTRS(tL, 0, -0.062, -0.135, 0,0,0, 0.066, 0.012, 0.07);
-  m4mul(m, mFootL, tL);
-  pushDraw(m, MESH_BOX, M_BLACKLN);
 }
 
 /* ============================================================
@@ -1908,7 +1529,7 @@ function fireTracer(e){
 }
 
 /* ============================================================
-   射擊
+   射擊與碰撞
    ============================================================ */
 function rayAABB(ox,oy,oz,dx,dy,dz,minx,miny,minz,maxx,maxy,maxz){
   var tmin = 0, tmax = 1e9;
@@ -1946,19 +1567,15 @@ function playerShoot(){
   if(now - gun.lastFire < gun.fireInterval) return;
   gun.lastFire = now;
   gun.mag--;
-  boltCycle = 1;
 
   sGun();
-  player.recoil = 1;
-  player.recoilH = (Math.random()-0.5)*0.5;
-  hitFlash = 0.055;
-  lastShotTime = now;
+  gun.recoilZVel += 8.0;
+  gun.recoilPitchVel -= 12.0;
+  gun.boltTimer = 0.08;
+  hitFlash = 0.06;
 
-  var recScale = 1 - player.ads*0.42;
-  player.pitch += (0.020 + Math.random()*0.014) * recScale;
-  player.yaw   += (Math.random()-0.5)*0.009 * recScale;
-  player.pitch = clamp(player.pitch,-1.25,1.25);
-  player.shake = Math.min(0.05, player.shake + 0.021*recScale);
+  /* 拋殼 */
+  spawnShell(player.x + Math.cos(player.yaw)*0.1, player.y + player.curH - 0.1, player.z - Math.sin(player.yaw)*0.1);
 
   var cp = Math.cos(player.pitch), sp = Math.sin(player.pitch);
   var fx = -Math.sin(player.yaw)*cp;
@@ -1978,15 +1595,45 @@ function playerShoot(){
     if(t !== null && t < bestT){ bestT = t; bestE = e; }
   }
 
+  var hitX=0, hitY=0, hitZ=0, nx=0, ny=1, nz=0;
+  var hitWall = false;
+
+  for(var i=0;i<obstacles.length;i++){
+    var o = obstacles[i];
+    if(o.flat) continue;
+    var t = rayAABB(ox,oy,oz,fx,fy,fz,
+      o.x-o.hw, 0, o.z-o.hd,
+      o.x+o.hw, o.h, o.z+o.hd);
+    if(t !== null && t < bestT){
+      bestT = t; bestE = null; hitWall = true;
+      hitX = ox + fx*t; hitY = oy + fy*t; hitZ = oz + fz*t;
+      // 簡易法線推斷
+      if(Math.abs(hitX - (o.x - o.hw)) < 0.1) nx = -1;
+      else if(Math.abs(hitX - (o.x + o.hw)) < 0.1) nx = 1;
+      else if(Math.abs(hitZ - (o.z - o.hd)) < 0.1) nz = -1;
+      else if(Math.abs(hitZ - (o.z + o.hd)) < 0.1) nz = 1;
+      else ny = 1;
+    }
+  }
+
   if(bestE){
     bestE.hp -= 34;
     bestE.anim.flinch = 1;
     sHit();
     showHit();
+    var ex = bestE.x, ey = bestE.y + 1.0, ez = bestE.z;
+    spawnParticles(ex, ey, ez, -fx, -fy, -fz, 1);
     if(bestE.hp <= 0){
       bestE.alive = false;
       bestE.respawnT = 3;
     }
+  } else if(hitWall){
+    spawnBulletHole(hitX, hitY, hitZ, nx, ny, nz);
+    spawnParticles(hitX, hitY, hitZ, nx, ny, nz, 0);
+  }
+
+  if(gun.mag === 0 && !reload.active && gun.reserve > 0){
+    startReload();
   }
 }
 
@@ -2025,7 +1672,7 @@ function updateReload(dt){
     reloadTxtEl.style.display = 'none';
     return;
   }
-  if(reload.phase === 0 && p >= 0.30){
+  if(reload.phase === 0 && p >= 0.35){
     reload.phase = 1;
     sMagIn();
   } else if(reload.phase === 1 && p >= 0.75){
@@ -2035,455 +1682,248 @@ function updateReload(dt){
 }
 
 /* ============================================================
-   幾何工具：兩點之間繪製圓柱
-   ============================================================ */
-function drawCylBetween(parent, x1,y1,z1, x2,y2,z2, radius, mesh, mat, noShadow){
-  var dx = x2-x1, dy = y2-y1, dz = z2-z1;
-  var len = Math.sqrt(dx*dx+dy*dy+dz*dz) || 0.001;
-  var nx = dx/len, ny = dy/len, nz = dz/len;
-  var m = mp();
-  var dot = ny;
-  if(dot > 0.9999){
-    setTRS(tL, (x1+x2)/2, (y1+y2)/2, (z1+z2)/2, 0, 0, 0, radius, len, radius);
-  } else if(dot < -0.9999){
-    setTRS(tL, (x1+x2)/2, (y1+y2)/2, (z1+z2)/2, Math.PI, 0, 0, radius, len, radius);
-  } else {
-    var ax = nz, ay = 0, az = -nx;
-    var axLen = Math.sqrt(ax*ax+ay*ay+az*az) || 1;
-    ax /= axLen; ay /= axLen; az /= axLen;
-    var angle = Math.acos(Math.max(-1, Math.min(1, dot)));
-    var cc = Math.cos(angle), ss = Math.sin(angle), tt = 1-cc;
-    var r00 = tt*ax*ax + cc;
-    var r01 = tt*ax*ay - ss*az;
-    var r02 = tt*ax*az + ss*ay;
-    var r10 = tt*ax*ay + ss*az;
-    var r11 = tt*ay*ay + cc;
-    var r12 = tt*ay*az - ss*ax;
-    var r20 = tt*ax*az - ss*ay;
-    var r21 = tt*ay*az + ss*ax;
-    var r22 = tt*az*az + cc;
-    tL[0] = r00*radius; tL[1] = r10*radius; tL[2] = r20*radius; tL[3] = 0;
-    tL[4] = r01*len;    tL[5] = r11*len;    tL[6] = r21*len;    tL[7] = 0;
-    tL[8] = r02*radius; tL[9] = r12*radius; tL[10] = r22*radius;tL[11] = 0;
-    tL[12] = (x1+x2)/2; tL[13] = (y1+y2)/2; tL[14] = (z1+z2)/2; tL[15] = 1;
-  }
-  m4mul(m, parent, tL);
-  pushDraw(m, mesh, mat, noShadow);
-  return m;
-}
-
-/* ============================================================
-   第一人稱槍械 + 雙手手臂
+   第一人稱武器（僅手臂與槍枝，無身體穿模）
    ============================================================ */
 var mCam = new Float32Array(16);
 var mLocal = new Float32Array(16);
 var mGunW = new Float32Array(16);
+var mBillboard = new Float32Array(16);
 
-/* 槍械零件位置（相機本地空間，用於槍口火舌定位） */
-var gunMuzzleLocal = { x:0, y:0.002, z:-0.72 };
-
-function buildPlayerGun(eyeY, dt){
+function buildPlayerGun(eyeY){
   var ads = player.ads;
+  var sprint = player.sprintProg;
   var p = reload.active ? (reload.t / reload.dur) : 0;
 
-  /* 換彈關鍵影格 */
   var rlTiltZ = 0, rlTiltX = 0, rlDownY = 0;
-  var magY = 0, magTilt = 0;
-  var boltRecoil = 0;
-  var boltCatchHit = 0;
+  var magDrop = 0, magTilt = 0;
+  var handOffsetY = 0, handOffsetZ = 0;
+  var boltKick = gun.boltTimer > 0 ? Math.sin((1 - gun.boltTimer/0.08) * Math.PI) * 0.06 : 0;
 
   if(reload.active){
-    var bell = Math.sin(Math.min(1,p*1.15) * Math.PI);
-    rlTiltZ = bell * 0.52;
-    rlTiltX = bell * 0.32;
-    rlDownY = bell * 0.09;
-
-    /* 彈匣上下移動（換彈三段） */
-    magY = keyframeValue(p, [
-      [0.00, 0], [0.22, 0], [0.32, 0],
-      [0.40, -0.10], [0.50, -0.15], [0.55, -0.15],
-      [0.60, -0.15], [0.70, -0.02], [0.75, 0], [1.0, 0]
-    ]);
-    magTilt = keyframeValue(p, [
-      [0.00, 0], [0.32, 0], [0.40, 0.35], [0.55, 0.35],
-      [0.60, 0.15], [0.70, 0], [1.0, 0]
-    ]);
-
-    /* 槍機釋放鈕拍擊時的震動 */
-    if(p >= 0.80 && p < 0.88){
-      boltCatchHit = Math.sin((p - 0.80) / 0.08 * Math.PI) * 0.5;
+    if(p < 0.35){
+      var mp1 = p / 0.35;
+      magDrop = mp1 * 0.42;
+      magTilt = mp1 * 0.35;
+      rlTiltZ = mp1 * 0.25;
+    } else if(p < 0.55){
+      var mp2 = 1 - (p - 0.35) / 0.20;
+      magDrop = mp2 * 0.42;
+      magTilt = mp2 * 0.35;
+      rlTiltZ = mp2 * 0.25;
+      // 新彈匣拍入震動
+      rlDownY = Math.sin((p - 0.35) / 0.20 * Math.PI) * 0.05;
+    } else {
+      magDrop = 0; magTilt = 0;
+      var rp = (p - 0.55) / 0.45;
+      if(rp < 0.4){
+        // 槍身清脆橫向震動
+        rlTiltZ = Math.sin(rp / 0.4 * Math.PI) * -0.12;
+      }
     }
-    boltRecoil = boltCatchHit;
   }
 
-  /* 開火時槍機往復運動 */
-  if(boltCycle > 0){
-    boltCycle -= dt * 18;
-    if(boltCycle < 0) boltCycle = 0;
-  }
-  var boltOffset = Math.sin(boltCycle * Math.PI) * 0.035;
+  /* 彈性後座力 */
+  var rz = gun.recoilZ * 0.05;
+  var rx = gun.recoilPitch * 0.05;
+
+  /* 開鏡目標位置 */
+  var targetGx = 0.18 * (1-ads) + 0.0 * ads;
+  var targetGy = -0.20 * (1-ads) - 0.05 * ads;
+  var targetGz = -0.45 + 0.15 * ads;
+  var targetRz = 0.0 * (1-ads) + 0.0 * ads;
+  var targetRx = 0.0 * (1-ads) + 0.0 * ads;
+
+  /* 戰術衝刺覆蓋 */
+  var sGx = -0.1 * sprint;
+  var sGy = -0.12 * sprint;
+  var sRz = 0.73 * sprint; // 42度
+  var sRx = -0.26 * sprint; // 15度
+
+  var gx = targetGx + sGx;
+  var gy = targetGy + sGy + rlDownY;
+  var gz = targetGz + rz + boltKick;
+
+  var yawRot = 0.0;
+  var pitchRot = targetRx + rx + sRx;
+  var rollRot = targetRz + rlTiltZ + sRz + rz*0.2;
+
+  /* 走路晃動 */
+  var speed = Math.sqrt(player.vx*player.vx + player.vz*player.vz);
+  var bobAmp = (player.ads > 0.5 ? 0.002 : 0.008) * Math.min(1, speed/4) * (1 - sprint);
+  gx += Math.sin(player.bob) * bobAmp;
+  gy += Math.sin(player.bob * 2) * bobAmp;
 
   setTRS(mCam, player.x, eyeY, player.z, player.pitch, player.yaw, 0, 1,1,1);
-
-  /* ADS 位置：全息瞄準鏡中心對準螢幕正中心 */
-  var baseGx = 0.175*(1-ads) + 0.000*ads;
-  var baseGy = -0.195*(1-ads) - 0.126*ads;  // ADS 時 gy = -0.126 讓瞄準鏡對準螢幕中心
-  var baseGz = -0.42 + 0.14*ads;
-
-  var gx = baseGx + gunSwayX;
-  var gy = baseGy + gunSwayY + rlDownY + boltCatchHit * 0.006;
-  var gz = baseGz + boltRecoil * 0.008;
-
-  var rx = player.recoil * 0.085 + rlTiltX;
-  var rz = player.recoilH * 0.055 + rlTiltZ;
-
-  setTRS(mLocal, gx, gy, gz, rx, 0, rz, 1,1,1);
+  setTRS(mLocal, gx, gy, gz, pitchRot, yawRot, rollRot, 1,1,1);
   m4mul(mGunW, mCam, mLocal);
 
   var m;
 
-  /* ---------- 下機匣 ---------- */
+  /* === 機匣與槍身 === */
+  // 下機匣
   m = mp();
   setTRS(tL, 0, 0, 0.02, 0,0,0, 0.072, 0.088, 0.30);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_BLK, true);
+  pushDraw(m, MESH_BOX, M_GUN_BLK);
 
-  /* 下機匣側面細節（螺絲） */
-  m = mp();
-  setTRS(tL, 0.074, 0.02, 0.06, 0,0,0, 0.006, 0.008, 0.008);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL8, M_GUN_MET, true);
-  m = mp();
-  setTRS(tL, 0.074, 0.02, -0.08, 0,0,0, 0.006, 0.008, 0.008);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL8, M_GUN_MET, true);
-
-  /* ---------- 上機匣 ---------- */
+  // 上機匣
   m = mp();
   setTRS(tL, 0, 0.052, 0.02, 0,0,0, 0.064, 0.032, 0.30);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_POLY, true);
+  pushDraw(m, MESH_BOX, M_GUN_POLY);
 
-  /* ---------- 拋殼窗（開火時槍機往復） ---------- */
+  // 槍機拉柄 (Bolt)
   m = mp();
-  setTRS(tL, 0.066, 0.060, -0.02 + boltOffset * 0.4, 0,0,0, 0.010, 0.028, 0.085);
+  setTRS(tL, 0.038, 0.052, 0.02 - boltKick*0.6, 0,0,0, 0.015, 0.015, 0.06);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_DARK, true);
+  pushDraw(m, MESH_BOX, M_GUN_MET);
 
-  /* 拋殼窗內槍機 */
-  m = mp();
-  setTRS(tL, 0.068, 0.060, -0.02 + boltOffset, 0,0,0, 0.008, 0.022, 0.060);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL8, M_GUN_MET, true);
-
-  /* ---------- 皮卡汀尼導軌齒 ---------- */
+  // 導軌
   for(var rail=0; rail<7; rail++){
     m = mp();
     setTRS(tL, 0, 0.075, 0.185 - rail*0.045, 0,0,0, 0.046, 0.012, 0.020);
     m4mul(m, mGunW, tL);
-    pushDraw(m, MESH_BOX, M_GUN_MET, true);
+    pushDraw(m, MESH_BOX, M_GUN_MET);
   }
 
-  /* ---------- M-LOK 戰術護木（圓管 + 散熱孔） ---------- */
+  // 護木
   m = mp();
   setTRS(tL, 0, -0.004, -0.235, Math.PI/2, 0, 0, 0.046, 0.27, 0.046);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL24, M_GUN_SAND, true);
+  pushDraw(m, MESH_CYL, M_GUN_SAND);
 
-  /* 護木散熱孔（6 個細小圓柱體穿插） */
-  for(var h=0; h<6; h++){
-    m = mp();
-    setTRS(tL, 0, -0.004, -0.14 - h*0.036, Math.PI/2, 0, 0, 0.049, 0.010, 0.049);
-    m4mul(m, mGunW, tL);
-    pushDraw(m, MESH_CYL, M_GUN_DARK, true);
-  }
-
-  /* 護木頂部 M-LOK 凹槽 */
-  for(var h2=0; h2<4; h2++){
-    m = mp();
-    setTRS(tL, 0, 0.046, -0.16 - h2*0.055, 0,0,0, 0.028, 0.006, 0.030);
-    m4mul(m, mGunW, tL);
-    pushDraw(m, MESH_BOX, M_GUN_DARK, true);
-  }
-
-  /* ---------- PEQ-15 戰術雷射盒（護木頂部） ---------- */
-  m = mp();
-  setTRS(tL, 0, 0.058, -0.22, 0,0,0, 0.038, 0.030, 0.055);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_POLY, true);
-  /* 雷射發射孔 */
-  m = mp();
-  setTRS(tL, 0, 0.058, -0.248, 0,0,0, 0.014, 0.014, 0.008);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL8, M_GUN_DARK, true);
-  /* 微弱紅外雷射點 */
-  m = mp();
-  setTRS(tL, 0, 0.058, -0.253, 0,0,0, 0.008, 0.008, 0.006);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_SPH, M_RED_DOT, true);
-
-  /* ---------- 槍管 ---------- */
+  // 槍管與消音器
   m = mp();
   setTRS(tL, 0, 0.002, -0.44, Math.PI/2, 0, 0, 0.017, 0.16, 0.017);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL24, M_GUN_BLK, true);
+  pushDraw(m, MESH_CYL, M_GUN_BLK);
 
-  /* ---------- 消音器 ---------- */
   m = mp();
   setTRS(tL, 0, 0.002, -0.60, Math.PI/2, 0, 0, 0.030, 0.17, 0.030);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL24, M_GUN_BLK, true);
+  pushDraw(m, MESH_CYL, M_GUN_BLK);
 
+  // 彈匣 (帶換彈掉落)
   m = mp();
-  setTRS(tL, 0, 0.002, -0.685, Math.PI/2, 0, 0, 0.033, 0.014, 0.033);
+  setTRS(tL, 0, -0.122 - magDrop, 0.06 - magDrop*0.4,
+         magTilt, 0, 0,
+         0.052, 0.155, 0.085);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL24, M_GUN_MET, true);
+  pushDraw(m, MESH_BOX, M_GUN_POLY);
 
-  /* ---------- 全息瞄準鏡（鏤空外框 + 高透明鏡片） ---------- */
-  /* 底座 */
-  m = mp();
-  setTRS(tL, 0, 0.092, -0.045, 0,0,0, 0.052, 0.028, 0.11);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_POLY, true);
-
-  /* 鏡筒外框（金屬環） */
-  m = mp();
-  setTRS(tL, 0, 0.126, -0.045, Math.PI/2, 0, 0, 0.044, 0.10, 0.044);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL24, M_GUN_BLK, true);
-
-  /* 鏡筒內環（玻璃前側） */
-  m = mp();
-  setTRS(tL, 0, 0.126, -0.096, Math.PI/2, 0, 0, 0.038, 0.008, 0.038);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL24, M_GOGGLE, true);
-
-  /* 全息準星紅環（外圈） */
-  m = mp();
-  setTRS(tL, 0, 0.126, -0.101, Math.PI/2, 0, 0, 0.018, 0.003, 0.018);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL, M_RED_RING, true);
-
-  /* 全息準星紅點（中心） */
-  m = mp();
-  setTRS(tL, 0, 0.126, -0.103, Math.PI/2, 0, 0, 0.004, 0.002, 0.004);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL, M_RED_DOT, true);
-
-  /* ---------- 彎曲 PMAG 彈匣（帶防滑紋） ---------- */
-  var magBaseY = -0.122 + magY;
-  var magBaseZ = 0.06 - magY*0.4;
-  m = mp();
-  setTRS(tL, 0, magBaseY, magBaseZ, magTilt, 0, 0, 0.052, 0.155, 0.085);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_POLY, true);
-  /* 彈匣底部弧形 */
-  m = mp();
-  setTRS(tL, 0, magBaseY - 0.07, magBaseZ + 0.01, magTilt, 0, 0, 0.052, 0.04, 0.09);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_DARK, true);
-  /* 防滑紋（三道） */
-  for(var rib=0; rib<3; rib++){
-    m = mp();
-    setTRS(tL, 0, magBaseY + 0.05 - rib*0.05, magBaseZ - 0.044, magTilt, 0, 0, 0.048, 0.008, 0.008);
-    m4mul(m, mGunW, tL);
-    pushDraw(m, MESH_BOX, M_GUN_DARK, true);
-  }
-
-  /* ---------- 戰術垂直握把 ---------- */
-  m = mp();
-  setTRS(tL, 0, -0.112, -0.22, 0.16, 0, 0, 0.034, 0.125, 0.046);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_POLY, true);
-
-  /* ---------- 槍托緩衝管 ---------- */
+  // 槍托
   m = mp();
   setTRS(tL, 0, 0.012, 0.29, Math.PI/2, 0, 0, 0.026, 0.17, 0.026);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL24, M_GUN_BLK, true);
+  pushDraw(m, MESH_CYL, M_GUN_BLK);
 
-  /* 緩衝管螺紋 */
-  for(var thr=0; thr<3; thr++){
-    m = mp();
-    setTRS(tL, 0, 0.012, 0.26 + thr*0.03, Math.PI/2, 0, 0, 0.028, 0.008, 0.028);
-    m4mul(m, mGunW, tL);
-    pushDraw(m, MESH_CYL, M_GUN_MET, true);
-  }
-
-  /* 槍托底板 */
   m = mp();
   setTRS(tL, 0, -0.008, 0.38, 0,0,0, 0.048, 0.085, 0.045);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_POLY, true);
+  pushDraw(m, MESH_BOX, M_GUN_POLY);
 
-  /* ---------- 扳機護圈 ---------- */
+  /* === 全息瞄準鏡（絕對無遮擋） === */
+  // 底座
   m = mp();
-  setTRS(tL, 0, -0.066, 0.04, 0,0,0, 0.020, 0.032, 0.06);
+  setTRS(tL, 0, 0.092, -0.045, 0,0,0, 0.052, 0.028, 0.11);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_BLK, true);
+  pushDraw(m, MESH_BOX, M_GUN_POLY);
 
-  /* ---------- 扳機 ---------- */
+  // U型外框 (左、右、上) - 細薄金屬
+  // 左
   m = mp();
-  setTRS(tL, 0, -0.072, 0.035, 0.30, 0, 0, 0.010, 0.022, 0.010);
+  setTRS(tL, -0.042, 0.126, -0.045, 0,0,0, 0.008, 0.05, 0.06);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_GUN_MET, true);
+  pushDraw(m, MESH_BOX, M_GUN_BLK);
+  // 右
+  m = mp();
+  setTRS(tL, 0.042, 0.126, -0.045, 0,0,0, 0.008, 0.05, 0.06);
+  m4mul(m, mGunW, tL);
+  pushDraw(m, MESH_BOX, M_GUN_BLK);
+  // 上
+  m = mp();
+  setTRS(tL, 0, 0.150, -0.045, 0,0,0, 0.09, 0.008, 0.06);
+  m4mul(m, mGunW, tL);
+  pushDraw(m, MESH_BOX, M_GUN_BLK);
 
-  /* ============================================================
-     第一人稱雙手手臂
-     ============================================================ */
+  // 玻璃 (完全透明)
+  m = mp();
+  setTRS(tL, 0, 0.126, -0.095, 0,0,0, 0.08, 0.045, 0.002);
+  m4mul(m, mGunW, tL);
+  pushDraw(m, MESH_BOX, M_GLASS);
 
-  /* ---------- 左手路徑（換彈動畫） ---------- */
-  var lhX = -0.008, lhY = -0.086, lhZ = -0.225;
-  var lhRotX = 0.16, lhRotY = 0.22;
-  if(reload.active){
-    lhX = keyframeValue(p, [
-      [0.00,-0.008], [0.22,-0.008], [0.30,-0.030], [0.40,-0.030],
-      [0.50,-0.100], [0.60,-0.030], [0.70,-0.030], [0.80,-0.060],
-      [0.88,-0.060], [1.00,-0.008]
-    ]);
-    lhY = keyframeValue(p, [
-      [0.00,-0.086], [0.22,-0.086], [0.30,-0.150], [0.40,-0.240],
-      [0.50,-0.550], [0.60,-0.280], [0.70,-0.150], [0.80,-0.010],
-      [0.88,-0.010], [1.00,-0.086]
-    ]);
-    lhZ = keyframeValue(p, [
-      [0.00,-0.225], [0.22,-0.225], [0.30,0.020], [0.40,0.020],
-      [0.50,0.100], [0.60,0.020], [0.70,0.020], [0.80,0.020],
-      [0.88,0.020], [1.00,-0.225]
-    ]);
-    lhRotX = keyframeValue(p, [
-      [0.00,0.16], [0.30,0.60], [0.50,0.80], [0.70,0.55],
-      [0.80,0.35], [0.88,0.35], [1.00,0.16]
-    ]);
-    lhRotY = keyframeValue(p, [
-      [0.00,0.22], [0.30,0.10], [0.50,0.30], [0.70,0.15],
-      [0.80,0.35], [0.88,0.35], [1.00,0.22]
-    ]);
+  // 發光紅色全息圓環與紅點
+  // 我們將其放置在玻璃正中央，永遠面向鏡頭 (Billboard)
+  // 在本地座標系計算朝向
+  var rdx = mGunW[12] - player.x, rdy = mGunW[13] - eyeY, rdz = mGunW[14] - player.z;
+  var ryaw = Math.atan2(rdx, rdz);
+  var rpitch = -Math.asin(rdy / Math.sqrt(rdx*rdx+rdy*rdy+rdz*rdz));
+  
+  // 紅點
+  m = mp();
+  // 放置在玻璃前方
+  setTRS(mBillboard, 0, 0.126, -0.098, rpitch, ryaw, 0, 0.006, 0.006, 0.006);
+  m4mul(m, mGunW, mBillboard);
+  pushDraw(m, MESH_SPH, M_RED_DOT);
+
+  // 紅色外環 (用八個小面片拼湊)
+  for(var i=0; i<8; i++){
+    var ang = i/8 * Math.PI*2;
+    var rx = Math.cos(ang)*0.018;
+    var ry = Math.sin(ang)*0.018;
+    m = mp();
+    setTRS(mBillboard, rx, 0.126+ry, -0.098, rpitch, ryaw, 0, 0.004, 0.004, 0.004);
+    m4mul(m, mGunW, mBillboard);
+    pushDraw(m, MESH_SPH, M_RED_DOT);
   }
 
-  /* ---------- 右手（握持手槍握把） ---------- */
-  var rhX = 0.005, rhY = -0.108, rhZ = 0.115;
-
-  /* 手腕護甲（碳纖維） */
+  /* === 手部模型（只渲染前臂與手套） === */
+  // 右手 (握把)
   m = mp();
-  setTRS(tL, rhX + 0.035, rhY - 0.030, rhZ + 0.045, 0.30, -0.10, 0.15, 0.055, 0.045, 0.050);
+  setTRS(tL, 0.005, -0.108, 0.115, 0.22, -0.14, 0, 0.070, 0.095, 0.095);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_SPH, M_CARBON, true);
+  pushDraw(m, MESH_SPH, M_GLOVE);
 
-  /* 手掌（戰術手套） */
   m = mp();
-  setTRS(tL, rhX, rhY, rhZ, 0.22, -0.14, 0, 0.070, 0.095, 0.095);
+  setTRS(tL, 0.04, -0.09, 0.10, 0.4, 0, 0, 0.028, 0.055, 0.050);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_SPH, M_GLOVE, true);
+  pushDraw(m, MESH_BOX, M_GLOVE);
 
-  /* 手背護塊（碳纖維） */
+  // 右前臂
   m = mp();
-  setTRS(tL, rhX + 0.005, rhY + 0.02, rhZ + 0.035, 0.25, -0.10, 0, 0.060, 0.040, 0.060);
+  setTRS(tL, 0.12, -0.22, 0.22, -0.4, -0.3, 0.3, 0.055, 0.25, 0.055);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_CARBON, true);
+  pushDraw(m, MESH_CYL, M_CAMO);
 
-  /* 手指：食指扣在扳機 */
-  drawCylBetween(mGunW, rhX + 0.005, rhY + 0.010, rhZ - 0.020,
-                          0.000,       -0.068,      0.038,
-                          0.012, MESH_CYL, M_GLOVE_L, true);
-  /* 中指/無名指/小指環繞握把 */
-  for(var fi=0; fi<3; fi++){
-    var fy = rhY - 0.025 - fi*0.020;
-    drawCylBetween(mGunW, rhX + 0.035, fy, rhZ + 0.015,
-                            rhX + 0.020, fy - 0.005, rhZ - 0.035,
-                            0.011, MESH_CYL, M_GLOVE_L, true);
-  }
-  /* 拇指沿握把側面 */
-  drawCylBetween(mGunW, rhX + 0.045, rhY + 0.030, rhZ + 0.030,
-                          rhX + 0.040, rhY - 0.020, rhZ + 0.075,
-                          0.012, MESH_CYL, M_GLOVE_L, true);
-
-  /* 右腕戰術手錶 */
+  // 左手 (護木)
   m = mp();
-  setTRS(tL, rhX + 0.065, rhY + 0.045, rhZ + 0.075, 0.20, 0, 0.25, 0.048, 0.018, 0.040);
+  setTRS(tL, -0.008, -0.086 + handOffsetY, -0.225 + handOffsetZ, 0.16, 0.22, 0, 0.068, 0.090, 0.095);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_WATCH, true);
-  /* 錶盤 */
+  pushDraw(m, MESH_SPH, M_GLOVE);
+
   m = mp();
-  setTRS(tL, rhX + 0.065, rhY + 0.048, rhZ + 0.075, 0.20, 0, 0.25, 0.030, 0.006, 0.026);
+  setTRS(tL, -0.05, -0.07 + handOffsetY, -0.225 + handOffsetZ, 0.4, 0, 0, 0.026, 0.052, 0.048);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_CYL8, M_GUN_DARK, true);
+  pushDraw(m, MESH_BOX, M_GLOVE);
 
-  /* ---------- 右手前臂（深色作戰服袖子） ---------- */
-  var rElbowX = 0.15, rElbowY = -0.42, rElbowZ = 0.32;
-  drawCylBetween(mGunW, rElbowX, rElbowY, rElbowZ,
-                          rhX + 0.040, rhY - 0.010, rhZ + 0.040,
-                          0.048, MESH_CYL, M_CAMO, true);
-  /* 肘部關節 */
+  // 左前臂
   m = mp();
-  setTRS(tL, rElbowX, rElbowY, rElbowZ, 0,0,0, 0.055, 0.055, 0.055);
+  setTRS(tL, -0.16, -0.16 + handOffsetY, -0.06 + handOffsetZ, -0.2, 0.4, -0.4, 0.055, 0.25, 0.055);
   m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_SPH, M_CAMO, true);
+  pushDraw(m, MESH_CYL, M_CAMO);
 
-  /* ---------- 左手（托護木 + 換彈動畫） ---------- */
-  /* 手掌（露指戰術手套） */
-  m = mp();
-  setTRS(tL, lhX, lhY, lhZ, lhRotX, lhRotY, 0, 0.068, 0.090, 0.095);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_SPH, M_GLOVE, true);
+  /* === 槍口火光 === */
+  if(hitFlash > 0){
+    var fs = 0.08 + (1 - hitFlash/0.06) * 0.06;
+    m = mp();
+    setTRS(tL, 0, 0.002, -0.72, Math.PI/2, 0, 0, fs, fs, fs);
+    m4mul(m, mGunW, tL);
+    pushDraw(m, MESH_SPH, M_FLASH);
 
-  /* 手背碳纖維護塊 */
-  m = mp();
-  setTRS(tL, lhX - 0.005, lhY + 0.022, lhZ + 0.030, lhRotX + 0.10, lhRotY - 0.05, 0, 0.058, 0.035, 0.055);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_BOX, M_CARBON, true);
-
-  /* 左手四指環繞護木 */
-  for(var lfi=0; lfi<4; lfi++){
-    var lfy = lhY + 0.020 - lfi*0.022;
-    drawCylBetween(mGunW, lhX + 0.030, lfy, lhZ + 0.015,
-                            lhX + 0.015, lfy - 0.005, lhZ - 0.035,
-                            0.011, MESH_CYL, M_GLOVE_L, true);
-  }
-  /* 左手拇指 */
-  drawCylBetween(mGunW, lhX + 0.045, lhY + 0.035, lhZ + 0.025,
-                          lhX + 0.035, lhY - 0.010, lhZ + 0.070,
-                          0.012, MESH_CYL, M_GLOVE_L, true);
-
-  /* 左腕護甲 */
-  m = mp();
-  setTRS(tL, lhX - 0.035, lhY - 0.030, lhZ + 0.045, lhRotX, -lhRotY*0.5, -0.15, 0.055, 0.045, 0.050);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_SPH, M_CARBON, true);
-
-  /* ---------- 左手前臂 ---------- */
-  var lElbowX = -0.20, lElbowY = -0.40, lElbowZ = 0.10;
-  drawCylBetween(mGunW, lElbowX, lElbowY, lElbowZ,
-                          lhX - 0.020, lhY - 0.010, lhZ + 0.040,
-                          0.048, MESH_CYL, M_CAMO, true);
-  /* 肘部關節 */
-  m = mp();
-  setTRS(tL, lElbowX, lElbowY, lElbowZ, 0,0,0, 0.055, 0.055, 0.055);
-  m4mul(m, mGunW, tL);
-  pushDraw(m, MESH_SPH, M_CAMO, true);
-
-  /* ============================================================
-     槍口火舌（Additive Blending 交叉平面）
-     ============================================================ */
-  if(hitFlash > 0 && flashProg){
-    /* 槍口在槍械本地空間的位置 */
-    var muzzleLx = 0, muzzleLy = 0.002, muzzleLz = -0.72;
-
-    /* 轉換到相機本地空間（mLocal 將槍械本地 → 相機本地） */
-    var mx = mLocal[0]*muzzleLx + mLocal[4]*muzzleLy + mLocal[8]*muzzleLz + mLocal[12];
-    var my = mLocal[1]*muzzleLx + mLocal[5]*muzzleLy + mLocal[9]*muzzleLz + mLocal[13];
-    var mz = mLocal[2]*muzzleLx + mLocal[6]*muzzleLy + mLocal[10]*muzzleLz + mLocal[14];
-
-    var flameAlpha = Math.min(1, hitFlash / 0.055);
-    var flameSize = 0.28 + (1 - hitFlash/0.055) * 0.14;
-    var flameRot = Math.random() * Math.PI * 2;
-
-    /* 構建火舌世界矩陣：mCam * (T(muzzle) * R_z(flameRot) * S(flameSize)) */
-    var mFlame = mp();
-    setTRS(tL, mx, my, mz, 0, 0, flameRot, flameSize, flameSize, flameSize);
-    m4mul(mFlame, mCam, tL);
-
-    pushDraw(mFlame, MESH_FLASH, null, true, true, flameAlpha);
+    m = mp();
+    setTRS(tL, 0, 0.002, -0.78, Math.PI/2, 0, 0, fs*0.5, fs*1.2, fs*0.5);
+    m4mul(m, mGunW, tL);
+    pushDraw(m, MESH_CYL, M_FLASH);
   }
 }
 
@@ -2501,13 +1941,6 @@ function buildScene(){
       var mf = mp();
       setTRS(mf, o.x, 0.016, o.z, 0,0,0, o.hw*2, 0.03, o.hd*2);
       pushDraw(mf, MESH_BOX, o.mat);
-    } else if(o.type === 'barrel'){
-      var mb = mp();
-      setTRS(mb, o.x, o.h/2, o.z, 0,0,0, o.r, o.h, o.r);
-      pushDraw(mb, MESH_CYL, M_BARREL);
-      var mr = mp();
-      setTRS(mr, o.x, o.h + 0.012, o.z, 0,0,0, o.r*0.92, 0.03, o.r*0.92);
-      pushDraw(mr, MESH_CYL, M_METAL_GRY);
     } else if(o.type === 'sand'){
       var layers = o.layers;
       var perRow = 4;
@@ -2521,8 +1954,7 @@ function buildScene(){
           var by = L*0.215 + 0.11;
           var bz = o.z + (L%2 ? 0.06 : -0.06);
           var mm = mp();
-          setTRS(mm, bx, by, bz, 0, (Math.random()-0.5)*0.1, 0,
-                 0.20, 0.135, rowD*0.5);
+          setTRS(mm, bx, by, bz, 0, (Math.random()-0.5)*0.1, 0, 0.20, 0.135, rowD*0.5);
           pushDraw(mm, MESH_SPH, M_SANDBAG);
         }
       }
@@ -2533,58 +1965,47 @@ function buildScene(){
     }
   }
 
-  for(var b=0;b<buildings.length;b++){
-    var bd = buildings[b];
-    var mb2 = mp();
-    setTRS(mb2, bd.x, bd.h/2, bd.z, 0,0,0, bd.w, bd.h, bd.d);
-    pushDraw(mb2, MESH_BOX, (b%2) ? M_BUILDING : M_BUILDING2);
+  /* 建築與圍牆 */
+  var blds = [
+    {x:-26,z:-26,w:8, h:16,d:6},
+    {x:-14,z:-32,w:9, h:20,d:7},
+    {x:  4,z:-34,w:11,h:14,d:6},
+    {x: 18,z:-30,w:8, h:18,d:6},
+    {x: 30,z:-16,w:6, h:12,d:5},
+    {x:-30,z: 12,w:6, h:14,d:5},
+    {x: 32,z:  8,w:7, h:16,d:6}
+  ];
+  for(var b=0;b<blds.length;b++){
+    var bd = blds[b];
+    var mb = mp();
+    setTRS(mb, bd.x, bd.h/2, bd.z, 0,0,0, bd.w, bd.h, bd.d);
+    pushDraw(mb, MESH_BOX, M_BRICK);
 
-    var floors = Math.floor(bd.h / 3.2);
-    for(var f=1; f<floors; f++){
-      var mf2 = mp();
-      setTRS(mf2, bd.x, f*3.2, bd.z, 0,0,0, bd.w*1.02, 0.16, bd.d*1.02);
-      pushDraw(mf2, MESH_BOX, M_CONCRETE);
-    }
-
-    var cols = Math.max(2, Math.floor(bd.w/2.4));
-    for(var f2=0; f2<floors; f2++){
-      for(var cc=0; cc<cols; cc++){
-        var wx = bd.x - bd.w/2 + (cc+0.5)*(bd.w/cols);
-        var wy = f2*3.2 + 1.9;
+    // 窗戶
+    var cols = Math.max(2, Math.floor(bd.w/2.5));
+    var rows = Math.floor(bd.h/3.5);
+    for(var r=0;r<rows;r++){
+      for(var c2=0;c2<cols;c2++){
+        var wx = bd.x - bd.w/2 + (c2+0.5)*(bd.w/cols);
+        var wy = r*3.5 + 2.0;
         var mw = mp();
-        setTRS(mw, wx, wy, bd.z - bd.d/2 - 0.02, 0,0,0, bd.w/cols*0.62, 1.25, 0.06);
-        pushDraw(mw, MESH_BOX, M_WINDOW);
+        setTRS(mw, wx, wy, bd.z - bd.d/2 - 0.02, 0,0,0, bd.w/cols*0.5, 1.2, 0.05);
+        pushDraw(mw, MESH_BOX, M_GOGGLE);
       }
     }
-
-    var ma = mp();
-    setTRS(ma, bd.x + bd.w*0.2, bd.h + 1.6, bd.z, 0,0,0, 0.07, 3.2, 0.07);
-    pushDraw(ma, MESH_CYL8, M_METAL_GRY);
-    var ma2 = mp();
-    setTRS(ma2, bd.x + bd.w*0.2, bd.h + 2.6, bd.z, 0,0,0, 0.6, 0.05, 0.05);
-    pushDraw(ma2, MESH_BOX, M_METAL_GRY);
   }
 
   var wallPos = [
-    {x:0, z:-BOUND-1.2, w:GROUND+4, d:0.6, h:2.6},
-    {x:0, z: BOUND+1.2, w:GROUND+4, d:0.6, h:2.6},
-    {x:-BOUND-1.2, z:0, w:0.6, d:GROUND+4, h:2.6},
-    {x: BOUND+1.2, z:0, w:0.6, d:GROUND+4, h:2.6}
+    {x:0, z:-BOUND-1.2, w:GROUND+4, d:0.6, h:3.0},
+    {x:0, z: BOUND+1.2, w:GROUND+4, d:0.6, h:3.0},
+    {x:-BOUND-1.2, z:0, w:0.6, d:GROUND+4, h:3.0},
+    {x: BOUND+1.2, z:0, w:0.6, d:GROUND+4, h:3.0}
   ];
   for(var w2=0; w2<wallPos.length; w2++){
     var wp = wallPos[w2];
     var mw2 = mp();
     setTRS(mw2, wp.x, wp.h/2, wp.z, 0,0,0, wp.w, wp.h, wp.d);
-    pushDraw(mw2, MESH_BOX, M_CONCRETE);
-    var n = 10;
-    for(var p2=0; p2<n; p2++){
-      var t2 = (p2+0.5)/n - 0.5;
-      var px = wp.x + (wp.w > wp.d ? t2*wp.w : 0);
-      var pz = wp.z + (wp.w > wp.d ? 0 : t2*wp.d);
-      var mPost = mp();
-      setTRS(mPost, px, wp.h + 0.35, pz, 0,0,0, 0.05, 0.7, 0.05);
-      pushDraw(mPost, MESH_CYL8, M_METAL_GRY);
-    }
+    pushDraw(mw2, MESH_BOX, M_BRICK);
   }
 }
 
@@ -2592,12 +2013,19 @@ function buildScene(){
    玩家更新
    ============================================================ */
 function updatePlayer(dt){
-  var adsTarget = (adsHold && !reload.active && !player.sliding) ? 1 : 0;
-  player.ads = damp(player.ads, adsTarget, 0.20, dt);
+  var adsTarget = (adsHold && !reload.active && !player.sliding && player.sprintProg < 0.1) ? 1 : 0;
+  var adsRes = spring(player.ads, adsTarget, player.adsVel, 420, 32, dt);
+  player.ads = adsRes[0];
+  player.adsVel = adsRes[1];
+
+  var speedNow = Math.sqrt(player.vx*player.vx + player.vz*player.vz);
+  var sprintTarget = (speedNow > 4.5 && !player.sliding && player.ads < 0.2 && !reload.active) ? 1 : 0;
+  var sprRes = spring(player.sprintProg, sprintTarget, player.sprintVel, 160, 22, dt);
+  player.sprintProg = clamp(sprRes[0], 0, 1);
+  player.sprintVel = sprRes[1];
 
   if(crouchQ){
     crouchQ = false;
-    var speedNow = Math.sqrt(player.vx*player.vx + player.vz*player.vz);
     if(player.grounded && !player.sliding && speedNow > 3.0){
       player.sliding = true;
       player.slideT = 0.70;
@@ -2609,7 +2037,7 @@ function updatePlayer(dt){
   if(jumpQ){
     jumpQ = false;
     if(player.grounded){
-      player.vy = JUMP_V;
+      player.vy = 6.6;
       player.grounded = false;
       if(player.sliding){ player.sliding = false; player.slideT = 0; }
     }
@@ -2620,8 +2048,8 @@ function updatePlayer(dt){
     if(player.slideT <= 0) player.sliding = false;
   }
 
-  var targetH = EYE_BASE;
-  if(player.sliding || player.crouching) targetH = CROUCH_H;
+  var targetH = 1.68;
+  if(player.sliding || player.crouching) targetH = 0.96;
   player.curH = damp(player.curH, targetH, 0.18, dt);
 
   var ix = stickX, iy = stickY;
@@ -2632,17 +2060,11 @@ function updatePlayer(dt){
   var fwdX = -sy, fwdZ = -cy;
   var rgtX =  cy, rgtZ = -sy;
 
-  var moveF = -iy;
-  var moveR =  ix;
-
-  var wx = fwdX*moveF + rgtX*moveR;
-  var wz = fwdZ*moveF + rgtZ*moveR;
-
-  var sprint = (mag > 0.90) && player.ads < 0.2 && !player.sliding && !reload.active;
-  player.sprinting = sprint;
+  var wx = fwdX*(-iy) + rgtX*ix;
+  var wz = fwdZ*(-iy) + rgtZ*ix;
 
   var sp = 4.6;
-  if(sprint) sp *= 1.5;
+  if(player.sprintProg > 0.8) sp *= 1.5;
   if(player.ads > 0.3) sp *= 0.58;
   if(player.sliding) sp = 8.4;
   if(reload.active) sp *= 0.6;
@@ -2659,7 +2081,7 @@ function updatePlayer(dt){
   player.z += player.vz * dt;
 
   if(!player.grounded){
-    player.vy -= GRAVITY * dt;
+    player.vy -= 18 * dt;
     player.y += player.vy * dt;
     if(player.y <= 0){ player.y = 0; player.vy = 0; player.grounded = true; }
   }
@@ -2682,34 +2104,27 @@ function updatePlayer(dt){
   if(player.z < -BOUND+r) player.z = -BOUND+r;
   if(player.z >  BOUND-r) player.z =  BOUND-r;
 
-  player.shake = Math.max(0, player.shake - dt*2.6);
-  player.recoil = Math.max(0, player.recoil - dt*9);
-  player.recoilH = damp(player.recoilH, 0, 0.25, dt);
-  hitFlash = Math.max(0, hitFlash - dt);
+  /* 開火與後座力彈簧 */
+  gun.recoilZ = damp(gun.recoilZ, 0, 0.2, dt);
+  gun.recoilPitch = damp(gun.recoilPitch, 0, 0.2, dt);
+  gun.recoilZVel += -gun.recoilZ * 300 * dt;
+  gun.recoilZVel *= Math.exp(-25*dt);
+  gun.recoilZ += gun.recoilZVel * dt;
 
-  var dYaw = player.yaw - prevYaw;
-  var dPitch = player.pitch - prevPitch;
-  prevYaw = player.yaw;
-  prevPitch = player.pitch;
-  var swayTx = clamp(-dYaw*28, -0.055, 0.055);
-  var swayTy = clamp(-dPitch*18, -0.045, 0.045);
-  var swayRate = player.ads > 0.5 ? 0.28 : 0.14;
-  gunSwayX = damp(gunSwayX, swayTx, swayRate, dt);
-  gunSwayY = damp(gunSwayY, swayTy, swayRate, dt);
+  gun.recoilPitchVel += -gun.recoilPitch * 300 * dt;
+  gun.recoilPitchVel *= Math.exp(-25*dt);
+  gun.recoilPitch += gun.recoilPitchVel * dt;
+
+  if(gun.boltTimer > 0) gun.boltTimer -= dt;
+  if(hitFlash > 0) hitFlash -= dt;
 
   var cs = 1.0;
-  if(player.ads > 0.5) cs = 0.55;
-  else if(sprint) cs = 1.35;
-  crossEl.style.transform = 'scale('+cs+')';
-  crossEl.style.opacity = (player.ads > 0.9) ? 0 : 0.9;
-  sblackEl.style.opacity =
-    player.ads > 0.82 ? ((player.ads-0.82)/0.18).toFixed(2) : 0;
+  if(player.ads > 0.8) crossEl.style.opacity = 0;
+  else crossEl.style.opacity = 0.9;
+  if(player.sprintProg > 0.5) crossEl.style.transform = 'scale(1.3)';
+  else crossEl.style.transform = 'scale(1.0)';
 
   if(firing && !reload.active) playerShoot();
-
-  if(gun.mag === 0 && !reload.active && gun.reserve > 0){
-    startReload();
-  }
 }
 
 /* ============================================================
@@ -2733,7 +2148,6 @@ var viewM = new Float32Array(16);
 var vpM   = new Float32Array(16);
 var aspect = 1;
 var curFov = 72;
-var curTex = undefined;
 
 function resize(){
   var w = window.innerWidth;
@@ -2751,21 +2165,7 @@ function resize(){
 window.addEventListener('resize', resize);
 resize();
 
-function bindTex(tex){
-  if(curTex === tex) return;
-  curTex = tex;
-  if(tex){
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.uniform1i(uTex, 0);
-    gl.uniform1f(uUseTex, 1.0);
-  } else {
-    gl.uniform1f(uUseTex, 0.0);
-  }
-}
-
 function render(eyeY){
-  /* ---------- 陰影 Pass ---------- */
   if(shadowsEnabled && shadowProg){
     gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB);
     gl.viewport(0,0,SHADOW_SIZE,SHADOW_SIZE);
@@ -2781,7 +2181,7 @@ function render(eyeY){
     var lastMeshS = null;
     for(var i=0;i<drawCount;i++){
       var ds = drawList[i];
-      if(ds.noShadow || ds.additive) continue;
+      if(ds.mat.noShadow) continue;
       if(ds.mesh !== lastMeshS){
         gl.bindBuffer(gl.ARRAY_BUFFER, ds.mesh.vbo);
         gl.vertexAttribPointer(sAPos, 3, gl.FLOAT, false, 32, 0);
@@ -2794,9 +2194,8 @@ function render(eyeY){
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  /* ---------- 主 Pass ---------- */
   gl.viewport(0,0,canvas.width,canvas.height);
-  gl.clearColor(0.68,0.72,0.78,1);
+  gl.clearColor(0.05,0.08,0.12,1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.useProgram(prog);
 
@@ -2818,13 +2217,13 @@ function render(eyeY){
   gl.uniformMatrix4fv(uVP, false, vpM);
   gl.uniformMatrix4fv(uLightVPm, false, lightVP);
   gl.uniform3f(uLightDir, LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_DIR[2]);
-  gl.uniform3f(uLightCol, 1.0, 0.92, 0.80);
-  gl.uniform3f(uAmbient, 0.55, 0.60, 0.70);
+  gl.uniform3f(uLightCol, 1.0, 0.72, 0.42); // 溫暖夕陽
+  gl.uniform3f(uAmbient, 0.12, 0.15, 0.20); // 深藍灰環境光
   gl.uniform3f(uCam, player.x, eyeY, player.z);
-  gl.uniform3f(uFogCol, 0.72, 0.76, 0.82);
-  gl.uniform1f(uFogNear, 48.0);
-  gl.uniform1f(uFogFar, 140.0);
-  gl.uniform1f(uToneExp, 1.28);
+  gl.uniform3f(uFogCol, 0.12, 0.16, 0.22);
+  gl.uniform1f(uFogNear, 40.0);
+  gl.uniform1f(uFogFar, 120.0);
+  gl.uniform1f(uToneExp, 1.05);
 
   if(shadowsEnabled){
     gl.activeTexture(gl.TEXTURE1);
@@ -2839,14 +2238,11 @@ function render(eyeY){
   gl.enableVertexAttribArray(aNrm);
   gl.enableVertexAttribArray(aUV);
 
-  curTex = undefined;
+  // 1. 不透明物體
   var lastMesh = null;
-
-  /* 非加法內容 */
   for(var i=0;i<drawCount;i++){
     var d = drawList[i];
-    if(d.additive) continue;
-    var mat = d.mat;
+    if(d.mat.blend !== 0) continue; // 跳過透明
     if(d.mesh !== lastMesh){
       gl.bindBuffer(gl.ARRAY_BUFFER, d.mesh.vbo);
       gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
@@ -2856,78 +2252,138 @@ function render(eyeY){
       lastMesh = d.mesh;
     }
     gl.uniformMatrix4fv(uModel, false, d.m);
-    gl.uniform3f(uColor, mat.c[0], mat.c[1], mat.c[2]);
-    gl.uniform1f(uMetal, mat.metal);
-    gl.uniform1f(uRough, mat.rough);
-    gl.uniform2f(uTiling, mat.tiling[0], mat.tiling[1]);
-    bindTex(mat.tex);
+    gl.uniform3f(uColor, d.mat.c[0], d.mat.c[1], d.mat.c[2]);
+    gl.uniform1f(uMetal, d.mat.metal);
+    gl.uniform1f(uRough, d.mat.rough);
+    gl.uniform1f(uAlpha, d.mat.alpha);
+    gl.uniform2f(uTiling, d.mat.tiling[0], d.mat.tiling[1]);
+    if(d.mat.tex){
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, d.mat.tex);
+      gl.uniform1i(uTex, 0);
+      gl.uniform1f(uUseTex, 1.0);
+    } else {
+      gl.uniform1f(uUseTex, 0.0);
+    }
     gl.drawElements(gl.TRIANGLES, d.mesh.count, gl.UNSIGNED_SHORT, 0);
   }
 
-  /* ---------- 加法 Pass（槍口火舌） ---------- */
-  var hasAdditive = false;
+  // 2. 透明物體
+  gl.enable(gl.BLEND);
+  gl.depthMask(false);
+  lastMesh = null;
   for(var i=0;i<drawCount;i++){
-    if(drawList[i].additive){ hasAdditive = true; break; }
-  }
+    var d = drawList[i];
+    if(d.mat.blend === 0) continue;
+    if(d.mat.blend === 1) gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive
+    else gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); // Alpha
 
-  if(hasAdditive && flashProg){
-    gl.useProgram(flashProg);
-    gl.uniformMatrix4fv(fUVP, false, vpM);
-    gl.uniform1i(fUTex, 0);
-    gl.uniform3f(fUTint, 1.0, 0.95, 0.80);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texFlash);
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    gl.depthMask(false);
-
-    /* 對火舌網格使用 flash 程式的屬性位置 */
-    gl.enableVertexAttribArray(fAPos);
-    gl.enableVertexAttribArray(fAUV);
-
-    for(var i=0;i<drawCount;i++){
-      var d = drawList[i];
-      if(!d.additive) continue;
-      gl.uniformMatrix4fv(fUModel, false, d.m);
-      gl.uniform1f(fUAlpha, d.alpha);
+    if(d.mesh !== lastMesh){
       gl.bindBuffer(gl.ARRAY_BUFFER, d.mesh.vbo);
-      gl.vertexAttribPointer(fAPos, 3, gl.FLOAT, false, 32, 0);
-      gl.vertexAttribPointer(fAUV, 2, gl.FLOAT, false, 32, 24);
+      gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
+      gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12);
+      gl.vertexAttribPointer(aUV,  2, gl.FLOAT, false, 32, 24);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, d.mesh.ibo);
-      gl.drawElements(gl.TRIANGLES, d.mesh.count, gl.UNSIGNED_SHORT, 0);
+      lastMesh = d.mesh;
     }
+    gl.uniformMatrix4fv(uModel, false, d.m);
+    gl.uniform3f(uColor, d.mat.c[0], d.mat.c[1], d.mat.c[2]);
+    gl.uniform1f(uMetal, d.mat.metal);
+    gl.uniform1f(uRough, d.mat.rough);
+    gl.uniform1f(uAlpha, d.mat.alpha);
+    gl.uniform2f(uTiling, d.mat.tiling[0], d.mat.tiling[1]);
+    if(d.mat.tex){
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, d.mat.tex);
+      gl.uniform1i(uTex, 0);
+      gl.uniform1f(uUseTex, 1.0);
+    } else {
+      gl.uniform1f(uUseTex, 0.0);
+    }
+    gl.drawElements(gl.TRIANGLES, d.mesh.count, gl.UNSIGNED_SHORT, 0);
+  }
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
 
-    gl.disable(gl.BLEND);
-    gl.depthMask(true);
-    gl.useProgram(prog);
+  // 3. 粒子與彈殼 (簡化渲染為方塊/球體)
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // 火星發光
 
-    /* 恢復主程式的屬性狀態 */
-    gl.enableVertexAttribArray(aPos);
-    gl.enableVertexAttribArray(aNrm);
-    gl.enableVertexAttribArray(aUV);
+  gl.bindBuffer(gl.ARRAY_BUFFER, MESH_BOX.vbo);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12);
+  gl.vertexAttribPointer(aUV,  2, gl.FLOAT, false, 32, 24);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, MESH_BOX.ibo);
+
+  gl.uniform1f(uUseTex, 0.0);
+  gl.uniform1f(uRough, 0.5);
+  gl.uniform1f(uMetal, 0.0);
+  gl.uniform1f(uAlpha, 1.0);
+
+  for(var i=0;i<particles.length;i++){
+    var p = particles[i];
+    var pm = new Float32Array(16);
+    setTRS(pm, p.x, p.y, p.z, 0,0,0, p.size, p.size, p.size);
+    gl.uniformMatrix4fv(uModel, false, pm);
+    if(p.type === 1){ // spark
+      gl.uniform3f(uColor, 1.0, 0.6, 0.1);
+    } else { // dust
+      gl.uniform3f(uColor, 0.3, 0.3, 0.3);
+    }
+    gl.drawElements(gl.TRIANGLES, MESH_BOX.count, gl.UNSIGNED_SHORT, 0);
   }
 
-  /* 曳光彈 */
-  if(lastMesh !== MESH_CYL){
-    gl.bindBuffer(gl.ARRAY_BUFFER, MESH_CYL.vbo);
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
-    gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12);
-    gl.vertexAttribPointer(aUV,  2, gl.FLOAT, false, 32, 24);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, MESH_CYL.ibo);
+  // 彈殼
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindBuffer(gl.ARRAY_BUFFER, MESH_CYL.vbo);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12);
+  gl.vertexAttribPointer(aUV,  2, gl.FLOAT, false, 32, 24);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, MESH_CYL.ibo);
+  gl.uniform3f(uColor, 0.8, 0.65, 0.2);
+  gl.uniform1f(uMetal, 0.8);
+  for(var i=0;i<shells.length;i++){
+    var s = shells[i];
+    var sm = new Float32Array(16);
+    setTRS(sm, s.x, s.y, s.z, s.rx, s.ry, s.rz, 0.01, 0.03, 0.01);
+    gl.uniformMatrix4fv(uModel, false, sm);
+    gl.drawElements(gl.TRIANGLES, MESH_CYL.count, gl.UNSIGNED_SHORT, 0);
   }
+
+  // 彈孔
+  gl.disable(gl.DEPTH_TEST);
+  gl.bindBuffer(gl.ARRAY_BUFFER, MESH_PLANE.vbo);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12);
+  gl.vertexAttribPointer(aUV,  2, gl.FLOAT, false, 32, 24);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, MESH_PLANE.ibo);
+  gl.uniform3f(uColor, 0.02, 0.02, 0.02);
+  gl.uniform1f(uAlpha, 0.9);
+  for(var i=0;i<bulletHoles.length;i++){
+    gl.uniformMatrix4fv(uModel, false, bulletHoles[i].m);
+    gl.drawElements(gl.TRIANGLES, MESH_PLANE.count, gl.UNSIGNED_SHORT, 0);
+  }
+  gl.enable(gl.DEPTH_TEST);
+
+  // 曳光彈
+  gl.enable(gl.BLEND);
+  gl.depthMask(false);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  gl.bindBuffer(gl.ARRAY_BUFFER, MESH_CYL.vbo);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribPointer(aNrm, 3, gl.FLOAT, false, 32, 12);
+  gl.vertexAttribPointer(aUV,  2, gl.FLOAT, false, 32, 24);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, MESH_CYL.ibo);
   for(var k=0;k<enemies.length;k++){
     var e = enemies[k];
     if(e.tracerT > 0 && e.alive){
       gl.uniformMatrix4fv(uModel, false, e.tracerM);
-      gl.uniform3f(uColor, M_TRACER.c[0], M_TRACER.c[1], M_TRACER.c[2]);
-      gl.uniform1f(uMetal, M_TRACER.metal);
-      gl.uniform1f(uRough, M_TRACER.rough);
-      gl.uniform2f(uTiling, 1, 1);
-      bindTex(null);
+      gl.uniform3f(uColor, 1.0, 0.85, 0.42);
+      gl.uniform1f(uAlpha, 1.0);
       gl.drawElements(gl.TRIANGLES, MESH_CYL.count, gl.UNSIGNED_SHORT, 0);
     }
   }
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
 }
 
 /* ============================================================
@@ -2948,6 +2404,7 @@ function loop(now){
 
   updatePlayer(dt);
   updateReload(dt);
+  updateParticles(dt);
   updateHUD();
 
   player.bob += dt * (Math.sqrt(player.vx*player.vx+player.vz*player.vz) > 5 ? 13 : 8);
@@ -2966,7 +2423,7 @@ function loop(now){
   }
 
   var eyeY = player.y + player.curH;
-  buildPlayerGun(eyeY, dt);
+  buildPlayerGun(eyeY);
 
   render(eyeY);
 
@@ -2991,8 +2448,6 @@ document.getElementById('reset').addEventListener('click', function(ev){
   reload.t = 0;
   reload.phase = 0;
   reloadTxtEl.style.display = 'none';
-  boltCycle = 0;
-  hitFlash = 0;
 });
 
 document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
