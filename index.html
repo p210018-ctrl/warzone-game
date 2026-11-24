@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>WZ 戰術 · 現代戰爭次世代戰術衝刺版</title>
+<title>WZ 戰術 · 現代戰爭次世代曲面重製版</title>
 <style>
   /* ============================================================
      全局樣式重置與基礎設定
@@ -362,50 +362,43 @@
    ============================================================ */
 var errEl = document.getElementById('err');
 
-/**
- * 顯示錯誤訊息到畫面上
- * @param {string} m 錯誤訊息內容
- */
 function showErr(m) {
   errEl.style.display = 'block';
   errEl.textContent += m + '\n';
 }
 
-// 捕捉全局未處理的錯誤
 window.onerror = function(msg, url, line) {
   showErr('錯誤: ' + msg + ' (行 ' + line + ')');
   return false;
 };
 
 /* ============================================================
-   數學工具庫：矩陣運算與極致展開
-   這裡全部使用展平的陣列操作以達到最高效能，不依賴外部函式庫
+   矩陣與數學工具庫：極致展開以保證效能
    ============================================================ */
 
 /**
  * 4x4 矩陣相乘
- * 完全展開以減少迴圈開銷
  */
 function m4mul(o, a, b) {
-  // 第一行 (Row 0)
+  // 第一行
   o[0]  = a[0]*b[0]  + a[4]*b[1]  + a[8]*b[2]   + a[12]*b[3];
   o[1]  = a[1]*b[0]  + a[5]*b[1]  + a[9]*b[2]   + a[13]*b[3];
   o[2]  = a[2]*b[0]  + a[6]*b[1]  + a[10]*b[2]  + a[14]*b[3];
   o[3]  = a[3]*b[0]  + a[7]*b[1]  + a[11]*b[2]  + a[15]*b[3];
   
-  // 第二行 (Row 1)
+  // 第二行
   o[4]  = a[0]*b[4]  + a[4]*b[5]  + a[8]*b[6]   + a[12]*b[7];
   o[5]  = a[1]*b[4]  + a[5]*b[5]  + a[9]*b[6]   + a[13]*b[7];
   o[6]  = a[2]*b[4]  + a[6]*b[5]  + a[10]*b[6]  + a[14]*b[7];
   o[7]  = a[3]*b[4]  + a[7]*b[5]  + a[11]*b[6]  + a[15]*b[7];
   
-  // 第三行 (Row 2)
+  // 第三行
   o[8]  = a[0]*b[8]  + a[4]*b[9]  + a[8]*b[10]  + a[12]*b[11];
   o[9]  = a[1]*b[8]  + a[5]*b[9]  + a[9]*b[10]  + a[13]*b[11];
   o[10] = a[2]*b[8]  + a[6]*b[9]  + a[10]*b[10] + a[14]*b[11];
   o[11] = a[3]*b[8]  + a[7]*b[9]  + a[11]*b[10] + a[15]*b[11];
   
-  // 第四行 (Row 3)
+  // 第四行
   o[12] = a[0]*b[12] + a[4]*b[13] + a[8]*b[14]  + a[12]*b[15];
   o[13] = a[1]*b[12] + a[5]*b[13] + a[9]*b[14]  + a[13]*b[15];
   o[14] = a[2]*b[12] + a[6]*b[13] + a[10]*b[14] + a[14]*b[15];
@@ -413,11 +406,7 @@ function m4mul(o, a, b) {
 }
 
 /**
- * 建立平移、旋轉 (XYZ 歐拉角)、縮放矩陣
- * @param {Float32Array} o 輸出矩陣
- * @param {number} tx,ty,tz 平移
- * @param {number} rx,ry,rz 旋轉 (弧度)
- * @param {number} sx,sy,sz 縮放
+ * 建立平移、旋轉、縮放矩陣
  */
 function setTRS(o, tx, ty, tz, rx, ry, rz, sx, sy, sz) {
   var cx = Math.cos(rx), sX = Math.sin(rx);
@@ -456,7 +445,7 @@ function m4persp(o, fovy, aspect, near, far) {
 }
 
 /**
- * 正交投影矩陣 (用於陰影計算)
+ * 正交投影矩陣
  */
 function m4ortho(o, l, r, b, t, n, f) {
   o[0] = 2 / (r - l); o[1] = 0; o[2] = 0; o[3] = 0;
@@ -493,7 +482,7 @@ function m4lookAt(o, ex, ey, ez, cx, cy, cz, ux, uy, uz) {
 }
 
 /**
- * 第一人稱視圖矩陣 (結合 Yaw/Pitch)
+ * 第一人稱視圖矩陣
  */
 function buildView(o, px, py, pz, yaw, pitch) {
   var cx = Math.cos(pitch), sX = Math.sin(pitch);
@@ -514,7 +503,7 @@ function buildView(o, px, py, pz, yaw, pitch) {
 }
 
 /**
- * 矩陣池，避免頻繁分配記憶體造成 GC 卡頓
+ * 矩陣池
  */
 var MPOOL = [], MI = 0;
 function mp() {
@@ -531,7 +520,7 @@ function mpReset() {
 }
 
 /**
- * 彈簧阻尼插值 (用於過頭回彈效果)
+ * 彈簧阻尼
  */
 function spring(cur, tgt, vel, stiff, damp, dt) {
   var force = (tgt - cur) * stiff;
@@ -542,14 +531,14 @@ function spring(cur, tgt, vel, stiff, damp, dt) {
 }
 
 /**
- * 一般的阻尼插值
+ * 阻尼插值
  */
 function damp(a, b, rate, dt) {
   return a + (b - a) * (1 - Math.pow(1 - rate, dt * 60));
 }
 
 /**
- * 限制數值在範圍內
+ * 限制數值
  */
 function clamp(x, a, b) {
   return x < a ? a : (x > b ? b : x);
@@ -810,7 +799,7 @@ gl.cullFace(gl.BACK);
 gl.clearColor(0.05, 0.08, 0.12, 1.0);
 
 /* ============================================================
-   幾何體網格生成模組
+   幾何體網格生成模組 (包含有機曲面)
    ============================================================ */
 function newMeshData() {
   return { v: [], i: [] };
@@ -916,6 +905,76 @@ function makePlaneMesh() {
   return buildMesh(d);
 }
 
+/**
+ * 有機曲面手臂網格生成器 (變徑圓柱)
+ * 用以模擬肌肉線條與前臂輪廓
+ * @param {Array} profile 陣列，每個元素為 { y: 高度, r: 半徑 }
+ * @param {number} seg 圓周分段數
+ */
+function makeOrganicLimbMesh(profile, seg) {
+  var d = newMeshData();
+  var numRings = profile.length;
+  
+  // 1. 生成頂點
+  for (var ring = 0; ring < numRings; ring++) {
+    var p = profile[ring];
+    for (var i = 0; i <= seg; i++) {
+      var a = i / seg * Math.PI * 2;
+      var sx = Math.sin(a), cz = Math.cos(a);
+      // 為了讓法線平滑，我們需要計算前後環的半徑差異
+      var dr = 0;
+      if (ring > 0 && ring < numRings - 1) {
+        var rNext = profile[ring+1].r;
+        var rPrev = profile[ring-1].r;
+        var dy = profile[ring+1].y - profile[ring-1].y;
+        dr = (rNext - rPrev) / dy;
+      }
+      
+      // 法線考慮了徑向和縱向的傾斜
+      var nx = sx;
+      var nz = cz;
+      var ny = -dr;
+      var len = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+      
+      pushVert(d, sx * p.r, p.y, cz * p.r, nx/len, ny/len, nz/len, i/seg, ring/(numRings-1));
+    }
+  }
+  
+  // 2. 生成側面索引
+  for (var ring = 0; ring < numRings - 1; ring++) {
+    for (var i = 0; i < seg; i++) {
+      var a0 = ring * (seg + 1) + i;
+      var b0 = a0 + 1;
+      var a1 = (ring + 1) * (seg + 1) + i;
+      var b1 = a1 + 1;
+      d.i.push(a0, b0, a1, a1, b0, b1);
+    }
+  }
+  
+  // 3. 生成頂底面封口 (如果需要的話，這裡簡化處理，主要用於四肢)
+  var cTop = d.v.length / 8;
+  var topP = profile[numRings - 1];
+  pushVert(d, 0, topP.y, 0, 0, 1, 0, 0.5, 0.5);
+  for (var i = 0; i <= seg; i++) {
+    var a = i / seg * Math.PI * 2;
+    var sx = Math.sin(a), cz = Math.cos(a);
+    pushVert(d, sx * topP.r, topP.y, cz * topP.r, 0, 1, 0, 0.5 + sx*0.5, 0.5 + cz*0.5);
+  }
+  for (var i = 0; i < seg; i++) d.i.push(cTop, cTop+1+i, cTop+2+i);
+  
+  var cBot = d.v.length / 8;
+  var botP = profile[0];
+  pushVert(d, 0, botP.y, 0, 0, -1, 0, 0.5, 0.5);
+  for (var i = 0; i <= seg; i++) {
+    var a = i / seg * Math.PI * 2;
+    var sx = Math.sin(a), cz = Math.cos(a);
+    pushVert(d, sx * botP.r, botP.y, cz * botP.r, 0, -1, 0, 0.5 + sx*0.5, 0.5 + cz*0.5);
+  }
+  for (var i = 0; i < seg; i++) d.i.push(cBot, cBot+2+i, cBot+1+i);
+
+  return buildMesh(d);
+}
+
 var MESH_BOX = makeBoxMesh();
 var MESH_CYL = makeCylinderMesh(24);
 var MESH_CYL8 = makeCylinderMesh(12);
@@ -923,8 +982,33 @@ var MESH_SPH = makeSphereMesh(18, 24);
 var MESH_DOME = makeSphereMesh(12, 24, Math.PI * 0.56);
 var MESH_PLANE = makePlaneMesh();
 
+// 生成第一人稱前臂的有機曲面 (從手肘到手腕)
+var PROFILE_FOREARM = [
+  { y: -0.25, r: 0.06 },  // 手肘處 (粗壯)
+  { y: -0.15, r: 0.055 }, // 肱橈肌隆起
+  { y: -0.05, r: 0.045 }, // 向手腕收細
+  { y:  0.00, r: 0.035 }  // 手腕
+];
+var MESH_ORGANIC_ARM = makeOrganicLimbMesh(PROFILE_FOREARM, 16);
+
+// 生成敵人的大腿曲面 (從骨盆到膝蓋)
+var PROFILE_THIGH = [
+  { y: -0.22, r: 0.08 },  // 骨盆
+  { y: -0.10, r: 0.085 }, // 股四頭肌
+  { y:  0.00, r: 0.07 }   // 膝蓋
+];
+var MESH_ORGANIC_THIGH = makeOrganicLimbMesh(PROFILE_THIGH, 12);
+
+// 生成敵人的小腿曲面 (從膝蓋到腳踝)
+var PROFILE_CALF = [
+  { y: -0.20, r: 0.07 },  // 膝蓋
+  { y: -0.10, r: 0.075 }, // 腓腸肌
+  { y:  0.00, r: 0.045 }  // 腳踝
+];
+var MESH_ORGANIC_CALF = makeOrganicLimbMesh(PROFILE_CALF, 12);
+
 /* ============================================================
-   高解析程序化紋理 (512x512 Canvas)
+   高解析程序化紋理 (512x512)
    ============================================================ */
 function makeTexFromCanvas(cv) {
   var tex = gl.createTexture();
@@ -939,6 +1023,7 @@ function makeTexFromCanvas(cv) {
   return tex;
 }
 
+// 風化混凝土磚牆
 function makeBrickCanvas() {
   var s = 512;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
@@ -962,6 +1047,7 @@ function makeBrickCanvas() {
   return cv;
 }
 
+// 深色柏油地面
 function makeAsphaltCanvas() {
   var s = 512;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
@@ -992,6 +1078,7 @@ function makeAsphaltCanvas() {
   return cv;
 }
 
+// 深色木紋
 function makeWoodCanvas() {
   var s = 512;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
@@ -1013,6 +1100,7 @@ function makeWoodCanvas() {
   return cv;
 }
 
+// 軍綠沙袋
 function makeSandbagCanvas() {
   var s = 512;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
@@ -1031,6 +1119,7 @@ function makeSandbagCanvas() {
   return cv;
 }
 
+// 迷彩作戰服
 function makeCamoCanvas() {
   var s = 512;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
@@ -1050,6 +1139,7 @@ function makeCamoCanvas() {
   return cv;
 }
 
+// 金屬刮痕
 function makeMetalScratchCanvas() {
   var s = 256;
   var cv = document.createElement('canvas'); cv.width = cv.height = s;
@@ -1068,44 +1158,98 @@ function makeMetalScratchCanvas() {
   return cv;
 }
 
+// 合成皮革與透氣網眼布 (戰術手套)
+function makeLeatherMeshCanvas() {
+  var s = 512;
+  var cv = document.createElement('canvas'); cv.width = cv.height = s;
+  var x = cv.getContext('2d');
+  
+  // 皮革底色
+  x.fillStyle = '#1a1c1e';
+  x.fillRect(0, 0, s, s);
+  
+  // 皮革紋理 (細小不規則的亮暗斑點)
+  var img = x.getImageData(0, 0, s, s);
+  var d = img.data;
+  for (var i = 0; i < d.length; i += 4) {
+    var n = (Math.random() - 0.5) * 20;
+    d[i] = Math.max(0, Math.min(255, d[i] + n));
+    d[i+1] = Math.max(0, Math.min(255, d[i+1] + n));
+    d[i+2] = Math.max(0, Math.min(255, d[i+2] + n));
+  }
+  x.putImageData(img, 0, 0);
+  
+  // 透氣網眼 (繪製密集的斜線與小孔)
+  x.strokeStyle = 'rgba(0,0,0,0.4)';
+  x.lineWidth = 2;
+  for (var i = 0; i < s; i += 8) {
+    x.beginPath(); x.moveTo(i, 0); x.lineTo(i + s, s); x.stroke();
+    x.beginPath(); x.moveTo(i, s); x.lineTo(i + s, 0); x.stroke();
+  }
+  
+  // 皮革縫線 (在邊緣繪製一圈黃色/灰色的粗虛線)
+  x.strokeStyle = 'rgba(180, 160, 100, 0.6)';
+  x.lineWidth = 3;
+  x.setLineDash([10, 8]);
+  x.strokeRect(20, 20, s - 40, s - 40);
+  x.strokeRect(40, 40, s - 80, s - 80);
+  x.setLineDash([]);
+  
+  // 碳纖維紋理 (小區塊)
+  x.fillStyle = 'rgba(40, 45, 50, 0.9)';
+  x.fillRect(150, 150, 200, 200);
+  x.strokeStyle = 'rgba(20, 25, 30, 0.8)';
+  x.lineWidth = 1;
+  for (var i = 0; i < 200; i += 4) {
+    x.beginPath(); x.moveTo(150, 150 + i); x.lineTo(350, 150 + i); x.stroke();
+    x.beginPath(); x.moveTo(150 + i, 150); x.lineTo(150 + i, 350); x.stroke();
+  }
+  
+  return cv;
+}
+
 var texBrick = makeTexFromCanvas(makeBrickCanvas());
 var texAsphalt = makeTexFromCanvas(makeAsphaltCanvas());
 var texWood = makeTexFromCanvas(makeWoodCanvas());
 var texSandbag = makeTexFromCanvas(makeSandbagCanvas());
 var texCamo = makeTexFromCanvas(makeCamoCanvas());
 var texMetal = makeTexFromCanvas(makeMetalScratchCanvas());
-
-/* ============================================================
-   材質系統
+var texLeather = makeTexFromCanvas(makeLeatherMeshCanvas());
+  /* ============================================================
+   材質系統定義
    ============================================================ */
 function makeMat(c, metal, rough, tex, tiling, alpha, blend, noShadow) {
   return {
     c: c, metal: metal, rough: rough, tex: tex || null, tiling: tiling || [1, 1],
     alpha: (alpha !== undefined) ? alpha : 1.0,
-    blend: (blend !== undefined) ? blend : 0,
+    blend: (blend !== undefined) ? blend : 0, // 0=不透明, 1=加法, 2=Alpha
     noShadow: !!noShadow
   };
 }
 
+// 場景材質
 var M_GROUND = makeMat([1.0,1.0,1.0], 0.00, 0.94, texAsphalt, [16,16]);
 var M_BRICK = makeMat([1.0,1.0,1.0], 0.05, 0.88, texBrick, [3,2]);
 var M_BRICK2 = makeMat([0.8,0.8,0.8], 0.05, 0.88, texBrick, [1,1]);
 var M_WOOD = makeMat([1.0,1.0,1.0], 0.02, 0.86, texWood, [1,1]);
 var M_SANDBAG = makeMat([1.0,1.0,1.0], 0.00, 0.95, texSandbag, [1,1]);
 
+// 敵人材質 (作戰服與裝備)
 var M_CAMO = makeMat([1.0,1.0,1.0], 0.02, 0.86, texCamo, [1,1]);
 var M_VEST = makeMat([0.05,0.06,0.04], 0.10, 0.80, null, null);
 var M_HELMET = makeMat([0.04,0.05,0.03], 0.55, 0.45, null, null);
 var M_SKIN = makeMat([0.25,0.18,0.12], 0.00, 0.70, null, null);
 var M_GOGGLE = makeMat([0.02,0.08,0.12], 0.95, 0.05, null, null);
 var M_BOOT = makeMat([0.02,0.02,0.01], 0.10, 0.82, null, null);
-var M_GLOVE = makeMat([0.03,0.03,0.03], 0.14, 0.76, null, null);
+var M_GLOVE = makeMat([0.03,0.03,0.03], 0.14, 0.76, texLeather, [1,1]); // 使用合成皮革與網眼貼圖
 
+// 武器材質
 var M_GUN_BLK = makeMat([0.03,0.04,0.05], 0.90, 0.25, texMetal, [2,2]);
 var M_GUN_SAND = makeMat([0.25,0.22,0.15], 0.35, 0.55, texMetal, [1,1]);
 var M_GUN_POLY = makeMat([0.06,0.07,0.08], 0.75, 0.40, texMetal, [1,1]);
 var M_GUN_MET = makeMat([0.15,0.16,0.17], 0.95, 0.22, null, null);
 
+// 特效材質
 var M_SHADOW = makeMat([0.00,0.00,0.00], 0.00, 1.00, null, null, 0.5, 2, true);
 var M_TRACER = makeMat([1.00,0.80,0.40], 0.00, 0.45, null, null, 1.0, 1, true);
 var M_FLASH = makeMat([1.00,0.85,0.50], 0.00, 0.35, null, null, 1.0, 1, true);
@@ -1125,7 +1269,7 @@ function pushDraw(m, mesh, mat) {
 }
 
 /* ============================================================
-   陰影貼圖系統
+   陰影貼圖系統 (Shadow Mapping FBO)
    ============================================================ */
 var SHADOW_SIZE = 1024;
 var shadowTex = null, shadowFB = null, shadowsEnabled = false;
@@ -1174,7 +1318,7 @@ function updateLightMatrices() {
 updateLightMatrices();
 
 /* ============================================================
-   場景與障礙物
+   場景與障礙物搭建
    ============================================================ */
 var GROUND = 64;
 var BOUND = GROUND / 2 - 1.5;
@@ -1210,7 +1354,7 @@ addSandbagPile( 5, -3, 2.6, 1.4, 5);
 })();
 
 /* ============================================================
-   音效合成
+   音效合成系統
    ============================================================ */
 var actx = null;
 function initAudio() {
@@ -1286,7 +1430,7 @@ function sBolt() {
 }
 
 /* ============================================================
-   玩家與武器狀態 (包含戰術衝刺變數)
+   玩家與武器狀態變數
    ============================================================ */
 var player = {
   x: 0, z: 14, y: 0, vx: 0, vz: 0, vy: 0,
@@ -1318,6 +1462,7 @@ var lookId = null, lookLX = 0, lookLY = 0;
 var firing = false, adsHold = false, jumpQ = false, crouchQ = false, sprintQ = false;
 var hitFlash = 0;
 
+/* UI 元素 */
 var stickEl = document.getElementById('stick');
 var knobEl = document.getElementById('knob');
 var crossEl = document.getElementById('cross');
@@ -1325,6 +1470,7 @@ var reloadTxtEl = document.getElementById('reloadTxt');
 var ammoEl = document.getElementById('ammo');
 var fpsEl = document.getElementById('fps');
 
+/* 輸入事件綁定 */
 stickEl.addEventListener('pointerdown', function(e) {
   e.preventDefault(); e.stopPropagation();
   if (stickId !== null) return;
@@ -1404,7 +1550,7 @@ document.getElementById('inspectBtn').addEventListener('pointerdown', function(e
 });
 
 /* ============================================================
-   粒子與特效
+   粒子與特效系統
    ============================================================ */
 var particles = [], shells = [], bulletHoles = [];
 
@@ -1455,7 +1601,7 @@ function updateParticles(dt) {
 }
 
 /* ============================================================
-   敵人 AI
+   敵人 AI 與動畫狀態機
    ============================================================ */
 var enemies = [];
 
@@ -1622,7 +1768,7 @@ function updateEnemy(e, dt, time) {
 }
 
 /* ============================================================
-   敵人模型
+   敵人模型重構 (有機曲面四肢)
    ============================================================ */
 var tL = new Float32Array(16);
 
@@ -1638,25 +1784,29 @@ function buildSoldier(e) {
   var a = e.anim;
   var mRoot = mp(); setTRS(mRoot, e.x, 0, e.z, 0, e.yaw, 0, 1, 1, 1);
   
+  // 貼地陰影
   var mShadow = mp(); var shR = 0.44 + (a.pelvisY < 0.7 ? 0.30 : 0);
   setTRS(tL, 0, 0.014, 0, 0, 0, 0, shR, 0.006, shR); m4mul(mShadow, mRoot, tL); pushDraw(mShadow, MESH_SPH, M_SHADOW);
 
+  // 骨盆
   var mPelvis = mp(); setTRS(tL, 0, a.pelvisY, 0, 0, a.pelvisYaw, 0, 1, 1, 1); m4mul(mPelvis, mRoot, tL);
   drawPart(mPelvis, 0, 0, 0, 0, 0, 0, 0.150, 0.125, 0.115, MESH_SPH, M_CAMO);
   drawPart(mPelvis, 0, 0.045, 0, 0, 0, 0, 0.158, 0.055, 0.122, MESH_CYL, M_VEST);
 
+  // 軀幹 (倒三角輪廓)
   var mSpine = mp(); setTRS(tL, 0, 0.06, 0, a.spinePitch, -a.pelvisYaw, a.spineRoll, 1, 1, 1); m4mul(mSpine, mPelvis, tL);
   drawPart(mSpine, 0, 0.13, 0, 0, 0, 0, 0.148, 0.30, 0.104, MESH_CYL, M_CAMO);
   drawPart(mSpine, 0, 0.255, -0.008, 0, 0, 0, 0.172, 0.24, 0.118, MESH_CYL, M_CAMO);
   drawPart(mSpine, 0, 0.235, -0.010, 0, 0, 0, 0.184, 0.235, 0.132, MESH_CYL, M_VEST);
   
+  // 彈匣袋與肩膀護甲
   var magPos = [[-0.105, 0.16], [-0.035, 0.16], [0.035, 0.16], [0.105, 0.16]];
   for (var mi = 0; mi < 4; mi++) drawPart(mSpine, magPos[mi][0], magPos[mi][1], -0.128, 0, 0, 0, 0.055, 0.095, 0.040, MESH_BOX, M_VEST);
-  
   drawPart(mSpine, 0.195, 0.305, 0, 0, 0, -0.2, 0.08, 0.08, 0.1, MESH_SPH, M_VEST);
   drawPart(mSpine, -0.195, 0.305, 0, 0, 0, 0.2, 0.08, 0.08, 0.1, MESH_SPH, M_VEST);
   drawPart(mSpine, 0, 0.395, 0, 0, 0, 0, 0.056, 0.11, 0.056, MESH_CYL, M_SKIN);
 
+  // 頭部與面罩
   var mHead = mp(); setTRS(tL, 0, 0.46, 0, a.headPitch, a.headYaw, 0, 1, 1, 1); m4mul(mHead, mSpine, tL);
   drawPart(mHead, 0, 0.028, 0, 0, 0, 0, 0.104, 0.122, 0.108, MESH_SPH, M_SKIN);
   drawPart(mHead, 0, -0.02, -0.06, 0.2, 0, 0, 0.11, 0.12, 0.08, MESH_SPH, M_VEST);
@@ -1668,20 +1818,26 @@ function buildSoldier(e) {
   drawPart(mHead, 0.108, 0.02, 0, 0, 0, Math.PI/2, 0.04, 0.03, 0.04, MESH_CYL8, M_HELMET);
   drawPart(mHead, -0.108, 0.02, 0, 0, 0, Math.PI/2, 0.04, 0.03, 0.04, MESH_CYL8, M_HELMET);
 
+  // 右臂 (肩到肘)
   var mShR = mp(); setTRS(tL, 0.195, 0.305, 0, a.armRX, 0, a.armRZ, 1, 1, 1); m4mul(mShR, mSpine, tL);
   drawJoint(mShR, 0, 0, 0, 0, 0, 0, 0.082, M_CAMO);
   drawPart(mShR, 0, -0.14, 0, 0, 0, 0, 0.060, 0.28, 0.060, MESH_CYL, M_CAMO);
+  
+  // 右前臂 (肘到腕)
   var mElR = mp(); setTRS(tL, 0, -0.28, 0, a.armREX, 0, 0, 1, 1, 1); m4mul(mElR, mShR, tL);
   drawJoint(mElR, 0, 0, 0, 0, 0, 0, 0.062, M_CAMO);
   drawPart(mElR, 0, -0.125, 0, 0, 0, 0, 0.053, 0.25, 0.053, MESH_CYL, M_GLOVE);
 
+  // 左臂
   var mShL = mp(); setTRS(tL, -0.195, 0.305, 0, a.armLX, 0, a.armLZ, 1, 1, 1); m4mul(mShL, mSpine, tL);
   drawJoint(mShL, 0, 0, 0, 0, 0, 0, 0.082, M_CAMO);
   drawPart(mShL, 0, -0.14, 0, 0, 0, 0, 0.060, 0.28, 0.060, MESH_CYL, M_CAMO);
+  
   var mElL = mp(); setTRS(tL, 0, -0.28, 0, a.armLEX, 0, 0, 1, 1, 1); m4mul(mElL, mShL, tL);
   drawJoint(mElL, 0, 0, 0, 0, 0, 0, 0.062, M_CAMO);
   drawPart(mElL, 0, -0.125, 0, 0, 0, 0, 0.053, 0.25, 0.053, MESH_CYL, M_GLOVE);
 
+  // 敵人手中的武器
   var mGun = mp(); setTRS(tL, 0.135, 0.215, -0.40, -0.05, 0.06, 0, 1, 1, 1); m4mul(mGun, mSpine, tL);
   drawPart(mGun, 0, 0, 0.02, 0, 0, 0, 0.048, 0.070, 0.26, MESH_BOX, M_GUN_BLK);
   drawPart(mGun, 0, 0.048, 0.02, 0, 0, 0, 0.040, 0.020, 0.24, MESH_BOX, M_GUN_MET);
@@ -1696,181 +1852,118 @@ function buildSoldier(e) {
   e.muzzle[1] = mGun[1]*gx + mGun[5]*gy + mGun[9]*gz + mGun[13];
   e.muzzle[2] = mGun[2]*gx + mGun[6]*gy + mGun[10]*gz + mGun[14];
 
+  // 右腿 (使用有機曲面網格)
   var mHipR = mp(); setTRS(tL, 0.098, -0.055, 0, a.hipR, 0, 0, 1, 1, 1); m4mul(mHipR, mPelvis, tL);
   drawJoint(mHipR, 0, 0, 0, 0, 0, 0, 0.084, M_CAMO);
-  drawPart(mHipR, 0, -0.22, 0, 0, 0, 0, 0.078, 0.44, 0.078, MESH_CYL, M_CAMO);
+  // 大腿
+  var mThighR = drawPart(mHipR, 0, -0.22, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_THIGH, M_CAMO);
+  
   var mKnR = mp(); setTRS(tL, 0, -0.44, 0, a.kneeR, 0, 0, 1, 1, 1); m4mul(mKnR, mHipR, tL);
   drawJoint(mKnR, 0, 0, 0, 0, 0, 0, 0.068, M_CAMO);
-  drawPart(mKnR, 0, -0.20, 0, 0, 0, 0, 0.060, 0.40, 0.060, MESH_CYL, M_CAMO);
+  // 小腿
+  drawPart(mKnR, 0, -0.20, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_CALF, M_CAMO);
+  // 護膝
   drawPart(mKnR, 0, -0.02, -0.06, 0, 0, 0, 0.06, 0.08, 0.05, MESH_SPH, M_VEST);
+  
   var mFootR = mp(); setTRS(tL, 0, -0.40, 0, 0, 0, 0, 1, 1, 1); m4mul(mFootR, mKnR, tL);
   drawJoint(mFootR, 0, 0, 0, 0, 0, 0, 0.060, M_BOOT);
   drawPart(mFootR, 0, -0.035, -0.045, 0, 0, 0, 0.072, 0.075, 0.20, MESH_BOX, M_BOOT);
 
+  // 左腿 (使用有機曲面網格)
   var mHipL = mp(); setTRS(tL, -0.098, -0.055, 0, a.hipL, 0, 0, 1, 1, 1); m4mul(mHipL, mPelvis, tL);
   drawJoint(mHipL, 0, 0, 0, 0, 0, 0, 0.084, M_CAMO);
-  drawPart(mHipL, 0, -0.22, 0, 0, 0, 0, 0.078, 0.44, 0.078, MESH_CYL, M_CAMO);
+  // 大腿
+  drawPart(mHipL, 0, -0.22, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_THIGH, M_CAMO);
+  
   var mKnL = mp(); setTRS(tL, 0, -0.44, 0, a.kneeL, 0, 0, 1, 1, 1); m4mul(mKnL, mHipL, tL);
   drawJoint(mKnL, 0, 0, 0, 0, 0, 0, 0.068, M_CAMO);
-  drawPart(mKnL, 0, -0.20, 0, 0, 0, 0, 0.060, 0.40, 0.060, MESH_CYL, M_CAMO);
+  // 小腿
+  drawPart(mKnL, 0, -0.20, 0, 0, 0, 0, 1, 1, 1, MESH_ORGANIC_CALF, M_CAMO);
   drawPart(mKnL, 0, -0.02, -0.06, 0, 0, 0, 0.06, 0.08, 0.05, MESH_SPH, M_VEST);
+
   var mFootL = mp(); setTRS(tL, 0, -0.40, 0, 0, 0, 0, 1, 1, 1); m4mul(mFootL, mKnL, tL);
   drawJoint(mFootL, 0, 0, 0, 0, 0, 0, 0.060, M_BOOT);
   drawPart(mFootL, 0, -0.035, -0.045, 0, 0, 0, 0.072, 0.075, 0.20, MESH_BOX, M_BOOT);
 }
-  /* ============================================================
-   第一人稱武器與手部精細建模 (次世代擴充版)
+
+/* ============================================================
+   第一人稱武器與極致手模
    ============================================================ */
-
-// 第一人稱專用矩陣
-var mCam = new Float32Array(16);       // 相機世界矩陣
-var mLocal = new Float32Array(16);     // 武器局部矩陣
-var mGunW = new Float32Array(16);      // 武器最終世界矩陣
-var mBillboard = new Float32Array(16); // 全息準星對齊用
-
-// 雷射終點
+var mCam = new Float32Array(16);
+var mLocal = new Float32Array(16);
+var mGunW = new Float32Array(16);
+var mBillboard = new Float32Array(16);
 var laserEnd = [0, 0, 0];
 
-/**
- * 構建玩家手中的武器與極致解剖學手部模型
- * @param {number} eyeY 眼睛高度 (用於計算全息準星方向)
- */
 function buildPlayerGun(eyeY) {
-  // 獲取當前各種動作的進度值
-  var ads = player.ads;                 // 開鏡進度 0~1
-  var sprint = player.sprintProg;       // 普通衝刺進度 0~1
-  var tacSprint = player.tacSprintProg; // 戰術衝刺進度 0~1
-  var p = reload.active ? (reload.t / reload.dur) : 0; // 換彈進度 0~1
-  var inspectP = gun.inspecting ? (gun.inspectT / 3.5) : 0; // 檢視進度
+  var ads = player.ads;
+  var sprint = player.sprintProg;
+  var tacSprint = player.tacSprintProg;
+  var p = reload.active ? (reload.t / reload.dur) : 0;
+  var inspectP = gun.inspecting ? (gun.inspectT / 3.5) : 0;
 
-  // 初始化換彈關鍵幀與手部座標變數 (絕對不可報錯)
+  // 必須在作用域頂部宣告，防止報錯
   var rlTiltZ = 0, rlTiltX = 0, rlDownY = 0, rlRightX = 0;
   var magDrop = 0, magTilt = 0;
-  
-  // 左手預設位置 (握持護木)
-  var handLX = -0.008;
-  var handLY = -0.086;
-  var handLZ = -0.225;
-  
-  // 左手指節預設角度 (包覆護木)
+  var handLX = -0.008, handLY = -0.086, handLZ = -0.225;
   var lThumb = 0.4, lIndex = 0.5, lMiddle = 0.6, lRing = 0.6, lPinky = 0.6;
 
-  // 右手食指扣扳機進度 (平滑插值)
   gun.triggerFingerPull = damp(gun.triggerFingerPull, firing ? 1 : 0, 0.4, 1/60);
-  var rIndex = 0.2 + gun.triggerFingerPull * 0.8; // 基礎彎曲 + 扣下
-
-  // 槍機拉柄往復運動 (開火時)
+  var rIndex = 0.2 + gun.triggerFingerPull * 0.8;
   var boltKick = gun.boltTimer > 0 ? Math.sin((1 - gun.boltTimer / 0.08) * Math.PI) * 0.06 : 0;
 
-  // --- 換彈動畫幀計算 ---
+  // 換彈動畫插值
   if (reload.active) {
     if (p < 0.28) {
-      // 階段 1: 傾槍拔匣 (0.0 - 0.28)
       var hp1 = p / 0.28;
-      rlTiltZ = hp1 * -0.66; // 向左傾斜約 38 度
-      rlTiltX = hp1 * -0.2;
-      rlDownY = hp1 * -0.08;
-      magDrop = hp1 * 0.15;
-      magTilt = hp1 * 0.35;
-      
-      // 左手向下離開護木去抓彈匣
-      handLX += hp1 * 0.05;
-      handLY -= hp1 * 0.15;
-      handLZ += hp1 * 0.1;
-      
-      // 手指張開
-      lThumb = 0.4 + hp1 * 0.4;
-      lIndex = 0.5 + hp1 * 0.5;
-      lMiddle = 0.6 + hp1 * 0.4;
-      lRing = 0.6 + hp1 * 0.4;
-      lPinky = 0.6 + hp1 * 0.4;
-      
+      rlTiltZ = hp1 * -0.66; rlTiltX = hp1 * -0.2; rlDownY = hp1 * -0.08;
+      magDrop = hp1 * 0.15; magTilt = hp1 * 0.35;
+      handLX += hp1 * 0.05; handLY -= hp1 * 0.15; handLZ += hp1 * 0.1;
+      lThumb = 0.4 + hp1 * 0.4; lIndex = 0.5 + hp1 * 0.5; lMiddle = 0.6 + hp1 * 0.4;
     } else if (p < 0.58) {
-      // 階段 2: 裝填新匣 (0.28 - 0.58)
       var hp2 = (p - 0.28) / 0.30;
-      rlTiltZ = -0.66;
-      rlTiltX = -0.2;
-      rlDownY = -0.08;
-      magDrop = 0.15 - hp2 * 0.15; // 新彈匣推入
-      magTilt = 0.35 - hp2 * 0.35;
-      
-      // 左手推入彈匣
-      handLX = 0.042;
-      handLY = -0.236 + hp2 * 0.15;
-      handLZ = -0.125;
-      
-      // 到位撞擊震動 (清脆上頂)
+      rlTiltZ = -0.66; rlTiltX = -0.2; rlDownY = -0.08;
+      magDrop = 0.15 - hp2 * 0.15; magTilt = 0.35 - hp2 * 0.35;
+      handLX = 0.042; handLY = -0.236 + hp2 * 0.15; handLZ = -0.125;
       if (p > 0.5) rlDownY += Math.sin((p - 0.5) / 0.08 * Math.PI) * 0.04;
-      
-      // 手指收攏
-      lThumb = 0.8 - hp2 * 0.4;
-      lIndex = 1.0 - hp2 * 0.5;
-      
+      lThumb = 0.8 - hp2 * 0.4; lIndex = 1.0 - hp2 * 0.5; lMiddle = 1.0 - hp2 * 0.4;
     } else {
-      // 階段 3: 拍擊釋放鈕 (0.58 - 1.0)
-      var mp3 = (p - 0.58) / 0.42;
-      var hp3 = mp3; // 確保 hp3 被正確宣告與使用
-      
-      rlTiltZ = -0.66 * (1 - hp3);
-      rlTiltX = -0.2 * (1 - hp3);
-      rlDownY = -0.08 * (1 - hp3);
-      
-      // 左手拍擊後回到護木
-      handLX = 0.042 - hp3 * 0.05;
-      handLY = -0.086 - hp3 * 0.15;
-      handLZ = -0.125 - hp3 * 0.1;
-      
-      // 拍擊瞬間
+      var mp3 = (p - 0.58) / 0.42; var hp3 = mp3;
+      rlTiltZ = -0.66 * (1 - hp3); rlTiltX = -0.2 * (1 - hp3); rlDownY = -0.08 * (1 - hp3);
+      handLX = 0.042 - hp3 * 0.05; handLY = -0.086 - hp3 * 0.15; handLZ = -0.125 - hp3 * 0.1;
       if (hp3 < 0.2) {
         rlTiltX += Math.sin(hp3 / 0.2 * Math.PI) * 0.1;
         rlRightX += Math.sin(hp3 / 0.2 * Math.PI) * 0.05;
         lIndex = 0.5 + Math.sin(hp3 / 0.2 * Math.PI) * 0.5;
       }
-      
-      // 最後回到握持狀態
       if (hp3 > 0.3) {
-        handLX = -0.008;
-        handLY = -0.086;
-        handLZ = -0.225;
+        handLX = -0.008; handLY = -0.086; handLZ = -0.225;
         lIndex = 0.5; lMiddle = 0.6; lRing = 0.6; lPinky = 0.6;
       }
     }
   }
 
-  // --- 震動與後座力偏移 ---
-  var rz = gun.recoilZ * 0.05; // Z 軸後退
-  var rx = gun.recoilPitch * 0.05; // 槍口上跳
-  var ry = gun.recoilYaw * 0.05; // 左右微顫
+  var rz = gun.recoilZ * 0.05; var rx = gun.recoilPitch * 0.05; var ry = gun.recoilYaw * 0.05;
 
-  // --- 基礎位置設定 (ADS、腰射、戰術衝刺) ---
-  // 腰射基礎位置
-  var targetGx = 0.175;
-  var targetGy = -0.195;
-  var targetGz = -0.45;
-
-  // 開鏡位置 (精準對齊螢幕中心)
+  // 基礎位置
+  var targetGx = 0.175; var targetGy = -0.195; var targetGz = -0.45;
   if (ads > 0) {
     targetGx = targetGx * (1 - ads) + 0.000 * ads;
     targetGy = targetGy * (1 - ads) + -0.085 * ads;
     targetGz = targetGz * (1 - ads) + -0.32 * ads;
   }
 
-  // 普通衝刺位置 (向右下壓)
-  var sGx = -0.1 * sprint;
-  var sGy = -0.12 * sprint;
-  var sRz = 0.73 * sprint;
-  var sRx = -0.26 * sprint;
+  // 普通衝刺
+  var sGx = -0.1 * sprint; var sGy = -0.12 * sprint; var sRz = 0.73 * sprint; var sRx = -0.26 * sprint;
 
-  // 戰術衝刺位置 (單手高舉向右上/左上)
-  // 根據需求：向右上方傾斜 48 度，槍口朝天
-  var tacGx = 0.15 * tacSprint;
-  var tacGy = 0.25 * tacSprint;
-  var tacGz = 0.1 * tacSprint;
-  var tacRz = 0.84 * tacSprint; // 48度
-  var tacRx = -0.45 * tacSprint;
-  var tacRy = -0.2 * tacSprint;
+  // 戰術衝刺 (修正：拉向右前上方，槍身向左上傾斜，槍口朝上)
+  var tacGx = 0.18 * tacSprint;
+  var tacGy = -0.06 * tacSprint;
+  var tacGz = -0.32 * tacSprint;
+  var tacRz = 0.72 * tacSprint; 
+  var tacRx = 0.62 * tacSprint; 
+  var tacRy = -0.15 * tacSprint; 
 
-  // 總合位置與旋轉
   var gx = targetGx + sGx + rlRightX + tacGx;
   var gy = targetGy + sGy + rlDownY + tacGy;
   var gz = targetGz + rz + boltKick + tacGz;
@@ -1879,314 +1972,184 @@ function buildPlayerGun(eyeY) {
   var pitchRot = 0.0 + rx + sRx + rlTiltX + tacRx;
   var rollRot = 0.0 + rlTiltZ + sRz + rz * 0.2 + tacRz;
   
-  // 檢視武器覆蓋 (舉起翻轉)
   if (gun.inspecting) {
-    var iY = Math.sin(inspectP * Math.PI);
-    var iZ = Math.sin(inspectP * Math.PI * 2);
-    gx -= 0.08 * iY;
-    gy += 0.06 * iY;
-    gz += 0.08 * iY;
-    pitchRot += 0.4 * iY;
-    rollRot += 1.2 * iY * iZ;
+    var iY = Math.sin(inspectP * Math.PI); var iZ = Math.sin(inspectP * Math.PI * 2);
+    gx -= 0.08 * iY; gy += 0.06 * iY; gz += 0.08 * iY; pitchRot += 0.4 * iY; rollRot += 1.2 * iY * iZ;
   }
 
-  // --- 走路晃動 (Bob) ---
   var speed = Math.sqrt(player.vx * player.vx + player.vz * player.vz);
   var bobAmp = (player.ads > 0.5 ? 0.002 : 0.008) * Math.min(1, speed / 4);
-  // 戰術衝刺時晃動減小 (因為單手持槍)
   bobAmp *= (1 - tacSprint * 0.8);
-  
-  gx += Math.sin(player.bob) * bobAmp;
-  gy += Math.sin(player.bob * 2) * bobAmp;
+  gx += Math.sin(player.bob) * bobAmp; gy += Math.sin(player.bob * 2) * bobAmp;
 
-  // --- 矩陣運算 ---
   setTRS(mCam, player.x, eyeY, player.z, player.pitch, player.yaw, 0, 1, 1, 1);
   setTRS(mLocal, gx, gy, gz, pitchRot, yawRot, rollRot, 1, 1, 1);
   m4mul(mGunW, mCam, mLocal);
 
-  var m; // 臨時矩陣變數
+  var m;
 
-  // ============================================================
-  // 武器零件組裝 (40+ 零件，M4/AR 風格)
-  // ============================================================
-
-  // 1. 下機匣 (Lower Receiver)
+  /* --- 槍械零件 --- */
   m = mp(); setTRS(tL, 0, 0, 0.02, 0, 0, 0, 0.072, 0.088, 0.30); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  
-  // 2. 上機匣 (Upper Receiver)
   m = mp(); setTRS(tL, 0, 0.052, 0.02, 0, 0, 0, 0.064, 0.032, 0.30); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-  
-  // 3. 槍機拉柄 / 拋殼窗檔板 (Bolt Carrier)
   m = mp(); setTRS(tL, 0.038, 0.052, 0.02 - boltKick * 0.6, 0, 0, 0, 0.015, 0.015, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_MET);
-  
-  // 4. 拋殼偏轉器
   m = mp(); setTRS(tL, 0.036, 0.03, 0.02, 0, 0, 0, 0.004, 0.03, 0.08); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_MET);
-
-  // 5. 皮卡汀尼導軌 (上方 7 齒)
   for (var rail = 0; rail < 7; rail++) {
     m = mp(); setTRS(tL, 0, 0.075, 0.185 - rail * 0.045, 0, 0, 0, 0.046, 0.012, 0.020); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_MET);
   }
-
-  // 6. 浮動式 M-LOK 護木
   m = mp(); setTRS(tL, 0, -0.004, -0.235, Math.PI / 2, 0, 0, 0.046, 0.27, 0.046); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_SAND);
-  
-  // 7. 護木散熱環
   for (var h = 0; h < 5; h++) {
     m = mp(); setTRS(tL, 0, -0.004, -0.12 - h * 0.06, Math.PI / 2, 0, 0, 0.050, 0.015, 0.050); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_BLK);
   }
-
-  // 8. 槍管
   m = mp(); setTRS(tL, 0, 0.002, -0.44, Math.PI / 2, 0, 0, 0.017, 0.16, 0.017); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_BLK);
-  
-  // 9. 消音器
   m = mp(); setTRS(tL, 0, 0.002, -0.60, Math.PI / 2, 0, 0, 0.030, 0.17, 0.030); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_BLK);
-  
-  // 10. 消音器端蓋
   m = mp(); setTRS(tL, 0, 0.002, -0.685, Math.PI / 2, 0, 0, 0.033, 0.014, 0.033); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_MET);
-
-  // 11. 垂直戰術握把
   m = mp(); setTRS(tL, 0, -0.11, -0.18, 0.15, 0, 0, 0.035, 0.12, 0.045); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-
-  // 12. 戰術雷射模組 PEQ-15
   m = mp(); setTRS(tL, 0.052, 0.02, -0.15, 0, 0, 0, 0.025, 0.04, 0.08); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-  
-  // 13. 雷射發射孔
   m = mp(); setTRS(tL, 0.065, 0.02, -0.15, 0, 0, 0, 0.002, 0.015, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_LASER);
-
-  // 14. 彈匣 (帶換彈掉落動畫)
   m = mp(); setTRS(tL, 0, -0.122 - magDrop, 0.06 - magDrop * 0.4, magTilt, 0, 0, 0.052, 0.155, 0.085); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-
-  // 15. 槍托緩衝管
   m = mp(); setTRS(tL, 0, 0.012, 0.29, Math.PI / 2, 0, 0, 0.026, 0.17, 0.026); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_BLK);
-  
-  // 16. 伸縮槍托底板
   m = mp(); setTRS(tL, 0, -0.008, 0.38, 0, 0, 0, 0.048, 0.085, 0.045); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-
-  // 17. 全息瞄準鏡底座
   m = mp(); setTRS(tL, 0, 0.092, -0.25, 0, 0, 0, 0.052, 0.028, 0.11); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-  
-  // 18. 全息瞄準鏡外框 (左)
   m = mp(); setTRS(tL, -0.042, 0.126, -0.25, 0, 0, 0, 0.008, 0.05, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  
-  // 19. 全息瞄準鏡外框 (右)
   m = mp(); setTRS(tL, 0.042, 0.126, -0.25, 0, 0, 0, 0.008, 0.05, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  
-  // 20. 全息瞄準鏡外框 (上)
   m = mp(); setTRS(tL, 0, 0.150, -0.25, 0, 0, 0, 0.09, 0.008, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_BLK);
-  
-  // 21. 半透明玻璃鏡片
   m = mp(); setTRS(tL, 0, 0.126, -0.30, 0, 0, 0, 0.08, 0.045, 0.002); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GLASS);
 
-  // 22. 紅色全息準星 (Billboard 永遠面向玩家)
+  // 紅點鏡與外環
   var rdx = mGunW[12] - player.x, rdy = mGunW[13] - eyeY, rdz = mGunW[14] - player.z;
-  var ryaw = Math.atan2(rdx, rdz);
-  var rpitch = -Math.asin(rdy / Math.sqrt(rdx * rdx + rdy * rdy + rdz * rdz));
-  
+  var ryaw = Math.atan2(rdx, rdz); var rpitch = -Math.asin(rdy / Math.sqrt(rdx*rdx + rdy*rdy + rdz*rdz));
   m = mp(); setTRS(mBillboard, 0, 0.126, -0.302, rpitch, ryaw, 0, 0.006, 0.006, 0.006); m4mul(m, mGunW, mBillboard); pushDraw(m, MESH_SPH, M_RED_DOT);
-  
-  // 23. 紅色全息外環 (8 個小點)
   for (var i = 0; i < 8; i++) {
-    var ang = i / 8 * Math.PI * 2;
-    var rx2 = Math.cos(ang) * 0.018;
-    var ry2 = Math.sin(ang) * 0.018;
+    var ang = i / 8 * Math.PI * 2; var rx2 = Math.cos(ang) * 0.018; var ry2 = Math.sin(ang) * 0.018;
     m = mp(); setTRS(mBillboard, rx2, 0.126 + ry2, -0.302, rpitch, ryaw, 0, 0.004, 0.004, 0.004); m4mul(m, mGunW, mBillboard); pushDraw(m, MESH_SPH, M_RED_DOT);
   }
 
-
-  // ============================================================
-  // 第一人稱右手 (極致解剖學與動態)
-  // ============================================================
-
+  /* --- 手模與手臂 --- */
   if (tacSprint > 0.5) {
-    // 戰術衝刺時，右手單手持槍高舉，左手放開
-    // 右手握把 (手掌)
+    // 戰術衝刺姿態
     m = mp(); setTRS(tL, 0.005, -0.108, 0.115, 0.22, -0.14, 0, 0.070, 0.095, 0.095); m4mul(m, mGunW, tL); pushDraw(m, MESH_SPH, M_GLOVE);
-    // 右手拇指
-    m = mp(); setTRS(tL, 0.05, -0.08, 0.10, 0.2, 0, 0, 0.02, 0.04, 0.02); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    // 右手其他四指緊握
     m = mp(); setTRS(tL, 0.04, -0.09, 0.09, 0.4, 0, 0, 0.028, 0.055, 0.050); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GLOVE);
+    // 右手前臂 (有機曲面)
+    m = mp(); setTRS(tL, 0.08, -0.22, 0.18, -0.1, -0.1, 0.1, 1, 1, 1); m4mul(m, mGunW, tL); pushDraw(m, MESH_ORGANIC_ARM, M_CAMO);
     
-    // 右前臂 (向下垂直)
-    m = mp(); setTRS(tL, 0.08, -0.22, 0.18, -0.1, -0.1, 0.1, 0.055, 0.25, 0.055); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_CAMO);
-    
-    // 左手在左下角狂奔 (獨立的世界空間或相機空間)
+    // 左手在左下角狂奔
     var lArmSwing = Math.sin(player.bob * 2) * 0.15 * tacSprint;
-    m = mp(); 
-    setTRS(tL, -0.2, -0.35 + lArmSwing, -0.4, -0.6, 0.3, -0.2, 0.06, 0.25, 0.06); 
-    m4mul(m, mCam, tL); 
-    pushDraw(m, MESH_CYL, M_CAMO); // 前臂
-    
-    m = mp(); 
-    setTRS(tL, -0.2, -0.45 + lArmSwing, -0.5, -0.2, 0, 0, 0.04, 0.06, 0.04); 
-    m4mul(m, mCam, tL); 
-    pushDraw(m, MESH_SPH, M_GLOVE); // 拳頭
-    
+    m = mp(); setTRS(tL, -0.2, -0.35 + lArmSwing, -0.4, -0.6, 0.3, -0.2, 1, 1, 1); m4mul(m, mCam, tL); pushDraw(m, MESH_ORGANIC_ARM, M_CAMO);
+    m = mp(); setTRS(tL, -0.2, -0.45 + lArmSwing, -0.5, -0.2, 0, 0, 0.04, 0.06, 0.04); m4mul(m, mCam, tL); pushDraw(m, MESH_SPH, M_GLOVE);
   } else {
-    // 正常持槍 / 換彈 / 開鏡 狀態
-
-    // --- 右手手掌底座 (握把) ---
+    // 正常姿態：右手手掌與五指
     m = mp(); setTRS(tL, 0.005, -0.108, 0.115, 0.22, -0.14, 0, 0.070, 0.095, 0.095); m4mul(m, mGunW, tL); pushDraw(m, MESH_SPH, M_GLOVE);
-    
-    // 碳纖維手背護塊 (Knuckle Guard)
     m = mp(); setTRS(tL, 0.055, -0.08, 0.11, 0.22, -0.14, 0, 0.04, 0.04, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-
-    // 右手拇指 (包裹握把左側)
     m = mp(); setTRS(tL, -0.02, -0.06, 0.09, 0.5, -0.5, 0, 0.018, 0.045, 0.02); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    
-    // 右手食指 (扣扳機區) - 三節骨骼
-    // 近節
     m = mp(); setTRS(tL, 0.04, -0.055, 0.08, rIndex * 0.5, 0, 0, 0.016, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    // 中節 (這裡簡化為一個整體，但調整角度)
     m = mp(); setTRS(tL, 0.04, -0.03, 0.09, rIndex * 1.0, 0, 0, 0.015, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    // 遠節 (指尖)
     m = mp(); setTRS(tL, 0.04, -0.01, 0.10, rIndex * 1.2, 0, 0, 0.014, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-
-    // 右手中指 / 無名指 / 小指 (緊握握把)
     m = mp(); setTRS(tL, 0.042, -0.07, 0.11, 0.5, 0, 0, 0.015, 0.045, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, 0.04, -0.085, 0.12, 0.5, 0, 0, 0.015, 0.045, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, 0.035, -0.095, 0.13, 0.5, 0, 0, 0.014, 0.04, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-    
-    // 右前臂 (連接到畫面右下角)
-    m = mp(); setTRS(tL, 0.12, -0.22, 0.22, -0.4, -0.3, 0.3, 0.055, 0.25, 0.055); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_CAMO);
-    // 右袖口褶皺
-    m = mp(); setTRS(tL, 0.15, -0.32, 0.28, -0.4, -0.3, 0.3, 0.06, 0.03, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_VEST);
+    // 右前臂 (有機曲面)
+    m = mp(); setTRS(tL, 0.12, -0.22, 0.22, -0.4, -0.3, 0.3, 1, 1, 1); m4mul(m, mGunW, tL); pushDraw(m, MESH_ORGANIC_ARM, M_CAMO);
 
-
-    // ============================================================
-    // 第一人稱左手 (精細手掌與三節手指，支援換彈動作)
-    // ============================================================
-
-    // --- 左手手掌底座 (托住護木) ---
+    // 左手手掌與五指
     m = mp(); setTRS(tL, handLX, handLY, handLZ, 0.16, 0.22, 0, 0.068, 0.090, 0.095); m4mul(m, mGunW, tL); pushDraw(m, MESH_SPH, M_GLOVE);
-    
-    // 左手手背碳纖維護塊
     m = mp(); setTRS(tL, handLX - 0.045, handLY + 0.02, handLZ, 0.16, 0.22, 0, 0.03, 0.04, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_GUN_POLY);
-
-    // 左手拇指 (從上方包覆)
     m = mp(); setTRS(tL, handLX + 0.03, handLY + 0.04, handLZ, 0.2, 0.5, 0, 0.018, 0.045, 0.02); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     
-    // 左手食指 (三節)
+    // 左手食指
     m = mp(); setTRS(tL, handLX - 0.03, handLY + 0.02, handLZ - 0.02, 0.1, lIndex * 0.5, 0, 0.015, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, handLX - 0.035, handLY - 0.01, handLZ - 0.02, 0.2, lIndex * 1.0, 0, 0.014, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, handLX - 0.04, handLY - 0.035, handLZ - 0.02, 0.3, lIndex * 1.2, 0, 0.013, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-
-    // 左手中指 (三節)
+    // 左手中指
     m = mp(); setTRS(tL, handLX - 0.04, handLY + 0.01, handLZ, 0.1, lMiddle * 0.5, 0, 0.015, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, handLX - 0.045, handLY - 0.02, handLZ, 0.2, lMiddle * 1.0, 0, 0.014, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, handLX - 0.05, handLY - 0.045, handLZ, 0.3, lMiddle * 1.2, 0, 0.013, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-
-    // 左手無名指 (三節)
+    // 左手無名指
     m = mp(); setTRS(tL, handLX - 0.05, handLY + 0.01, handLZ + 0.02, 0.1, lRing * 0.5, 0, 0.014, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, handLX - 0.055, handLY - 0.02, handLZ + 0.02, 0.2, lRing * 1.0, 0, 0.013, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, handLX - 0.06, handLY - 0.045, handLZ + 0.02, 0.3, lRing * 1.2, 0, 0.012, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
-
-    // 左手小指 (三節)
+    // 左手小指
     m = mp(); setTRS(tL, handLX - 0.05, handLY + 0.01, handLZ + 0.04, 0.1, lPinky * 0.5, 0, 0.013, 0.03, 0.018); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, handLX - 0.055, handLY - 0.02, handLZ + 0.04, 0.2, lPinky * 1.0, 0, 0.012, 0.025, 0.016); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
     m = mp(); setTRS(tL, handLX - 0.06, handLY - 0.045, handLZ + 0.04, 0.3, lPinky * 1.2, 0, 0.011, 0.02, 0.015); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL8, M_GLOVE);
 
-    // 左前臂 (帶有迷彩袖口)
-    m = mp(); setTRS(tL, handLX - 0.15, handLY - 0.07, handLZ + 0.15, -0.2, 0.4, -0.4, 0.055, 0.25, 0.055); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_CAMO);
-    
-    // 戰術手錶 (在左手腕)
-    m = mp(); setTRS(tL, handLX - 0.12, handLY - 0.05, handLZ + 0.12, -0.2, 0.4, -0.4, 0.06, 0.03, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_GUN_POLY);
-    m = mp(); setTRS(tL, handLX - 0.12, handLY - 0.02, handLZ + 0.12, -0.2, 0.4, -0.4, 0.04, 0.01, 0.04); m4mul(m, mGunW, tL); pushDraw(m, MESH_BOX, M_RED_DOT); // 微光螢幕
-    
-    // 左袖口
-    m = mp(); setTRS(tL, handLX - 0.2, handLY - 0.1, handLZ + 0.2, -0.2, 0.4, -0.4, 0.06, 0.04, 0.06); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_VEST);
+    // 左前臂 (有機曲面)
+    m = mp(); setTRS(tL, handLX - 0.15, handLY - 0.07, handLZ + 0.15, -0.2, 0.4, -0.4, 1, 1, 1); m4mul(m, mGunW, tL); pushDraw(m, MESH_ORGANIC_ARM, M_CAMO);
   }
 
-  // ============================================================
-  // 槍口火光 (開火特效)
-  // ============================================================
+  // 槍口火光
   if (hitFlash > 0) {
     var fs = 0.08 + (1 - hitFlash / 0.06) * 0.06;
     m = mp(); setTRS(tL, 0, 0.002, -0.72, Math.PI / 2, 0, 0, fs, fs, fs); m4mul(m, mGunW, tL); pushDraw(m, MESH_SPH, M_FLASH);
     m = mp(); setTRS(tL, 0, 0.002, -0.78, Math.PI / 2, 0, 0, fs * 0.5, fs * 1.2, fs * 0.5); m4mul(m, mGunW, tL); pushDraw(m, MESH_CYL, M_FLASH);
   }
 
-  // ============================================================
-  // 戰術雷射光束與交點
-  // ============================================================
+  // 雷射光束
   var laserOrigin = [
     mGunW[12] + mGunW[0] * 0.065 + mGunW[4] * 0.02 + mGunW[8] * -0.15,
     mGunW[13] + mGunW[1] * 0.065 + mGunW[5] * 0.02 + mGunW[9] * -0.15,
     mGunW[14] + mGunW[2] * 0.065 + mGunW[6] * 0.02 + mGunW[10] * -0.15
   ];
-  
-  var ldx = -mGunW[8];
-  var ldy = -mGunW[9];
-  var ldz = -mGunW[10];
-  var lLen = Math.sqrt(ldx * ldx + ldy * ldy + ldz * ldz);
+  var ldx = -mGunW[8], ldy = -mGunW[9], ldz = -mGunW[10];
+  var lLen = Math.sqrt(ldx*ldx + ldy*ldy + ldz*ldz);
   ldx /= lLen; ldy /= lLen; ldz /= lLen;
-
-  var maxDist = 50;
-  var hitDist = maxDist;
+  var maxDist = 50; var hitDist = maxDist;
   for (var i = 0; i < obstacles.length; i++) {
-    var o = obstacles[i];
-    if (o.flat) continue;
-    var t = rayAABB(
-      laserOrigin[0], laserOrigin[1], laserOrigin[2],
-      ldx, ldy, ldz,
-      o.x - o.hw, 0, o.z - o.hd,
-      o.x + o.hw, o.h, o.z + o.hd
-    );
-    if (t !== null && t < hitDist) {
-      hitDist = t;
-    }
+    var o = obstacles[i]; if (o.flat) continue;
+    var t = rayAABB(laserOrigin[0], laserOrigin[1], laserOrigin[2], ldx, ldy, ldz, o.x - o.hw, 0, o.z - o.hd, o.x + o.hw, o.h, o.z + o.hd);
+    if (t !== null && t < hitDist) hitDist = t;
   }
-
-  laserEnd[0] = laserOrigin[0] + ldx * hitDist;
-  laserEnd[1] = laserOrigin[1] + ldy * hitDist;
-  laserEnd[2] = laserOrigin[2] + ldz * hitDist;
-
-  var ldx2 = laserEnd[0] - laserOrigin[0];
-  var ldy2 = laserEnd[1] - laserOrigin[1];
-  var ldz2 = laserEnd[2] - laserOrigin[2];
-  var ll = Math.sqrt(ldx2 * ldx2 + ldy2 * ldy2 + ldz2 * ldz2);
-  var lyaw = Math.atan2(ldx2, ldz2);
-  var lpitch = -Math.asin(ldy2 / ll);
-  
+  laserEnd[0] = laserOrigin[0] + ldx * hitDist; laserEnd[1] = laserOrigin[1] + ldy * hitDist; laserEnd[2] = laserOrigin[2] + ldz * hitDist;
+  var ldx2 = laserEnd[0] - laserOrigin[0], ldy2 = laserEnd[1] - laserOrigin[1], ldz2 = laserEnd[2] - laserOrigin[2];
+  var ll = Math.sqrt(ldx2*ldx2 + ldy2*ldy2 + ldz2*ldz2);
+  var lyaw = Math.atan2(ldx2, ldz2); var lpitch = -Math.asin(ldy2 / ll);
   var mWorld = mp();
-  setTRS(mWorld, 
-    (laserOrigin[0] + laserEnd[0]) / 2, 
-    (laserOrigin[1] + laserEnd[1]) / 2, 
-    (laserOrigin[2] + laserEnd[2]) / 2, 
-    lpitch + Math.PI / 2, lyaw, 0, 0.0015, ll, 0.0015
-  );
+  setTRS(mWorld, (laserOrigin[0] + laserEnd[0]) / 2, (laserOrigin[1] + laserEnd[1]) / 2, (laserOrigin[2] + laserEnd[2]) / 2, lpitch + Math.PI / 2, lyaw, 0, 0.0015, ll, 0.0015);
   pushDraw(mWorld, MESH_CYL8, M_LASER);
-
   var mDot = mp();
   setTRS(mDot, laserEnd[0], laserEnd[1], laserEnd[2], 0, 0, 0, 0.02, 0.02, 0.02);
   pushDraw(mDot, MESH_SPH, M_RED_DOT);
 }
-
-
-/* ============================================================
-   射擊與碰撞
+  /* ============================================================
+   射擊判定與曳光彈系統
    ============================================================ */
+
+/**
+ * 生成曳光彈軌跡
+ * @param {Object} e 敵人物件
+ */
 function fireTracer(e) {
   var sx = e.muzzle[0], sy = e.muzzle[1], sz = e.muzzle[2];
-  var ex = player.x + (Math.random()-0.5)*0.9;
-  var ey = player.y + player.curH*0.75 + (Math.random()-0.5)*0.4;
-  var ez = player.z + (Math.random()-0.5)*0.9;
-  var dx = ex-sx, dy = ey-sy, dz = ez-sz;
-  var len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  var ex = player.x + (Math.random() - 0.5) * 0.9;
+  var ey = player.y + player.curH * 0.75 + (Math.random() - 0.5) * 0.4;
+  var ez = player.z + (Math.random() - 0.5) * 0.9;
+  var dx = ex - sx, dy = ey - sy, dz = ez - sz;
+  var len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  
   if (len < 0.01) return;
-  var yaw = Math.atan2(dx, dz), pitch = -Math.asin(dy/len);
-  var mx = (sx+ex)/2, my = (sy+ey)/2, mz = (sz+ez)/2;
+  
+  var yaw = Math.atan2(dx, dz);
+  var pitch = -Math.asin(dy / len);
+  var mx = (sx + ex) / 2;
+  var my = (sy + ey) / 2;
+  var mz = (sz + ez) / 2;
+  
   setTRS(e.tracerM, mx, my, mz, pitch, yaw, 0, 0.015, 0.015, len);
   e.tracerT = 0.07;
 }
 
+/**
+ * 射線與 AABB 碰撞檢測 (Raycasting against AABB)
+ */
 function rayAABB(ox, oy, oz, dx, dy, dz, minx, miny, minz, maxx, maxy, maxz) {
   var tmin = 0, tmax = 1e9;
   var O = [ox, oy, oz], D = [dx, dy, dz], MN = [minx, miny, minz], MX = [maxx, maxy, maxz];
+  
   for (var i = 0; i < 3; i++) {
     if (Math.abs(D[i]) < 1e-7) {
       if (O[i] < MN[i] || O[i] > MX[i]) return null;
     } else {
-      var t1 = (MN[i] - O[i]) / D[i], t2 = (MX[i] - O[i]) / D[i];
+      var t1 = (MN[i] - O[i]) / D[i];
+      var t2 = (MX[i] - O[i]) / D[i];
       if (t1 > t2) { var tmp = t1; t1 = t2; t2 = tmp; }
       if (t1 > tmin) tmin = t1;
       if (t2 < tmax) tmax = t2;
@@ -2196,56 +2159,91 @@ function rayAABB(ox, oy, oz, dx, dy, dz, minx, miny, minz, maxx, maxy, maxz) {
   return tmin;
 }
 
+/**
+ * 顯示準心命中反饋
+ */
 function showHit() {
   crossEl.classList.add('hit');
   clearTimeout(showHit._t);
   showHit._t = setTimeout(function() { crossEl.classList.remove('hit'); }, 90);
 }
 
+/**
+ * 玩家開火邏輯 (包含後座力、槍機往復、屏幕震動與 FOV 脈衝)
+ */
 function playerShoot() {
   if (reload.active || gun.inspecting) return;
-  if (gun.mag <= 0) { sMagOut(); startReload(); return; }
+  
+  if (gun.mag <= 0) { 
+    sMagOut(); 
+    startReload(); 
+    return; 
+  }
+  
   var now = performance.now() / 1000;
   if (now - gun.lastFire < gun.fireInterval) return;
-  gun.lastFire = now; gun.mag--;
+  
+  gun.lastFire = now; 
+  gun.mag--;
 
   sGun();
   
-  // 開火後座力與震動 (Punchy Recoil)
-  gun.recoilZVel += 12.0; // 猛烈後退
-  gun.recoilPitchVel -= 18.0; // 槍口上抬
-  gun.recoilYawVel += (Math.random() - 0.5) * 8.0; // 左右微顫
-  gun.boltTimer = 0.08; // 槍機往復
-  hitFlash = 0.06; // 槍口火光
+  // === 開火後座力與震動 ===
+  // 槍械本身的後座力 (Punchy)
+  gun.recoilZVel += 12.0; // Z 軸猛烈後退
+  gun.recoilPitchVel -= 18.0; // 槍口猛烈上抬
+  gun.recoilYawVel += (Math.random() - 0.5) * 8.0; // 左右隨機微顫
   
-  // 加入屏幕震動與 FOV 脈衝
+  gun.boltTimer = 0.08; // 槍機往復計時
+  hitFlash = 0.06; // 槍口火光持續時間
+  
+  // 屏幕創傷震動 (CameraShake) 與 FOV 脈衝
   player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.25);
-  player.fovPunch = -2.5; // 瞬間縮小 FOV
+  player.fovPunch = -2.5; // 瞬間縮小視野
   
-  spawnShell(player.x + Math.cos(player.yaw)*0.1, player.y + player.curH - 0.1, player.z - Math.sin(player.yaw)*0.1);
+  // 拋殼
+  spawnShell(
+    player.x + Math.cos(player.yaw) * 0.1, 
+    player.y + player.curH - 0.1, 
+    player.z - Math.sin(player.yaw) * 0.1
+  );
 
+  // === 射線檢測 ===
   var cp = Math.cos(player.pitch), sp = Math.sin(player.pitch);
-  var fx = -Math.sin(player.yaw)*cp, fy = sp, fz = -Math.cos(player.yaw)*cp;
+  var fx = -Math.sin(player.yaw) * cp;
+  var fy = sp;
+  var fz = -Math.cos(player.yaw) * cp;
+  
   var eyeY = player.y + player.curH;
   var ox = player.x, oy = eyeY, oz = player.z;
 
+  // 1. 優先檢測敵人
   var bestE = null, bestT = 1e9;
   for (var i = 0; i < enemies.length; i++) {
-    var e = enemies[i]; if (!e.alive) continue;
+    var e = enemies[i]; 
+    if (!e.alive) continue;
     var t = rayAABB(ox, oy, oz, fx, fy, fz, e.x - 0.38, 0.0, e.z - 0.38, e.x + 0.38, 2.10, e.z + 0.38);
     if (t !== null && t < bestT) { bestT = t; bestE = e; }
   }
 
-  var hitX = 0, hitY = 0, hitZ = 0, nx = 0, ny = 1, nz = 0, hitWall = false;
+  // 2. 檢測牆壁與掩體
+  var hitX = 0, hitY = 0, hitZ = 0;
+  var nx = 0, ny = 1, nz = 0;
+  var hitWall = false;
+  
   for (var i = 0; i < obstacles.length; i++) {
-    var o = obstacles[i]; if (o.flat) continue;
+    var o = obstacles[i]; 
+    if (o.flat) continue;
     var t = rayAABB(ox, oy, oz, fx, fy, fz, o.x - o.hw, 0, o.z - o.hd, o.x + o.hw, o.h, o.z + o.hd);
     if (t !== null && t < bestT) {
       bestT = t; bestE = null; hitWall = true;
       hitX = ox + fx * t; hitY = oy + fy * t; hitZ = oz + fz * t;
+      
+      // 計算法線
       var d1 = Math.abs(hitX - (o.x - o.hw)), d2 = Math.abs(hitX - (o.x + o.hw));
       var d3 = Math.abs(hitZ - (o.z - o.hd)), d4 = Math.abs(hitZ - (o.z + o.hd));
-      var d5 = Math.abs(hitY - o.h); var minD = Math.min(d1, d2, d3, d4, d5);
+      var d5 = Math.abs(hitY - o.h); 
+      var minD = Math.min(d1, d2, d3, d4, d5);
       if (minD === d1) { nx = -1; ny = 0; nz = 0; }
       else if (minD === d2) { nx = 1; ny = 0; nz = 0; }
       else if (minD === d3) { nx = 0; ny = 0; nz = -1; }
@@ -2254,74 +2252,117 @@ function playerShoot() {
     }
   }
 
+  // === 處理命中結果 ===
   if (bestE) {
-    bestE.hp -= 34; bestE.anim.flinch = 1; sHit(); showHit();
+    bestE.hp -= 34;
+    bestE.anim.flinch = 1;
+    sHit(); 
+    showHit();
     spawnParticles(bestE.x, bestE.y + 1.0, bestE.z, -fx, -fy, -fz, 1);
-    if (bestE.hp <= 0) { bestE.alive = false; bestE.respawnT = 3; }
+    if (bestE.hp <= 0) { 
+      bestE.alive = false; 
+      bestE.respawnT = 3; 
+    }
   } else if (hitWall) {
     spawnBulletHole(hitX, hitY, hitZ, nx, ny, nz);
     spawnParticles(hitX, hitY, hitZ, nx, ny, nz, 0);
   }
 
-  if (gun.mag === 0 && !reload.active && gun.reserve > 0) startReload();
+  if (gun.mag === 0 && !reload.active && gun.reserve > 0) {
+    startReload();
+  }
 }
 
+/* ============================================================
+   三段式換彈系統
+   ============================================================ */
 function startReload() {
   if (reload.active || gun.inspecting) return;
   if (gun.mag >= gun.magSize) return;
   if (gun.reserve <= 0) return;
-  reload.active = true; reload.t = 0; reload.phase = 0;
-  firing = false; adsHold = false; player.ads = 0;
-  player.tacSprintProg = 0; // 換彈時取消戰術衝刺
-  reloadTxtEl.style.display = 'block'; sMagOut();
+  
+  reload.active = true; 
+  reload.t = 0; 
+  reload.phase = 0;
+  
+  firing = false; 
+  adsHold = false; 
+  player.ads = 0;
+  player.tacSprintTimer = 0; // 換彈時中斷戰術衝刺
+  
+  reloadTxtEl.style.display = 'block'; 
+  sMagOut();
 }
 
 function updateReload(dt) {
   if (gun.inspecting) {
     gun.inspectT += dt;
-    if (gun.inspectT > 3.5) { gun.inspecting = false; gun.inspectT = 0; }
+    if (gun.inspectT > 3.5) { 
+      gun.inspecting = false; 
+      gun.inspectT = 0; 
+    }
     return;
   }
+  
   if (!reload.active) {
-    if (reloadTxtEl.style.display !== 'none') reloadTxtEl.style.display = 'none';
+    if (reloadTxtEl.style.display !== 'none') {
+      reloadTxtEl.style.display = 'none';
+    }
     return;
   }
+  
   reload.t += dt;
   var p = reload.t / reload.dur;
+  
   if (p >= 1) {
-    var need = gun.magSize - gun.mag; var take = Math.min(need, gun.reserve);
-    gun.mag += take; gun.reserve -= take;
-    reload.active = false; reload.t = 0; reload.phase = 0; reloadTxtEl.style.display = 'none';
+    var need = gun.magSize - gun.mag; 
+    var take = Math.min(need, gun.reserve);
+    gun.mag += take; 
+    gun.reserve -= take;
+    reload.active = false; 
+    reload.t = 0; 
+    reload.phase = 0; 
+    reloadTxtEl.style.display = 'none';
     return;
   }
+  
   // 播放對應階段的音效
-  if (reload.phase === 0 && p >= 0.28) { reload.phase = 1; sMagOut(); }
-  else if (reload.phase === 1 && p >= 0.58) { reload.phase = 2; sMagIn(); }
-  else if (reload.phase === 2 && p >= 0.71) { reload.phase = 3; sBolt(); }
+  if (reload.phase === 0 && p >= 0.28) { 
+    reload.phase = 1; 
+    sMagOut(); 
+  } else if (reload.phase === 1 && p >= 0.58) { 
+    reload.phase = 2; 
+    sMagIn(); 
+  } else if (reload.phase === 2 && p >= 0.71) { 
+    reload.phase = 3; 
+    sBolt(); 
+  }
 }
 
 /* ============================================================
-   玩家更新邏輯 (包含戰術衝刺與震動累積)
+   玩家狀態更新與物理碰撞 (包含戰術衝刺系統)
    ============================================================ */
 function updatePlayer(dt) {
-  // 1. 開鏡 (ADS) 彈簧插值 (帶有過頭回彈)
+  // 1. 開鏡 (ADS) 彈簧插值 (高剛度，帶有清脆感)
   var adsTarget = (adsHold && !reload.active && !player.sliding && player.sprintProg < 0.1 && player.tacSprintProg < 0.1 && !gun.inspecting) ? 1 : 0;
-  var adsRes = spring(player.ads, adsTarget, player.adsVel, 550, 28, dt); // 高剛度彈簧
-  player.ads = adsRes[0]; player.adsVel = adsRes[1];
+  var adsRes = spring(player.ads, adsTarget, player.adsVel, 550, 28, dt);
+  player.ads = adsRes[0]; 
+  player.adsVel = adsRes[1];
   
-  // 2. 速度與衝刺狀態
+  // 2. 獲取當前速度
   var speedNow = Math.sqrt(player.vx * player.vx + player.vz * player.vz);
   
-  // 普通衝刺 (Sprint)
+  // 3. 普通衝刺 (Sprint)
   var sprintTarget = (speedNow > 4.5 && !player.sliding && player.ads < 0.2 && !reload.active && player.tacSprintProg < 0.1) ? 1 : 0;
   var sprRes = spring(player.sprintProg, sprintTarget, player.sprintVel, 160, 22, dt);
-  player.sprintProg = clamp(sprRes[0], 0, 1); player.sprintVel = sprRes[1];
+  player.sprintProg = clamp(sprRes[0], 0, 1); 
+  player.sprintVel = sprRes[1];
 
-  // 戰術衝刺 (Tactical Sprint)
-  // 觸發條件：按下 SPRINT 按鈕，且沒有滑鏟/開鏡/換彈
+  // 4. 戰術衝刺 (Tactical Sprint)
+  // 觸發條件：按下 SPRINT 按鈕，且不在滑鏟/開鏡/換彈狀態
   if (sprintQ && player.tacSprintTimer <= 0 && !reload.active && !player.sliding && player.ads < 0.2) {
-    player.tacSprintTimer = 3.5; // 持續 3.5 秒
-    // 扣除冷卻機制，這裡簡化為直接給予時長
+    player.tacSprintTimer = 3.5; // 啟動 3.5 秒
+    player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.15); // 爆發瞬間震動
   }
   if (player.tacSprintTimer > 0) {
     player.tacSprintTimer -= dt;
@@ -2329,27 +2370,31 @@ function updatePlayer(dt) {
   
   var tacSprintTarget = (player.tacSprintTimer > 0 && speedNow > 2.0) ? 1 : 0;
   var tacRes = spring(player.tacSprintProg, tacSprintTarget, player.tacSprintVel, 120, 20, dt);
-  player.tacSprintProg = clamp(tacRes[0], 0, 1); player.tacSprintVel = tacRes[1];
+  player.tacSprintProg = clamp(tacRes[0], 0, 1); 
+  player.tacSprintVel = tacRes[1];
 
-  // 3. 動作輸入 (滑鏟、跳躍)
+  // 5. 動作輸入處理 (滑鏟、跳躍)
   if (crouchQ) {
     crouchQ = false;
     if (player.grounded && !player.sliding && speedNow > 3.0) { 
-      player.sliding = true; player.slideT = 0.70; 
-      player.tacSprintTimer = 0; // 滑鏟取消戰術衝刺
+      player.sliding = true; 
+      player.slideT = 0.70; 
+      player.tacSprintTimer = 0; // 滑鏟中斷戰術衝刺
     } else { 
       player.crouching = !player.crouching; 
     }
   }
+  
   if (jumpQ) {
     jumpQ = false;
     if (player.grounded) { 
-      player.vy = 6.6; player.grounded = false; 
+      player.vy = 6.6; 
+      player.grounded = false; 
       if (player.sliding) { player.sliding = false; player.slideT = 0; }
-      // 跳躍蓄力震動
-      player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.1);
+      player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.1); // 起跳震動
     }
   }
+  
   if (player.sliding) { 
     player.slideT -= dt; 
     if (player.slideT <= 0) player.sliding = false; 
@@ -2357,71 +2402,95 @@ function updatePlayer(dt) {
     player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.05 * dt * 60);
   }
 
-  // 4. 視角高度 (蹲下/滑鏟)
-  var targetH = 1.68; if (player.sliding || player.crouching) targetH = 0.96;
+  // 6. 視角高度平滑
+  var targetH = 1.68; 
+  if (player.sliding || player.crouching) targetH = 0.96;
   player.curH = damp(player.curH, targetH, 0.18, dt);
 
-  // 5. 移動方向計算
-  var ix = stickX, iy = stickY; var mag = Math.sqrt(ix * ix + iy * iy);
+  // 7. 移動方向與速度計算
+  var ix = stickX, iy = stickY; 
+  var mag = Math.sqrt(ix * ix + iy * iy);
   if (mag > 1) { ix /= mag; iy /= mag; mag = 1; }
+  
   var cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
-  var fwdX = -sy, fwdZ = -cy; var rgtX = cy, rgtZ = -sy;
-  var wx = fwdX * (-iy) + rgtX * ix; var wz = fwdZ * (-iy) + rgtZ * ix;
+  var fwdX = -sy, fwdZ = -cy; 
+  var rgtX = cy, rgtZ = -sy;
+  var wx = fwdX * (-iy) + rgtX * ix; 
+  var wz = fwdZ * (-iy) + rgtZ * ix;
 
-  // 6. 速度加成
-  var sp = 4.6; // 基礎速度
+  // 基礎速度設定
+  var sp = 4.6; 
   if (player.tacSprintProg > 0.5) {
     sp = 10.2; // 戰術衝刺極速
   } else if (player.sprintProg > 0.8) {
     sp *= 1.5; // 普通衝刺
   }
   
-  if (player.ads > 0.3) sp *= 0.58;
-  if (player.sliding) sp = 8.4;
-  if (reload.active) sp *= 0.6;
+  if (player.ads > 0.3) sp *= 0.58; // 開鏡減速
+  if (player.sliding) sp = 8.4; // 滑鏟速度
+  if (reload.active) sp *= 0.6; // 換彈減速
 
-  player.vx = damp(player.vx, wx * sp, 0.18, dt); player.vz = damp(player.vz, wz * sp, 0.18, dt);
-  if (player.sliding) { player.vx *= (1 - 1.7 * dt); player.vz *= (1 - 1.7 * dt); }
+  player.vx = damp(player.vx, wx * sp, 0.18, dt); 
+  player.vz = damp(player.vz, wz * sp, 0.18, dt);
+  if (player.sliding) { 
+    player.vx *= (1 - 1.7 * dt); 
+    player.vz *= (1 - 1.7 * dt); 
+  }
 
-  player.x += player.vx * dt; player.z += player.vz * dt;
+  player.x += player.vx * dt; 
+  player.z += player.vz * dt;
 
-  // 7. 玩家防穿牆碰撞
+  // 8. 防穿牆碰撞檢測 (圓柱體與 AABB 的碰撞)
   var r = player.radius;
   for (var i = 0; i < obstacles.length; i++) {
-    var o = obstacles[i]; if (o.flat) continue;
-    var ox = clamp(player.x, o.x - o.hw, o.x + o.hw); var oz = clamp(player.z, o.z - o.hd, o.z + o.hd);
-    var dx = player.x - ox, dz = player.z - oz; var distSq = dx * dx + dz * dz;
+    var o = obstacles[i]; 
+    if (o.flat) continue;
+    
+    // 找 AABB 上離玩家最近的點
+    var ox = clamp(player.x, o.x - o.hw, o.x + o.hw); 
+    var oz = clamp(player.z, o.z - o.hd, o.z + o.hd);
+    var dx = player.x - ox, dz = player.z - oz; 
+    var distSq = dx * dx + dz * dz;
+    
+    // 如果距離小於玩家半徑，將玩家推出
     if (distSq < r * r) {
       var dist = Math.sqrt(distSq);
-      if (dist > 0.0001) { player.x += (dx / dist) * (r - dist); player.z += (dz / dist) * (r - dist); }
-      else {
-        var pushX = (o.hw + r) - Math.abs(player.x - o.x); var pushZ = (o.hd + r) - Math.abs(player.z - o.z);
+      if (dist > 0.0001) { 
+        player.x += (dx / dist) * (r - dist); 
+        player.z += (dz / dist) * (r - dist); 
+      } else {
+        // 如果玩家正好在中心，推往最近的面
+        var pushX = (o.hw + r) - Math.abs(player.x - o.x); 
+        var pushZ = (o.hd + r) - Math.abs(player.z - o.z);
         if (pushX < pushZ) player.x += (player.x > o.x ? 1 : -1) * pushX;
         else player.z += (player.z > o.z ? 1 : -1) * pushZ;
       }
     }
   }
 
-  // 8. 垂直重力與落地重量感
+  // 9. 重力與落地處理
   if (!player.grounded) {
-    player.vy -= 18 * dt; player.y += player.vy * dt;
+    player.vy -= 18 * dt; 
+    player.y += player.vy * dt;
     if (player.y <= 0) { 
-      // 落地瞬間
       player.y = 0; player.vy = 0; player.grounded = true; 
-      player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.4); // 落地猛烈震動
+      // 落地猛烈震動
+      player.cameraTrauma = Math.min(1.0, player.cameraTrauma + 0.4); 
     }
   }
   
-  if (player.x < -BOUND + r) player.x = -BOUND + r; if (player.x > BOUND - r) player.x = BOUND - r;
-  if (player.z < -BOUND + r) player.z = -BOUND + r; if (player.z > BOUND - r) player.z = BOUND - r;
+  // 邊界限制
+  if (player.x < -BOUND + r) player.x = -BOUND + r; 
+  if (player.x > BOUND - r) player.x = BOUND - r;
+  if (player.z < -BOUND + r) player.z = -BOUND + r; 
+  if (player.z > BOUND - r) player.z = BOUND - r;
 
-  // 9. 後座力與震動衰減
-  // 槍械本身的後座力
+  // 10. 後座力與震動衰減
   gun.recoilZ = damp(gun.recoilZ, 0, 0.2, dt); 
   gun.recoilPitch = damp(gun.recoilPitch, 0, 0.2, dt);
-  gun.recoilYaw = damp(gun.recoilYaw, 0, 0.2, dt); // 左右微顫衰減
+  gun.recoilYaw = damp(gun.recoilYaw, 0, 0.2, dt); 
   
-  // 使用彈簧阻尼模擬後座力回彈，造成高頻抖動感
+  // 使用彈簧阻尼模擬後座力回彈
   gun.recoilZVel += -gun.recoilZ * 300 * dt; 
   gun.recoilZVel *= Math.exp(-25 * dt); 
   gun.recoilZ += gun.recoilZVel * dt;
@@ -2434,26 +2503,34 @@ function updatePlayer(dt) {
   gun.recoilYawVel *= Math.exp(-30 * dt);
   gun.recoilYaw += gun.recoilYawVel * dt;
 
-  // 屏幕震動 (Camera Trauma) 與 FOV 脈衝衰減
-  player.cameraTrauma = Math.max(0, player.cameraTrauma - dt * 2.5); // Trauma 每秒衰減
-  player.fovPunch = damp(player.fovPunch, 0, 0.3, dt); // FOV Punch 快速回彈
+  // 屏幕震動與 FOV 脈衝衰減
+  player.cameraTrauma = Math.max(0, player.cameraTrauma - dt * 2.5); 
+  player.fovPunch = damp(player.fovPunch, 0, 0.3, dt);
 
   if (gun.boltTimer > 0) gun.boltTimer -= dt;
   if (hitFlash > 0) hitFlash -= dt;
 
-  // 10. UI 狀態更新
+  // 11. UI 狀態更新
   var cs = 1.0;
   if (player.ads > 0.8) crossEl.style.opacity = 0; else crossEl.style.opacity = 0.9;
-  if (player.sprintProg > 0.5 || player.tacSprintProg > 0.5) crossEl.style.transform = 'scale(1.4)'; else crossEl.style.transform = 'scale(1.0)';
+  if (player.sprintProg > 0.5 || player.tacSprintProg > 0.5) crossEl.style.transform = 'scale(1.4)'; 
+  else crossEl.style.transform = 'scale(1.0)';
 
+  // 12. 處理開火
   if (firing && !reload.active && !gun.inspecting) playerShoot();
 }
 
+/**
+ * 更新 HUD 彈藥顯示
+ */
 function updateHUD() {
   var txt = gun.mag + ' / ' + gun.reserve;
   if (ammoEl.textContent !== txt) ammoEl.textContent = txt;
-  if (gun.mag < 8) { if (!ammoEl.classList.contains('low')) ammoEl.classList.add('low'); }
-  else { if (ammoEl.classList.contains('low')) ammoEl.classList.remove('low'); }
+  if (gun.mag < 8) { 
+    if (!ammoEl.classList.contains('low')) ammoEl.classList.add('low'); 
+  } else { 
+    if (ammoEl.classList.contains('low')) ammoEl.classList.remove('low'); 
+  }
 }
 
 /* ============================================================
@@ -2470,12 +2547,17 @@ function resize() {
   var w = window.innerWidth, h = window.innerHeight;
   var dpr = Math.min(window.devicePixelRatio || 1, 2);
   var cw = Math.floor(w * dpr), chh = Math.floor(h * dpr);
-  if (canvas.width !== cw || canvas.height !== chh) { canvas.width = cw; canvas.height = chh; }
+  if (canvas.width !== cw || canvas.height !== chh) { 
+    canvas.width = cw; canvas.height = chh; 
+  }
   gl.viewport(0, 0, cw, chh); aspect = w / h;
 }
 window.addEventListener('resize', resize);
 resize();
 
+/**
+ * 綁定網格頂點屬性
+ */
 function bindMeshAttributes(mesh) {
   gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
   gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
@@ -2484,15 +2566,23 @@ function bindMeshAttributes(mesh) {
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
 }
 
+/**
+ * 綁定陰影網格頂點屬性 (只需位置)
+ */
 function bindShadowMeshAttributes(mesh) {
   gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
   gl.enableVertexAttribArray(sAPos); gl.vertexAttribPointer(sAPos, 3, gl.FLOAT, false, 32, 0);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
 }
 
+/**
+ * 構建靜態場景
+ */
 function buildScene() {
+  // 地面
   var m = mp(); setTRS(m, 0, -0.10, 0, 0, 0, 0, GROUND, 0.20, GROUND); pushDraw(m, MESH_BOX, M_GROUND);
 
+  // 障礙物
   for (var i = 0; i < obstacles.length; i++) {
     var o = obstacles[i];
     if (o.type === 'flat') {
@@ -2512,13 +2602,22 @@ function buildScene() {
     }
   }
 
+  // 背景建築群
   var blds = [
-    { x: -26, z: -26, w: 8, h: 16, d: 6 }, { x: -14, z: -32, w: 9, h: 20, d: 7 }, { x: 4, z: -34, w: 11, h: 14, d: 6 },
-    { x: 18, z: -30, w: 8, h: 18, d: 6 }, { x: 30, z: -16, w: 6, h: 12, d: 5 }, { x: -30, z: 12, w: 6, h: 14, d: 5 }, { x: 32, z: 8, w: 7, h: 16, d: 6 }
+    { x: -26, z: -26, w: 8, h: 16, d: 6 }, 
+    { x: -14, z: -32, w: 9, h: 20, d: 7 }, 
+    { x: 4, z: -34, w: 11, h: 14, d: 6 },
+    { x: 18, z: -30, w: 8, h: 18, d: 6 }, 
+    { x: 30, z: -16, w: 6, h: 12, d: 5 }, 
+    { x: -30, z: 12, w: 6, h: 14, d: 5 }, 
+    { x: 32, z: 8, w: 7, h: 16, d: 6 }
   ];
+  
   for (var b = 0; b < blds.length; b++) {
     var bd = blds[b];
     var mb = mp(); setTRS(mb, bd.x, bd.h / 2, bd.z, 0, 0, 0, bd.w, bd.h, bd.d); pushDraw(mb, MESH_BOX, M_BRICK);
+    
+    // 窗戶玻璃
     var cols = Math.max(2, Math.floor(bd.w / 2.5)), rows = Math.floor(bd.h / 3.5);
     for (var r = 0; r < rows; r++) {
       for (var c2 = 0; c2 < cols; c2++) {
@@ -2528,9 +2627,12 @@ function buildScene() {
     }
   }
 
+  // 邊界圍牆
   var wallPos = [
-    { x: 0, z: -BOUND - 1.2, w: GROUND + 4, d: 0.6, h: 3.0 }, { x: 0, z: BOUND + 1.2, w: GROUND + 4, d: 0.6, h: 3.0 },
-    { x: -BOUND - 1.2, z: 0, w: 0.6, d: GROUND + 4, h: 3.0 }, { x: BOUND + 1.2, z: 0, w: 0.6, d: GROUND + 4, h: 3.0 }
+    { x: 0, z: -BOUND - 1.2, w: GROUND + 4, d: 0.6, h: 3.0 }, 
+    { x: 0, z: BOUND + 1.2, w: GROUND + 4, d: 0.6, h: 3.0 },
+    { x: -BOUND - 1.2, z: 0, w: 0.6, d: GROUND + 4, h: 3.0 }, 
+    { x: BOUND + 1.2, z: 0, w: 0.6, d: GROUND + 4, h: 3.0 }
   ];
   for (var w2 = 0; w2 < wallPos.length; w2++) {
     var wp = wallPos[w2];
@@ -2538,8 +2640,12 @@ function buildScene() {
   }
 }
 
+/**
+ * 陰影 Pass (渲染至 FBO)
+ */
 function updateShadowPass() {
   if (!shadowsEnabled || !shadowProg) return;
+  
   gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFB);
   gl.viewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
   gl.clearColor(1.0, 1.0, 1.0, 1.0);
@@ -2547,7 +2653,10 @@ function updateShadowPass() {
   gl.useProgram(shadowProg);
   gl.uniformMatrix4fv(sULightVP, false, lightVP);
   
-  gl.disableVertexAttribArray(aNrm); gl.disableVertexAttribArray(aUV); gl.enableVertexAttribArray(sAPos);
+  gl.disableVertexAttribArray(aNrm); 
+  gl.disableVertexAttribArray(aUV); 
+  gl.enableVertexAttribArray(sAPos);
+  
   var lastMeshS = null;
   for (var i = 0; i < drawCount; i++) {
     var ds = drawList[i];
@@ -2556,55 +2665,53 @@ function updateShadowPass() {
     gl.uniformMatrix4fv(sUModel, false, ds.m);
     gl.drawElements(gl.TRIANGLES, ds.mesh.count, gl.UNSIGNED_SHORT, 0);
   }
+  
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 
+/**
+ * 主渲染 Pass (輸出至螢幕，包含震動與 FOV 計算)
+ */
 function renderMainPass(eyeY) {
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.clearColor(0.05, 0.08, 0.12, 1.0);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.useProgram(prog);
 
-  // 1. 計算 Camera Shake (Trauma 系統) 與 FOV Punch
-  // 使用 Sine 函數模擬高頻 Perlin 噪聲
+  // 1. 震動引擎 (Camera Trauma)
   var time = performance.now() / 1000;
-  var shake = player.cameraTrauma * player.cameraTrauma; // 平方使得震動更有爆發力
+  var shake = player.cameraTrauma * player.cameraTrauma; // 平方使爆發力更強
   
-  // 計算偏移量
   var shakeX = (Math.sin(time * 45) + Math.sin(time * 82)) * 0.04 * shake;
   var shakeY = (Math.cos(time * 52) + Math.cos(time * 91)) * 0.04 * shake;
-  var shakeRoll = (Math.sin(time * 38) + Math.cos(time * 73)) * 0.015 * shake; // 輕微的 Z 軸滾轉
+  var shakeRoll = (Math.sin(time * 38) + Math.cos(time * 73)) * 0.015 * shake;
   
-  // 2. 建立視圖矩陣 (加入震動偏移)
+  // 2. 視圖矩陣
   var speed = Math.sqrt(player.vx * player.vx + player.vz * player.vz);
   var bob = Math.sin(player.bob) * 0.018 * Math.min(1, speed / 3);
   
-  // 將震動直接作用於相機的 Yaw/Pitch 和位置
   var renderYaw = player.yaw + shakeX;
   var renderPitch = player.pitch + shakeY;
-  var renderRoll = shakeRoll; // 額外加入的傾斜
+  var renderRoll = shakeRoll;
   
-  // 基礎 View 矩陣
   buildView(viewM, player.x, eyeY + bob, player.z, renderYaw, renderPitch);
   
-  // 將 Roll 疊加到 View 矩陣 (繞 Z 軸旋轉)
+  // 應用 Roll 傾角震動
   if (renderRoll !== 0) {
     var cosR = Math.cos(renderRoll), sinR = Math.sin(renderRoll);
-    // 快速矩陣旋轉優化
     var v0 = viewM[0], v1 = viewM[1], v2 = viewM[2];
     var v4 = viewM[4], v5 = viewM[5], v6 = viewM[6];
     viewM[0] = v0 * cosR - v4 * sinR; viewM[1] = v1 * cosR - v5 * sinR; viewM[2] = v2 * cosR - v6 * sinR;
     viewM[4] = v0 * sinR + v4 * cosR; viewM[5] = v1 * sinR + v5 * cosR; viewM[6] = v2 * sinR + v6 * cosR;
   }
 
-  // 3. 處理 FOV (視野動態張開與開火微縮)
+  // 3. FOV 處理 (視野動態張開與開火微縮)
   var targetFov = 72; 
   if (player.ads > 0.5) targetFov = 50; 
   else if (player.tacSprintProg > 0.5) targetFov = 86; // 戰術衝刺大張開
   else if (speed > 6) targetFov = 80;
   
-  // 加上 FOV Punch
-  targetFov += player.fovPunch;
+  targetFov += player.fovPunch; // 開火瞬間縮小
 
   curFov = damp(curFov, targetFov, 0.15, 1 / 60);
   m4persp(projM, curFov * Math.PI / 180, aspect, 0.05, 190);
@@ -2716,13 +2823,16 @@ function renderMainPass(eyeY) {
   gl.depthMask(true); gl.disable(gl.BLEND);
 }
 
+/**
+ * 渲染總入口
+ */
 function render(eyeY) {
   updateShadowPass();
   renderMainPass(eyeY);
 }
 
 /* ============================================================
-   主遊戲循環
+   主遊戲循環 (Game Loop)
    ============================================================ */
 var lastT = performance.now();
 var fpsAcc = 0;
@@ -2730,19 +2840,22 @@ var fpsFrames = 0;
 
 function loop(now) {
   requestAnimationFrame(loop);
+  
   var dt = (now - lastT) / 1000;
   lastT = now;
+  
   if (dt > 0.05) dt = 0.05;
   if (dt <= 0) dt = 0.001;
+  
   var time = now / 1000;
 
-  // 更新狀態
+  // 1. 更新邏輯
   updatePlayer(dt);
   updateReload(dt);
   updateParticles(dt);
   updateHUD();
 
-  // 更新晃動相位 (戰術衝刺時步伐更快)
+  // 更新走路晃動相位 (戰術衝刺步伐更快)
   var bobSpeed = 8;
   if (player.tacSprintProg > 0.5) bobSpeed = 18;
   else if (Math.sqrt(player.vx * player.vx + player.vz * player.vz) > 5) bobSpeed = 13;
@@ -2754,8 +2867,9 @@ function loop(now) {
     if (enemies[i].tracerT > 0) enemies[i].tracerT -= dt;
   }
 
-  // 重新填充繪製列表
-  drawCount = 0; mpReset();
+  // 2. 重設並構建繪製列表
+  drawCount = 0; 
+  mpReset();
   
   buildScene();
   
@@ -2766,32 +2880,41 @@ function loop(now) {
   var eyeY = player.y + player.curH;
   buildPlayerGun(eyeY);
 
-  // 渲染
+  // 3. 執行渲染
   render(eyeY);
 
-  // FPS 統計
-  fpsAcc += dt; fpsFrames++;
+  // 4. FPS 統計
+  fpsAcc += dt; 
+  fpsFrames++;
   if (fpsAcc >= 0.5) {
     var f = Math.round(fpsFrames / fpsAcc);
     fpsEl.textContent = 'FPS ' + f;
-    fpsAcc = 0; fpsFrames = 0;
+    fpsAcc = 0; 
+    fpsFrames = 0;
   }
 }
 
 requestAnimationFrame(loop);
 
 /* ============================================================
-   全局事件綁定
+   全局事件綁定與 UI 互動
    ============================================================ */
 document.getElementById('reset').addEventListener('click', function(ev) {
   ev.stopPropagation();
   initEnemies(); 
-  gun.mag = 30; gun.reserve = 120;
-  reload.active = false; reload.t = 0; reload.phase = 0; reloadTxtEl.style.display = 'none';
-  gun.inspecting = false; gun.inspectT = 0;
+  gun.mag = 30; 
+  gun.reserve = 120;
+  reload.active = false; 
+  reload.t = 0; 
+  reload.phase = 0; 
+  reloadTxtEl.style.display = 'none';
+  gun.inspecting = false; 
+  gun.inspectT = 0;
   player.tacSprintTimer = 0;
+  player.cameraTrauma = 0;
 });
 
+// 阻止 iOS 上的雙擊縮放與手勢干擾
 document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
 document.addEventListener('dblclick', function(e) { e.preventDefault(); }, { passive: false });
 
