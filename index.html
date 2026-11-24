@@ -8,7 +8,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-touch-fullscreen" content="yes">
     <meta name="format-detection" content="telephone=no">
     <meta name="theme-color" content="#0a0a0c">
 
@@ -45,7 +44,7 @@
     </script>
 
     <!-- ============================================================
-         核心樣式：現代戰爭戰術風格 UI
+         核心樣式：現代戰爭戰術風格 UI + 絕對隔離
          ============================================================ -->
     <style>
         /* ============================================================
@@ -91,337 +90,115 @@
         }
 
         /* ============================================================
-           3. 通用 UI 容器與隱藏邏輯
+           3. 超暴力 UI 隔離防護罩
            ============================================================ */
-        .screen-layer {
-            position: absolute; inset: 0;
-            z-index: 10; pointer-events: none;
-            display: none; flex-direction: column;
-            opacity: 0; transition: opacity 0.3s ease;
+        /* 在大廳狀態下，強制隱藏所有可能亂入的戰鬥 UI */
+        body[data-state="lobby"] #master-combat-ui,
+        body[data-state="lobby"] [class*="hud-"],
+        body[data-state="lobby"] [id*="HUD"],
+        body[data-state="lobby"] [id^="btn-"]:not(#btn-deploy):not(#btn-loadout):not(#btn-settings):not(#btn-customize-ui) {
+            display: none !important;
+            pointer-events: none !important;
         }
-        .screen-layer.active { display: flex; opacity: 1; }
-        .screen-layer.interactive { pointer-events: auto; }
+
+        /* 在戰鬥狀態下，強制隱藏所有可能亂入的大廳 UI */
+        body[data-state="combat"] #master-lobby-ui,
+        body[data-state="combat"] .modal-overlay {
+            display: none !important;
+            pointer-events: none !important;
+        }
 
         /* ============================================================
            4. 大廳畫面 (Lobby Screen)
            ============================================================ */
-        #lobby-screen {
-            background: linear-gradient(135deg, rgba(10, 11, 14, 0.9) 0%, rgba(10, 11, 14, 0.4) 100%);
+        #master-lobby-ui {
+            position: absolute; inset: 0; z-index: 100;
+            background: linear-gradient(135deg, rgba(10, 11, 14, 0.95) 0%, rgba(10, 11, 14, 0.6) 100%);
+            display: flex; flex-direction: column;
             padding: calc(20px + var(--safe-top)) 40px calc(20px + var(--safe-bottom)) 40px;
+            pointer-events: auto;
         }
 
-        /* 大廳頂部 */
-        .lobby-header {
-            display: flex; justify-content: space-between; align-items: center;
-            height: 70px; width: 100%; z-index: 20;
-        }
-
-        .player-profile {
-            display: flex; align-items: center; gap: 15px;
-            background: var(--bg-glass); backdrop-filter: blur(10px);
-            border: var(--border-glass); border-radius: 50px;
-            padding: 5px 25px 5px 5px;
-        }
-
-        .player-avatar {
-            width: 56px; height: 56px; border-radius: 50%;
-            background: #222; border: 2px solid var(--primary-gold);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 24px; font-weight: 900; color: var(--primary-gold);
-            box-shadow: 0 0 15px var(--primary-glow);
-        }
-
+        .lobby-header { display: flex; justify-content: space-between; align-items: center; height: 70px; }
+        .player-profile { display: flex; align-items: center; gap: 15px; background: var(--bg-glass); border: var(--border-glass); border-radius: 50px; padding: 5px 25px 5px 5px; }
+        .player-avatar { width: 56px; height: 56px; border-radius: 50%; background: #222; border: 2px solid var(--primary-gold); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 900; color: var(--primary-gold); box-shadow: 0 0 15px var(--primary-glow); }
         .player-info { display: flex; flex-direction: column; }
         .player-name { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: 1px; }
         .player-level { font-size: 12px; color: var(--primary-gold); font-family: var(--font-mono); }
 
-        .lobby-currencies { display: flex; gap: 15px; }
-        .currency-item {
-            display: flex; align-items: center; gap: 8px;
-            background: rgba(0, 0, 0, 0.6); border: var(--border-glass);
-            border-radius: 8px; padding: 8px 18px;
-            font-family: var(--font-mono); font-size: 15px; font-weight: 700;
-        }
-        .currency-icon { width: 16px; height: 16px; border-radius: 3px; }
-        .currency-icon.gold { background: var(--primary-gold); }
-        .currency-icon.blue { background: var(--cyan-blue); }
-
-        /* 大廳主體內容 */
-        .lobby-main {
-            flex: 1; display: flex; justify-content: space-between; align-items: center;
-            width: 100%; z-index: 20; padding: 0 5%;
-        }
-
-        .operator-showcase { display: flex; flex-direction: column; gap: 10px; }
-        .operator-title {
-            font-size: 90px; font-weight: 900; line-height: 0.9;
-            color: transparent; -webkit-text-stroke: 2px rgba(255, 255, 255, 0.15);
-            letter-spacing: 15px; text-transform: uppercase;
-        }
-        .operator-tagline {
-            font-size: 14px; color: var(--primary-gold);
-            letter-spacing: 4px; font-family: var(--font-mono); text-transform: uppercase;
-        }
-
-        /* 大廳選單按鈕 */
+        .lobby-content { flex: 1; display: flex; justify-content: space-between; align-items: center; padding: 0 5%; }
+        .operator-title { font-size: 90px; font-weight: 900; color: transparent; -webkit-text-stroke: 2px rgba(255, 255, 255, 0.15); letter-spacing: 15px; }
         .lobby-menu { display: flex; flex-direction: column; gap: 15px; width: 340px; }
-
-        .btn-menu {
-            background: var(--bg-glass); backdrop-filter: blur(5px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: #ddd; padding: 16px 24px;
-            font-size: 16px; font-weight: 700; letter-spacing: 1px;
-            text-align: left; cursor: pointer; position: relative;
-            clip-path: polygon(0 0, 100% 0, 96% 100%, 0% 100%);
-            transition: all 0.2s ease; overflow: hidden;
-        }
-        .btn-menu:hover, .btn-menu:active {
-            background: rgba(255, 255, 255, 0.15);
-            border-color: var(--primary-gold);
-        }
-
-        .btn-deploy-main {
-            background: linear-gradient(90deg, rgba(212, 175, 55, 0.25) 0%, rgba(212, 175, 55, 0.05) 100%);
-            border: 2px solid var(--primary-gold);
-            color: var(--primary-gold); font-size: 22px; font-weight: 900;
-            padding: 20px 30px; text-transform: uppercase;
-            box-shadow: 0 0 20px rgba(212, 175, 55, 0.2);
-            clip-path: polygon(0 0, 100% 0, 95% 100%, 0% 100%);
-            transition: all 0.2s ease; text-shadow: 0 0 10px rgba(212, 175, 55, 0.5);
-        }
-        .btn-deploy-main:hover, .btn-deploy-main:active {
-            background: linear-gradient(90deg, rgba(212, 175, 55, 0.4) 0%, rgba(212, 175, 55, 0.1) 100%);
-            box-shadow: 0 0 30px rgba(212, 175, 55, 0.5);
-        }
-
-        /* 大廳底部導航 */
-        .lobby-nav {
-            height: 80px; display: flex; justify-content: center; gap: 40px;
-            background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, transparent 100%);
-            align-items: center; z-index: 20;
-        }
-        .nav-item {
-            display: flex; flex-direction: column; align-items: center; gap: 6px;
-            color: var(--text-muted); font-size: 12px; font-weight: 600;
-            cursor: pointer; transition: color 0.2s; text-transform: uppercase;
-        }
-        .nav-item:hover, .nav-item.active { color: var(--primary-gold); }
-        .nav-icon { font-size: 24px; }
+        
+        .btn-menu { background: var(--bg-glass); border: 1px solid rgba(255, 255, 255, 0.2); color: #ddd; padding: 16px 24px; font-size: 16px; font-weight: 700; text-align: left; cursor: pointer; clip-path: polygon(0 0, 100% 0, 96% 100%, 0% 100%); transition: 0.2s; }
+        .btn-menu:hover { background: rgba(255, 255, 255, 0.15); border-color: var(--primary-gold); }
+        .btn-deploy-main { background: linear-gradient(90deg, rgba(212, 175, 55, 0.25) 0%, rgba(212, 175, 55, 0.05) 100%); border: 2px solid var(--primary-gold); color: var(--primary-gold); font-size: 22px; font-weight: 900; padding: 20px 30px; box-shadow: 0 0 20px rgba(212, 175, 55, 0.2); clip-path: polygon(0 0, 100% 0, 95% 100%, 0% 100%); }
 
         /* ============================================================
-           5. 戰鬥 HUD 畫面 (Combat HUD)
+           5. 戰鬥 HUD 畫面 (絕對由這裡控制)
            ============================================================ */
-        #hud-screen { pointer-events: none; }
-        
-        /* 頂部比分與小地圖 */
-        .hud-top-bar {
-            display: flex; justify-content: space-between; align-items: flex-start;
-            padding: calc(20px + var(--safe-top)) 30px 0 30px;
+        #master-combat-ui {
+            position: absolute; inset: 0; z-index: 100;
+            pointer-events: none; display: none;
         }
+        body[data-state="combat"] #master-combat-ui { display: block; }
 
-        .hud-minimap {
-            width: 150px; height: 150px; background: rgba(0,0,0,0.6);
-            border: 2px solid rgba(255,255,255,0.2); border-radius: 8px;
-            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
-            position: relative; overflow: hidden;
-        }
-        .hud-minimap::after {
-            content: 'N'; position: absolute; top: 5px; left: 50%;
-            transform: translateX(-50%); color: var(--primary-gold);
-            font-size: 12px; font-family: var(--font-mono); font-weight: bold;
-        }
+        .hud-top { display: flex; justify-content: center; padding: calc(20px + var(--safe-top)) 30px 0 30px; }
+        .hud-score { display: flex; gap: 20px; align-items: center; background: var(--bg-panel); border-top: 2px solid var(--primary-gold); padding: 10px 30px; border-radius: 4px; }
 
-        .hud-score {
-            display: flex; gap: 20px; align-items: center;
-            background: var(--bg-panel); backdrop-filter: blur(10px);
-            border-top: 2px solid var(--primary-gold); padding: 10px 30px;
-            border-radius: 4px; box-shadow: 0 5px 15px rgba(0,0,0,0.5);
-        }
-        .score-num { font-size: 28px; font-weight: 900; font-family: var(--font-mono); }
-        .score-num.blue { color: #3498db; }
-        .score-num.red { color: #e74c3c; }
-        .score-time { font-size: 20px; font-weight: 700; color: #fff; font-family: var(--font-mono); }
-
-        /* 準心 */
-        .hud-crosshair {
-            position: absolute; top: 50%; left: 50%;
-            width: 30px; height: 30px; transform: translate(-50%, -50%);
-        }
-        .hud-crosshair .line {
-            position: absolute; background: #eee; box-shadow: 0 0 3px #000;
-        }
+        .hud-crosshair { position: absolute; top: 50%; left: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); }
+        .hud-crosshair .line { position: absolute; background: #eee; box-shadow: 0 0 3px #000; }
         .hud-crosshair .l-top { width: 2px; height: 8px; left: 14px; top: 0; }
         .hud-crosshair .l-bottom { width: 2px; height: 8px; left: 14px; bottom: 0; }
         .hud-crosshair .l-left { width: 8px; height: 2px; top: 14px; left: 0; }
         .hud-crosshair .l-right { width: 8px; height: 2px; top: 14px; right: 0; }
-        .hud-crosshair .dot {
-            position: absolute; width: 4px; height: 4px; border-radius: 50%;
-            background: var(--primary-gold); box-shadow: 0 0 5px var(--primary-gold);
-            left: 13px; top: 13px;
-        }
+        .hud-crosshair .dot { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: var(--primary-gold); left: 13px; top: 13px; }
 
-        /* 左下角狀態 */
-        .hud-bottom-left {
-            position: absolute; left: 30px; bottom: calc(30px + var(--safe-bottom));
-            display: flex; flex-direction: column; gap: 8px; width: 280px;
-        }
+        .hud-bottom-left { position: absolute; left: 30px; bottom: calc(30px + var(--safe-bottom)); display: flex; flex-direction: column; gap: 8px; width: 280px; }
         .armor-bar { display: flex; gap: 4px; height: 24px; }
-        .armor-plate {
-            flex: 1; border: 1px solid rgba(52, 152, 219, 0.6);
-            background: rgba(52, 152, 219, 0.4); position: relative; overflow: hidden;
-        }
-        .armor-plate::after {
-            content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255,255,255,0.3) 0%, transparent 50%);
-        }
+        .armor-plate { flex: 1; border: 1px solid rgba(52, 152, 219, 0.6); background: rgba(52, 152, 219, 0.4); }
         .health-bar { height: 18px; background: rgba(46, 204, 113, 0.8); border: 1px solid #2ecc71; display: flex; justify-content: flex-end; align-items: center; padding-right: 8px; }
-        .health-text { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; }
+        .health-text { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: #fff; }
 
-        /* 右下角武器與彈藥 */
-        .hud-bottom-right {
-            position: absolute; right: 30px; bottom: calc(30px + var(--safe-bottom));
-            display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
-        }
-        .weapon-info {
-            display: flex; align-items: center; gap: 12px;
-            background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
-            padding: 8px 20px; border: 1px solid var(--primary-gold); border-radius: 4px;
-        }
-        .weapon-name { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: 1px; }
-        .weapon-slot { font-size: 10px; font-weight: 700; color: var(--primary-gold); border: 1px solid var(--primary-gold); padding: 2px 6px; border-radius: 2px; }
-
-        .ammo-counter { display: flex; align-items: baseline; gap: 5px; font-family: var(--font-mono); text-shadow: 0 2px 5px #000; }
+        .hud-bottom-right { position: absolute; right: 30px; bottom: calc(30px + var(--safe-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+        .weapon-info { display: flex; align-items: center; gap: 12px; background: rgba(0,0,0,0.6); padding: 8px 20px; border: 1px solid var(--primary-gold); border-radius: 4px; }
+        .weapon-name { font-size: 18px; font-weight: 800; color: #fff; }
+        .ammo-counter { display: flex; align-items: baseline; gap: 5px; font-family: var(--font-mono); }
         .ammo-mag { font-size: 48px; font-weight: 900; color: #fff; line-height: 1; }
         .ammo-reserve { font-size: 20px; font-weight: 700; color: #888; }
 
-        /* 右側控制按鈕 */
-        .hud-controls {
-            position: absolute; right: 30px; bottom: calc(150px + var(--safe-bottom));
-            display: grid; grid-template-columns: 1fr 1fr; gap: 15px; pointer-events: auto;
-        }
-
-        .ctrl-btn {
-            width: 70px; height: 70px; border-radius: 50%;
-            background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3);
-            color: #fff; font-size: 12px; font-weight: 700; display: flex;
-            align-items: center; justify-content: center; backdrop-filter: blur(4px);
-            transition: all 0.1s; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-        }
+        .hud-controls { position: absolute; right: 30px; bottom: calc(150px + var(--safe-bottom)); display: grid; grid-template-columns: 1fr 1fr; gap: 15px; pointer-events: auto; }
+        .ctrl-btn { width: 70px; height: 70px; border-radius: 50%; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.3); color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); transition: 0.1s; pointer-events: auto; }
         .ctrl-btn:active { background: rgba(255,255,255,0.3); transform: scale(0.95); }
-        .ctrl-btn.fire {
-            width: 90px; height: 90px; font-size: 16px;
-            background: rgba(231, 76, 60, 0.3); border-color: rgba(231, 76, 60, 0.8);
-            grid-column: span 2; justify-self: center; margin-top: 10px;
-        }
+        .ctrl-btn.fire { width: 90px; height: 90px; font-size: 16px; background: rgba(231, 76, 60, 0.3); border-color: rgba(231, 76, 60, 0.8); grid-column: span 2; justify-self: center; margin-top: 10px; pointer-events: auto; }
         .ctrl-btn.fire:active { background: rgba(231, 76, 60, 0.6); }
 
-        /* 虛擬搖桿 */
-        .hud-joystick {
-            position: absolute; left: 50px; bottom: calc(50px + var(--safe-bottom));
-            width: 130px; height: 130px; border-radius: 50%;
-            border: 2px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05);
-            pointer-events: auto; display: flex; align-items: center; justify-content: center;
-        }
-        .joystick-knob {
-            width: 50px; height: 50px; border-radius: 50%;
-            background: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.6);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-        }
+        .hud-joystick { position: absolute; left: 50px; bottom: calc(50px + var(--safe-bottom)); width: 130px; height: 130px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); pointer-events: auto; display: flex; align-items: center; justify-content: center; }
+        .joystick-knob { width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.6); }
 
         /* ============================================================
-           6. 彈出式選單 (Modals: 設置、武器、自定義)
+           6. 彈出式選單 (Modals)
            ============================================================ */
-        .modal-overlay {
-            position: absolute; inset: 0; background: rgba(0,0,0,0.85);
-            backdrop-filter: blur(8px); z-index: 100; display: none;
-            justify-content: center; align-items: center; pointer-events: auto;
-        }
+        .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 500; display: none; justify-content: center; align-items: center; pointer-events: auto; }
         .modal-overlay.active { display: flex; }
-
-        .modal-panel {
-            width: 700px; max-width: 90vw; max-height: 85vh;
-            background: var(--bg-panel); border: 1px solid var(--primary-gold);
-            border-radius: 8px; box-shadow: 0 20px 50px rgba(0,0,0,0.8);
-            display: flex; flex-direction: column; overflow: hidden;
-            animation: modalPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        @keyframes modalPop {
-            0% { transform: scale(0.9); opacity: 0; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-
-        .modal-header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 20px 30px; border-bottom: 1px solid rgba(255,255,255,0.1);
-            background: rgba(0,0,0,0.3);
-        }
-        .modal-title { font-size: 20px; font-weight: 800; color: var(--primary-gold); letter-spacing: 2px; }
-        .modal-close {
-            background: transparent; border: none; color: #888;
-            font-size: 24px; font-weight: bold; cursor: pointer; transition: color 0.2s;
-        }
-        .modal-close:hover { color: #fff; }
-
-        .modal-body { padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
-
-        /* 設置選項行 */
-        .setting-row {
-            display: flex; justify-content: space-between; align-items: center;
-            padding-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-        .setting-label { font-size: 16px; font-weight: 600; color: #ddd; }
-        .setting-control { display: flex; align-items: center; gap: 15px; }
-
-        /* 自定義滑桿 */
-        input[type=range] {
-            -webkit-appearance: none; width: 200px; background: transparent; outline: none;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none; height: 20px; width: 20px;
-            border-radius: 50%; background: var(--primary-gold); cursor: pointer;
-            margin-top: -8px; box-shadow: 0 0 10px var(--primary-glow);
-        }
-        input[type=range]::-webkit-slider-runnable-track {
-            width: 100%; height: 4px; cursor: pointer;
-            background: rgba(255,255,255,0.15); border-radius: 2px;
-        }
-
-        /* 武器庫網格 */
-        .weapon-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
-        .weapon-card {
-            background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1);
-            padding: 20px; border-radius: 6px; cursor: pointer; transition: all 0.2s;
-        }
-        .weapon-card:hover { background: rgba(255,255,255,0.05); }
-        .weapon-card.selected { border-color: var(--primary-gold); background: rgba(212,175,55,0.1); }
-        .weapon-card-name { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 5px; }
-        .weapon-card-type { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
-
-        /* 按鈕樣式 */
-        .btn-action {
-            background: var(--primary-gold); color: #000; border: none;
-            padding: 12px 30px; font-size: 16px; font-weight: 800;
-            border-radius: 4px; cursor: pointer; text-transform: uppercase;
-            transition: all 0.2s; letter-spacing: 1px;
-        }
-        .btn-action:hover { background: #fff; box-shadow: 0 0 20px rgba(255,255,255,0.3); }
-        .btn-action.outline { background: transparent; border: 1px solid #888; color: #fff; }
-        .btn-action.outline:hover { border-color: #fff; background: rgba(255,255,255,0.1); }
-
+        .modal-panel { width: 600px; background: var(--bg-panel); border: 1px solid var(--primary-gold); border-radius: 8px; display: flex; flex-direction: column; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 30px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .modal-title { font-size: 20px; font-weight: 800; color: var(--primary-gold); }
+        .modal-close { background: transparent; border: none; color: #888; font-size: 24px; cursor: pointer; }
+        .modal-body { padding: 30px; display: flex; flex-direction: column; gap: 20px; }
     </style>
 </head>
-<body class="state-lobby">
+<body data-state="lobby">
 
     <!-- ============================================================
-         3D 渲染畫布
+         3D 畫布
          ============================================================ -->
     <canvas id="game-canvas"></canvas>
 
     <!-- ============================================================
-         大廳畫面
+         大廳畫面 (由 index.html 完全掌控)
          ============================================================ -->
-    <div id="lobby-screen" class="screen-layer active interactive">
-        <!-- 頂部資訊 -->
+    <div id="master-lobby-ui">
         <div class="lobby-header">
             <div class="player-profile">
                 <div class="player-avatar">G</div>
@@ -430,25 +207,14 @@
                     <div class="player-level">LVL. 55 • 上尉</div>
                 </div>
             </div>
-            <div class="lobby-currencies">
-                <div class="currency-item">
-                    <div class="currency-icon gold"></div>
-                    <span>12,450</span>
-                </div>
-                <div class="currency-item">
-                    <div class="currency-icon blue"></div>
-                    <span>850</span>
-                </div>
-            </div>
+            <div style="color:var(--primary-gold); font-weight:bold;">💰 12,450 | 💎 850</div>
         </div>
 
-        <!-- 中間主內容 -->
-        <div class="lobby-main">
-            <div class="operator-showcase">
+        <div class="lobby-content">
+            <div>
                 <div class="operator-title">GHOST</div>
-                <div class="operator-tagline">// SIMON "GHOST" RILEY</div>
+                <div style="font-size:14px; color:var(--primary-gold); margin-top:20px;">// SIMON "GHOST" RILEY</div>
             </div>
-
             <div class="lobby-menu">
                 <button class="btn-menu btn-deploy-main" id="btn-deploy">進入戰區 / DEPLOY</button>
                 <button class="btn-menu" id="btn-loadout">武器配置 / LOADOUT</button>
@@ -456,44 +222,20 @@
                 <button class="btn-menu" id="btn-settings">系統設置 / SETTINGS</button>
             </div>
         </div>
-
-        <!-- 底部導航 -->
-        <div class="lobby-nav">
-            <div class="nav-item active">
-                <div class="nav-icon">🏠</div>
-                <span>大廳</span>
-            </div>
-            <div class="nav-item">
-                <div class="nav-icon">👤</div>
-                <span>特種兵</span>
-            </div>
-            <div class="nav-item">
-                <div class="nav-icon">🎫</div>
-                <span>通行證</span>
-            </div>
-            <div class="nav-item">
-                <div class="nav-icon">⚙️</div>
-                <span>設置</span>
-            </div>
-        </div>
     </div>
 
     <!-- ============================================================
-         戰鬥 HUD 畫面
+         戰鬥 HUD (由 index.html 完全掌控)
          ============================================================ -->
-    <div id="hud-screen" class="screen-layer">
-        <!-- 頂部資訊 -->
-        <div class="hud-top-bar">
-            <div class="hud-minimap"></div>
+    <div id="master-combat-ui">
+        <div class="hud-top">
             <div class="hud-score">
-                <div class="score-num blue">75</div>
-                <div class="score-time">10:00</div>
-                <div class="score-num red">68</div>
+                <div style="color:#3498db; font-size:28px; font-weight:900; font-family:monospace;">75</div>
+                <div style="color:#fff; font-size:20px; font-family:monospace;">10:00</div>
+                <div style="color:#e74c3c; font-size:28px; font-weight:900; font-family:monospace;">68</div>
             </div>
-            <div style="width: 150px;"></div> <!-- 佔位對齊 -->
         </div>
 
-        <!-- 準心 -->
         <div class="hud-crosshair">
             <div class="line l-top"></div>
             <div class="line l-bottom"></div>
@@ -502,36 +244,25 @@
             <div class="dot"></div>
         </div>
 
-        <!-- 左下角狀態 -->
         <div class="hud-bottom-left">
             <div class="armor-bar">
-                <div class="armor-plate"></div>
-                <div class="armor-plate"></div>
-                <div class="armor-plate"></div>
+                <div class="armor-plate"></div><div class="armor-plate"></div><div class="armor-plate"></div>
             </div>
-            <div class="health-bar">
-                <div class="health-text">150</div>
-            </div>
+            <div class="health-bar"><div class="health-text">150</div></div>
         </div>
 
-        <!-- 右下角武器資訊 -->
         <div class="hud-bottom-right">
-            <div class="weapon-info">
-                <div class="weapon-name">M4A1</div>
-                <div class="weapon-slot">PRIMARY</div>
-            </div>
+            <div class="weapon-info"><div class="weapon-name">M4A1</div></div>
             <div class="ammo-counter">
                 <div class="ammo-mag" id="hud-ammo-mag">30</div>
                 <div class="ammo-reserve">/ <span id="hud-ammo-reserve">120</span></div>
             </div>
         </div>
 
-        <!-- 虛擬搖桿 -->
         <div class="hud-joystick" id="joystick-area">
             <div class="joystick-knob" id="joystick-knob"></div>
         </div>
 
-        <!-- 右側按鈕區 -->
         <div class="hud-controls">
             <button class="ctrl-btn" id="btn-jump">JUMP</button>
             <button class="ctrl-btn" id="btn-crouch">SLIDE</button>
@@ -542,101 +273,24 @@
     </div>
 
     <!-- ============================================================
-         彈出式選單：武器庫
+         彈出視窗
          ============================================================ -->
     <div id="modal-loadout" class="modal-overlay">
         <div class="modal-panel">
-            <div class="modal-header">
-                <div class="modal-title">武器配置 / LOADOUT</div>
-                <button class="modal-close" data-close="modal-loadout">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="weapon-grid" id="weapon-grid">
-                    <div class="weapon-card selected" data-weapon="M4A1">
-                        <div class="weapon-card-name">M4A1</div>
-                        <div class="weapon-card-type">突擊步槍</div>
-                    </div>
-                    <div class="weapon-card" data-weapon="MP5">
-                        <div class="weapon-card-name">MP5</div>
-                        <div class="weapon-card-type">衝鋒槍</div>
-                    </div>
-                    <div class="weapon-card" data-weapon="AX-50">
-                        <div class="weapon-card-name">AX-50</div>
-                        <div class="weapon-card-type">狙擊槍</div>
-                    </div>
-                    <div class="weapon-card" data-weapon="X16">
-                        <div class="weapon-card-name">X16</div>
-                        <div class="weapon-card-type">手槍</div>
-                    </div>
-                </div>
-            </div>
+            <div class="modal-header"><div class="modal-title">武器配置</div><button class="modal-close" data-close="modal-loadout">✕</button></div>
+            <div class="modal-body"><p>武器配置選單建設中...</p></div>
         </div>
     </div>
-
-    <!-- ============================================================
-         彈出式選單：系統設置
-         ============================================================ -->
     <div id="modal-settings" class="modal-overlay">
         <div class="modal-panel">
-            <div class="modal-header">
-                <div class="modal-title">系統設置 / SETTINGS</div>
-                <button class="modal-close" data-close="modal-settings">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="setting-row">
-                    <div class="setting-label">畫面品質</div>
-                    <div class="setting-control">
-                        <select style="background:#222; color:#fff; padding:5px 10px; border:1px solid #444; border-radius:4px;">
-                            <option>極致 (Ultra)</option>
-                            <option selected>高 (High)</option>
-                            <option>中 (Medium)</option>
-                            <option>流暢 (Performance)</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="setting-row">
-                    <div class="setting-label">幀率上限</div>
-                    <div class="setting-control">
-                        <select style="background:#222; color:#fff; padding:5px 10px; border:1px solid #444; border-radius:4px;">
-                            <option>120 FPS</option>
-                            <option selected>60 FPS</option>
-                            <option>30 FPS</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="setting-row">
-                    <div class="setting-label">全域靈敏度</div>
-                    <div class="setting-control">
-                        <input type="range" min="1" max="100" value="50">
-                    </div>
-                </div>
-                <div class="setting-row">
-                    <div class="setting-label">主音量</div>
-                    <div class="setting-control">
-                        <input type="range" min="0" max="100" value="80">
-                    </div>
-                </div>
-            </div>
+            <div class="modal-header"><div class="modal-title">系統設置</div><button class="modal-close" data-close="modal-settings">✕</button></div>
+            <div class="modal-body"><p>系統設置選單建設中...</p></div>
         </div>
     </div>
-
-    <!-- ============================================================
-         彈出式選單：自定義按鍵
-         ============================================================ -->
     <div id="modal-customizer" class="modal-overlay">
         <div class="modal-panel">
-            <div class="modal-header">
-                <div class="modal-title">UI 按鍵自定義 / CUSTOMIZER</div>
-                <button class="modal-close" data-close="modal-customizer">✕</button>
-            </div>
-            <div class="modal-body">
-                <div style="height: 300px; border: 2px dashed rgba(255,255,255,0.2); border-radius: 8px; display: flex; justify-content: center; align-items: center; position: relative;">
-                    <span style="color: #888;">點擊並拖拽下方的按鈕來自定義位置</span>
-                    <!-- 預覽按鈕 -->
-                    <div style="position: absolute; width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; left: 20%; top: 20%; border: 1px solid #fff; display: flex; justify-content: center; align-items: center; font-size: 10px; cursor: grab;">FIRE</div>
-                    <div style="position: absolute; width: 60px; height: 60px; background: rgba(255,255,255,0.2); border-radius: 50%; left: 50%; top: 50%; border: 1px solid #fff; display: flex; justify-content: center; align-items: center; font-size: 10px; cursor: grab;">JUMP</div>
-                </div>
-            </div>
+            <div class="modal-header"><div class="modal-title">按鍵自定義</div><button class="modal-close" data-close="modal-customizer">✕</button></div>
+            <div class="modal-body"><p>按鍵自定義選單建設中...</p></div>
         </div>
     </div>
 
@@ -648,107 +302,86 @@
             'use strict';
 
             // ============================================================
-            // 1. 狀態管理與 UI 切換核心
+            // 1. 狀態切換與暴力清場
             // ============================================================
-            const UIState = {
-                LOBBY: 'LOBBY',
-                PLAYING: 'PLAYING',
-                current: 'LOBBY'
-            };
-
-            const DOM = {
-                lobbyScreen: document.getElementById('lobby-screen'),
-                hudScreen: document.getElementById('hud-screen'),
-                canvas: document.getElementById('game-canvas'),
-                modalLoadout: document.getElementById('modal-loadout'),
-                modalSettings: document.getElementById('modal-settings'),
-                modalCustomizer: document.getElementById('modal-customizer'),
+            function switchToCombat() {
+                console.log('[系統] 切換至戰鬥狀態，執行暴力清場...');
                 
-                // HUD 元素
-                ammoMag: document.getElementById('hud-ammo-mag'),
-                ammoReserve: document.getElementById('hud-ammo-reserve'),
-                joystickArea: document.getElementById('joystick-area'),
-                joystickKnob: document.getElementById('joystick-knob'),
-                btnFire: document.getElementById('btn-fire')
-            };
+                // 切換 body 狀態，觸發 CSS 隔離
+                document.body.setAttribute('data-state', 'combat');
+                
+                // 顯示畫布
+                const canvas = document.getElementById('game-canvas');
+                if (canvas) {
+                    canvas.style.visibility = 'visible';
+                    canvas.style.opacity = '1';
+                }
 
-            function transitionTo(newState) {
-                if (UIState.current === newState) return;
-                console.log(`[UI] 狀態切換: ${UIState.current} -> ${newState}`);
-                UIState.current = newState;
-
-                if (newState === 'PLAYING') {
-                    document.body.classList.remove('state-lobby');
-                    document.body.classList.add('state-playing');
-                    
-                    DOM.lobbyScreen.classList.remove('active', 'interactive');
-                    DOM.hudScreen.classList.add('active');
-                    
-                    DOM.canvas.style.visibility = 'visible';
-                    DOM.canvas.style.opacity = '1';
-
-                    // 觸發 3D 渲染器或兜底引擎
-                    if (window.WZ && window.WZ.Bootstrap && window.WZ.Bootstrap.startFallbackEngine) {
-                        window.WZ.Bootstrap.startFallbackEngine();
+                // 🚨 暴力清場：把除了畫布和我們的主 UI 以外的所有 DOM 元素全部幹掉
+                const bodyChildren = Array.from(document.body.children);
+                bodyChildren.forEach(child => {
+                    if (child.tagName === 'CANVAS' || 
+                        child.id === 'master-lobby-ui' || 
+                        child.id === 'master-combat-ui' || 
+                        child.classList.contains('modal-overlay') ||
+                        child.tagName === 'SCRIPT') {
+                        return; // 保留這些元素
                     }
-                    if (window.WZ && window.WZ.Renderer && window.WZ.Renderer.start) {
-                        try { window.WZ.Renderer.start(); } catch(e){}
-                    }
+                    // 其他所有由未知模組生成的 UI，直接移除
+                    console.warn(`[暴力清場] 移除殘留元素: <${child.tagName} id="${child.id}">`);
+                    child.remove();
+                });
 
-                    // 觸發全局事件
-                    if (window.WZ && window.WZ.bus) {
-                        window.WZ.bus.emit('GAME_START');
-                    }
-                    if (window.WZ && window.WZ.State) {
-                        window.WZ.State.transitionTo('PLAYING');
-                    }
+                // 啟動渲染器或兜底引擎
+                if (window.WZ && window.WZ.Bootstrap && window.WZ.Bootstrap.startFallbackEngine) {
+                    window.WZ.Bootstrap.startFallbackEngine();
+                }
+                if (window.WZ && window.WZ.Renderer && window.WZ.Renderer.start) {
+                    try { window.WZ.Renderer.start(); } catch(e){}
+                }
 
-                } else if (newState === 'LOBBY') {
-                    document.body.classList.remove('state-playing');
-                    document.body.classList.add('state-lobby');
-                    
-                    DOM.hudScreen.classList.remove('active');
-                    DOM.lobbyScreen.classList.add('active', 'interactive');
-                    
-                    DOM.canvas.style.visibility = 'hidden';
-                    DOM.canvas.style.opacity = '0';
+                // 觸發全局事件
+                if (window.WZ && window.WZ.bus) {
+                    window.WZ.bus.emit('GAME_START');
+                }
+            }
 
-                    // 觸發全局事件
-                    if (window.WZ && window.WZ.State) {
-                        window.WZ.State.transitionTo('LOBBY');
-                    }
+            function switchToLobby() {
+                console.log('[系統] 切換至大廳狀態');
+                document.body.setAttribute('data-state', 'lobby');
+                
+                const canvas = document.getElementById('game-canvas');
+                if (canvas) {
+                    canvas.style.visibility = 'hidden';
+                    canvas.style.opacity = '0';
                 }
             }
 
             // ============================================================
-            // 2. 按鈕事件綁定
+            // 2. UI 按鈕綁定
             // ============================================================
             function bindEvents() {
                 // 進入戰區
                 document.getElementById('btn-deploy').addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    transitionTo('PLAYING');
+                    switchToCombat();
                 });
 
-                // 打開武器庫
+                // 打開彈窗
                 document.getElementById('btn-loadout').addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    DOM.modalLoadout.classList.add('active');
+                    document.getElementById('modal-loadout').classList.add('active');
                 });
-
-                // 打開設置
                 document.getElementById('btn-settings').addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    DOM.modalSettings.classList.add('active');
+                    document.getElementById('modal-settings').classList.add('active');
                 });
-
-                // 打開自定義
                 document.getElementById('btn-customize-ui').addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    DOM.modalCustomizer.classList.add('active');
+                    document.getElementById('modal-customizer').classList.add('active');
                 });
 
-                // 關閉彈窗 (通用的 X 按鈕)
+                // 關閉彈窗
                 document.querySelectorAll('.modal-close').forEach(btn => {
                     btn.addEventListener('pointerdown', (e) => {
                         const targetId = btn.getAttribute('data-close');
@@ -758,49 +391,37 @@
                     });
                 });
 
-                // 武器選擇
-                document.querySelectorAll('.weapon-card').forEach(card => {
-                    card.addEventListener('pointerdown', (e) => {
-                        document.querySelectorAll('.weapon-card').forEach(c => c.classList.remove('selected'));
-                        card.classList.add('selected');
-                        const weapon = card.getAttribute('data-weapon');
-                        console.log(`[UI] 選擇武器: ${weapon}`);
-                        
-                        // 可以在這裡通知後端切換武器
-                        if (window.WZ && window.WZ.bus) {
-                            window.WZ.bus.emit('WEAPON_SWITCHED', { weaponId: weapon });
-                        }
-                    });
-                });
-
-                // 射擊按鈕
-                DOM.btnFire.addEventListener('pointerdown', (e) => {
+                // 模擬開火
+                document.getElementById('btn-fire').addEventListener('pointerdown', (e) => {
                     e.preventDefault();
-                    console.log('[UI] 開火');
-                    if (window.WZ && window.WZ.bus) {
-                        window.WZ.bus.emit('WEAPON_FIRED', {});
-                        // 模擬彈藥減少
-                        let mag = parseInt(DOM.ammoMag.innerText);
+                    const magEl = document.getElementById('hud-ammo-mag');
+                    if (magEl) {
+                        let mag = parseInt(magEl.innerText);
                         if (mag > 0) {
                             mag--;
-                            DOM.ammoMag.innerText = mag;
+                            magEl.innerText = mag;
+                            if (window.WZ && window.WZ.bus) {
+                                window.WZ.bus.emit('WEAPON_FIRED', {});
+                            }
                         }
                     }
                 });
             }
 
             // ============================================================
-            // 3. 虛擬搖桿基礎控制 (僅作視覺演示)
+            // 3. 模擬虛擬搖桿拖拽
             // ============================================================
             function initJoystick() {
+                const area = document.getElementById('joystick-area');
+                const knob = document.getElementById('joystick-knob');
                 let isDragging = false;
                 let startX, startY;
 
-                DOM.joystickArea.addEventListener('pointerdown', (e) => {
+                area.addEventListener('pointerdown', (e) => {
                     isDragging = true;
                     startX = e.clientX;
                     startY = e.clientY;
-                    DOM.joystickKnob.style.transition = 'none';
+                    knob.style.transition = 'none';
                     e.preventDefault();
                 });
 
@@ -808,27 +429,24 @@
                     if (!isDragging) return;
                     let dx = e.clientX - startX;
                     let dy = e.clientY - startY;
-                    
-                    // 限制範圍
                     const maxDist = 40;
                     const dist = Math.sqrt(dx*dx + dy*dy);
                     if (dist > maxDist) {
                         dx = (dx / dist) * maxDist;
                         dy = (dy / dist) * maxDist;
                     }
-
-                    DOM.joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+                    knob.style.transform = `translate(${dx}px, ${dy}px)`;
                 });
 
                 window.addEventListener('pointerup', () => {
                     isDragging = false;
-                    DOM.joystickKnob.style.transition = 'transform 0.2s ease-out';
-                    DOM.joystickKnob.style.transform = 'translate(0px, 0px)';
+                    knob.style.transition = 'transform 0.2s ease-out';
+                    knob.style.transform = 'translate(0px, 0px)';
                 });
             }
 
             // ============================================================
-            // 4. 模組加載與保護機制
+            // 4. 加載 37 個底層模組
             // ============================================================
             const scriptFiles = [
                 '01_event_bus_state.js', '02_renderer_core.js', '03_multitouch_controller.js',
@@ -849,55 +467,48 @@
             let loadedCount = 0;
             const total = scriptFiles.length;
 
-            function loadNextScript(index) {
+            function loadNext(index) {
                 if (index >= total) {
-                    onAllScriptsLoaded();
+                    onAllLoaded();
                     return;
                 }
-
                 const script = document.createElement('script');
                 script.src = `js/${scriptFiles[index]}`;
                 script.async = false;
-
                 script.onload = () => {
                     loadedCount++;
-                    loadNextScript(index + 1);
+                    loadNext(index + 1);
                 };
-
                 script.onerror = () => {
                     console.error(`[加載失敗] ${scriptFiles[index]}`);
                     loadedCount++;
-                    loadNextScript(index + 1);
+                    loadNext(index + 1);
                 };
-
                 document.body.appendChild(script);
             }
 
-            function onAllScriptsLoaded() {
-                console.log('[系統] 所有 37 個模組加載完畢。');
+            function onAllLoaded() {
+                console.log('[系統] 所有模組加載完畢，準備清理殘留 UI...');
                 
-                // 清理可能亂跑的 UI
+                // 確保大廳狀態
+                switchToLobby();
+
+                // 再次清理可能在大廳狀態下亂跑的 UI
                 const bodyChildren = Array.from(document.body.children);
                 bodyChildren.forEach(child => {
-                    if (child.tagName !== 'CANVAS' && 
-                        !child.classList.contains('screen-layer') && 
-                        !child.classList.contains('modal-overlay') && 
-                        child.tagName !== 'SCRIPT') {
-                        console.warn(`[清理] 移除未授權的 UI 元素: ${child.tagName}#${child.id}`);
-                        child.remove();
+                    if (child.tagName === 'CANVAS' || 
+                        child.id === 'master-lobby-ui' || 
+                        child.id === 'master-combat-ui' || 
+                        child.classList.contains('modal-overlay') || 
+                        child.tagName === 'SCRIPT') {
+                        return;
                     }
+                    child.remove();
                 });
 
-                // 確保處於大廳狀態
-                transitionTo('LOBBY');
-
-                // 呼叫 Bootstrap
+                // 啟動 Bootstrap (如果有)
                 if (window.WZ && window.WZ.Bootstrap && window.WZ.Bootstrap.boot) {
-                    try {
-                        window.WZ.Bootstrap.boot();
-                    } catch (e) {
-                        console.error('[系統] Bootstrap 啟動失敗:', e);
-                    }
+                    try { window.WZ.Bootstrap.boot(); } catch(e){}
                 }
             }
 
@@ -905,19 +516,13 @@
             // 5. 初始化
             // ============================================================
             function init() {
-                console.log('[系統] 初始化 UI 框架...');
+                console.log('[系統] 初始化大廳與 HUD...');
                 bindEvents();
                 initJoystick();
-
-                // 隱藏載入畫面
-                const loading = document.getElementById('loading-layer');
-                if (loading) loading.style.display = 'none';
-
-                // 開始加載 JS 模組
-                loadNextScript(0);
+                loadNext(0);
             }
 
-            // 確保 DOM 載入完成後執行
+            // 頁面加載完成後執行
             if (document.readyState === 'complete' || document.readyState === 'interactive') {
                 setTimeout(init, 50);
             } else {
