@@ -24,6 +24,7 @@
             rpm: 750,
             magSize: 30,
             reserveAmmo: 150,
+            reloadTime: 1.65,
             damageClose: 34,
             damageFar: 22,
             falloffStart: 22,
@@ -44,6 +45,7 @@
             rpm: 890,
             magSize: 30,
             reserveAmmo: 180,
+            reloadTime: 1.45,
             damageClose: 29,
             damageFar: 15,
             falloffStart: 12,
@@ -64,6 +66,7 @@
             rpm: 68,
             magSize: 7,
             reserveAmmo: 35,
+            reloadTime: 2.2,
             damageClose: 135,
             damageFar: 125,
             falloffStart: 45,
@@ -84,6 +87,7 @@
             rpm: 480,
             magSize: 15,
             reserveAmmo: 90,
+            reloadTime: 1.25,
             damageClose: 36,
             damageFar: 20,
             falloffStart: 14,
@@ -132,6 +136,11 @@
             this.recoilOffset = { pitch: 0, yaw: 0 };
             this._isFiringHeld = false;
             this._semiTriggered = false;
+
+            this.isReloading = false;
+            this._reloadTimer = 0;
+            this._reloadWeaponId = null;
+
             this._unsubscribers = [];
             this._domListeners = [];
         }
@@ -184,6 +193,13 @@
                 this._semiTriggered = false;
             };
 
+            const onKeyDown = (ev) => {
+                if (!ev) return;
+                if (ev.code === 'KeyR' || ev.key === 'r' || ev.key === 'R') {
+                    this.startReload(this.activeWeaponId);
+                }
+            };
+
             const onWindowBlur = () => {
                 this._isFiringHeld = false;
                 this._semiTriggered = false;
@@ -191,10 +207,12 @@
 
             doc.addEventListener('mousedown', onMouseDown);
             global.addEventListener('mouseup', onMouseUp);
+            global.addEventListener('keydown', onKeyDown);
             global.addEventListener('blur', onWindowBlur);
 
             this._domListeners.push({ target: doc, name: 'mousedown', fn: onMouseDown });
             this._domListeners.push({ target: global, name: 'mouseup', fn: onMouseUp });
+            this._domListeners.push({ target: global, name: 'keydown', fn: onKeyDown });
             this._domListeners.push({ target: global, name: 'blur', fn: onWindowBlur });
         }
 
@@ -207,9 +225,22 @@
                         const wId = payload && (payload.weaponId || payload.id);
                         if (wId && BALLISTICS_WEAPON_SPECS[wId]) {
                             this.activeWeaponId = wId;
+                            this.isReloading = false;
+                            this._reloadTimer = 0;
+                            this._reloadWeaponId = null;
                             this._fireCooldown = Math.max(this._fireCooldown, 0.14);
                             this._syncAmmoToState();
                         }
+                    })
+                );
+            }
+
+            if (Events.WEAPON_RELOAD || Events.RELOAD_REQUEST || Events.RELOAD_START) {
+                const reloadEvt = Events.WEAPON_RELOAD || Events.RELOAD_REQUEST || Events.RELOAD_START;
+                this._unsubscribers.push(
+                    EventBus.on(reloadEvt, (payload) => {
+                        const wId = payload && (payload.weaponId || payload.id);
+                        this.startReload(wId || this.activeWeaponId);
                     })
                 );
             }
@@ -231,6 +262,9 @@
                         this._spreadBonus = 0;
                         this._isFiringHeld = false;
                         this._semiTriggered = false;
+                        this.isReloading = false;
+                        this._reloadTimer = 0;
+                        this._reloadWeaponId = null;
                         this.recoilOffset.pitch = 0;
                         this.recoilOffset.yaw = 0;
                         this._syncAmmoToState();
@@ -239,7 +273,29 @@
             }
         }
 
+        startReload(weaponId) {
+            const wId = weaponId || this.activeWeaponId;
+            const spec = BALLISTICS_WEAPON_SPECS[wId];
+            const slot = this.ammoByWeapon[wId];
+            if (!spec || !slot || this.isReloading) return false;
+            if (slot.mag >= spec.magSize || slot.reserve <= 0) return false;
+
+            this.isReloading = true;
+            this._reloadWeaponId = wId;
+            this._reloadTimer = typeof spec.reloadTime === 'number' ? spec.reloadTime : 1.5;
+
+            if (GameState && typeof GameState.patch === 'function') {
+                GameState.patch('weapons', { isReloading: true }, true);
+            }
+            if (EventBus && Events.RELOAD_START) {
+                EventBus.emit(Events.RELOAD_START, { weaponId: wId, duration: this._reloadTimer });
+            }
+            return true;
+        }
+
         _wantsToFire(spec) {
+            if (this.isReloading) return false;
+
             const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || null;
             let inputFiring = this._isFiringHeld;
 
@@ -250,12 +306,22 @@
                     inputFiring = inputFiring || ctrl.firing;
                 } else if (ctrl.state && typeof ctrl.state.firing === 'boolean') {
                     inputFiring = inputFiring || ctrl.state.firing;
+                } else if (ctrl.buttons && typeof ctrl.buttons.fire === 'boolean') {
+                    inputFiring = inputFiring || ctrl.buttons.fire;
                 }
             }
 
             if (GameState && typeof GameState.get === 'function') {
-                if (GameState.get('weapons.isFiring', false) || GameState.get('input.fire', false)) {
+                if (
+                    GameState.get('weapons.isFiring', false) ||
+                    GameState.get('input.fire', false) ||
+                    GameState.get('input.isFiring', false)
+                ) {
                     inputFiring = true;
+                }
+                if (GameState.get('weapons.reloadRequested', false) || GameState.get('input.reload', false)) {
+                    this.startReload(this.activeWeaponId);
+                    return false;
                 }
             }
 
@@ -341,7 +407,17 @@
             const transfer = Math.min(needed, slot.reserve);
             slot.mag += transfer;
             slot.reserve -= transfer;
+            this.isReloading = false;
+            this._reloadTimer = 0;
+            this._reloadWeaponId = null;
             this._syncAmmoToState();
+            if (EventBus && Events.RELOAD_COMPLETE) {
+                EventBus.emit(Events.RELOAD_COMPLETE, {
+                    weaponId: wId,
+                    mag: slot.mag,
+                    reserve: slot.reserve
+                });
+            }
             return transfer > 0;
         }
 
@@ -357,6 +433,7 @@
         }
 
         canFire(weaponId) {
+            if (this.isReloading) return false;
             const wId = weaponId || this.activeWeaponId;
             const slot = this.ammoByWeapon[wId];
             if (!slot || slot.mag <= 0) return false;
@@ -364,6 +441,8 @@
         }
 
         fireShot(shotCtx) {
+            if (this.isReloading) return null;
+
             const THREE = global.THREE;
             const ctx = shotCtx || {};
             const wId = ctx.weaponId || this.activeWeaponId;
@@ -509,6 +588,13 @@
                 this._fireCooldown = Math.max(0, this._fireCooldown - dt);
             }
 
+            if (this.isReloading) {
+                this._reloadTimer -= dt;
+                if (this._reloadTimer <= 0) {
+                    this.applyReloadComplete(this._reloadWeaponId || this.activeWeaponId);
+                }
+            }
+
             const spec = this.getWeaponSpec(this.activeWeaponId);
 
             if (this._fireCooldown <= 0 && this._wantsToFire(spec)) {
@@ -530,7 +616,8 @@
                 GameState.patch('weapons', {
                     spread: this.currentSpread,
                     recoilPitch: this.recoilOffset.pitch,
-                    recoilYaw: this.recoilOffset.yaw
+                    recoilYaw: this.recoilOffset.yaw,
+                    isReloading: this.isReloading
                 }, true);
             }
         }
@@ -541,7 +628,8 @@
             GameState.patch('weapons', {
                 activeId: this.activeWeaponId,
                 mag: slot.mag,
-                reserveAmmo: slot.reserve
+                reserveAmmo: slot.reserve,
+                isReloading: this.isReloading
             }, true);
         }
 
