@@ -3,11 +3,6 @@
  * 25_player_movement.js
  * 第一人稱戰術移動、衝刺滑鏟、跳躍重力與碰撞滑行控制器
  * ============================================================================
- * 職責：
- * 1. 讀取桌面與觸控輸入，驅動水平移動、視角 yaw/pitch、衝刺、蹲下、滑鏟與跳躍
- * 2. 呼叫 PhysicsCollision 進行膠囊／AABB 滑行碰撞與地形高度查詢，防止穿牆與越界
- * 3. 管理衝刺耐力、滑鏟動量衰減、蹲站眼高平滑插值與爆炸震波位移回饋
- * 4. 同步更新 GameState 玩家位置、姿態與移動狀態，並支援戰局重置
  */
 (function (global) {
     'use strict';
@@ -21,9 +16,6 @@
     const EventBus = TacticalWarfare.EventBus;
     const GameState = TacticalWarfare.GameState;
 
-    // ------------------------------------------------------------------------
-    // 1. 玩家戰術移動與姿態參數表
-    // ------------------------------------------------------------------------
     const MOVEMENT_CONFIG = Object.freeze({
         walkSpeed: 6.2,
         sprintSpeed: 9.6,
@@ -43,12 +35,8 @@
     });
 
     function clamp(val, minVal, maxVal) {
-        if (val < minVal) {
-            return minVal;
-        }
-        if (val > maxVal) {
-            return maxVal;
-        }
+        if (val < minVal) return minVal;
+        if (val > maxVal) return maxVal;
         return val;
     }
 
@@ -56,9 +44,6 @@
         return a + (b - a) * t;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. PlayerMovement 主類別
-    // ------------------------------------------------------------------------
     class PlayerMovement {
         constructor() {
             this.initialized = false;
@@ -94,15 +79,17 @@
             this._unsubscribers = [];
         }
 
-        /**
-         * 初始化玩家移動控制器
-         */
         init(options) {
             const opts = options || {};
             this.physics = opts.physics || TacticalWarfare.PhysicsCollision || null;
             this.terrain = opts.terrain || TacticalWarfare.MapTerrainGround || null;
-            this.inputSystem = opts.inputSystem || TacticalWarfare.InputSystem || null;
-            this.camera = opts.camera ||
+            this.inputSystem =
+                opts.inputSystem ||
+                TacticalWarfare.MultiTouchController ||
+                TacticalWarfare.InputSystem ||
+                null;
+            this.camera =
+                opts.camera ||
                 (TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getCamera()) ||
                 null;
 
@@ -117,14 +104,27 @@
         }
 
         _bindEvents() {
-            if (!EventBus || !Events) {
-                return;
+            if (!EventBus || !Events) return;
+
+            if (Events.GAME_START) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_START, () => {
+                        const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController;
+                        if (ctrl) {
+                            ctrl.enabled = true;
+                            if (typeof ctrl.setTouchUIVisible === 'function') {
+                                ctrl.setTouchUIVisible(true);
+                            } else if (ctrl.uiLayer && ctrl.uiLayer.classList) {
+                                ctrl.uiLayer.classList.add('tw-touch-visible');
+                            }
+                        }
+                    })
+                );
             }
 
-            if (Events.GAME_RESET || Events.GAME_START) {
-                const resetEvt = Events.GAME_RESET || Events.GAME_START;
+            if (Events.GAME_RESET) {
                 this._unsubscribers.push(
-                    EventBus.on(resetEvt, () => {
+                    EventBus.on(Events.GAME_RESET, () => {
                         this.resetToSpawn();
                     })
                 );
@@ -143,9 +143,7 @@
             if (Events.EXPLOSION_TRIGGERED) {
                 this._unsubscribers.push(
                     EventBus.on(Events.EXPLOSION_TRIGGERED, (payload) => {
-                        if (!payload || !payload.position) {
-                            return;
-                        }
+                        if (!payload || !payload.position) return;
                         this._applyExplosionImpulse(payload.position, payload.radius || 8.5);
                     })
                 );
@@ -191,9 +189,8 @@
             const dy = (this.position.y + 1.0) - origin.y;
             const dz = this.position.z - origin.z;
             const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (dist >= radius || dist < 0.001) {
-                return;
-            }
+            if (dist >= radius || dist < 0.001) return;
+
             const falloff = 1 - dist / radius;
             const push = 9.5 * falloff;
             this.velocity.x += (dx / dist) * push;
@@ -206,9 +203,39 @@
             if (overrideInput) {
                 return overrideInput;
             }
-            if (this.inputSystem && typeof this.inputSystem.getState === 'function') {
-                return this.inputSystem.getState();
+
+            const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController;
+            if (ctrl) {
+                // 優先讀取 03_multitouch_controller 結構
+                if (ctrl.moveVector && ctrl.lookDelta && ctrl.actions) {
+                    const dx = typeof ctrl.lookDelta.dx === 'number' ? ctrl.lookDelta.dx : 0;
+                    const dy = typeof ctrl.lookDelta.dy === 'number' ? ctrl.lookDelta.dy : 0;
+                    ctrl.lookDelta.dx = 0;
+                    ctrl.lookDelta.dy = 0;
+
+                    const jumpTriggered = Boolean(
+                        (ctrl.pressedQueue && ctrl.pressedQueue.jump) || ctrl.actions.jump
+                    );
+                    if (ctrl.pressedQueue) {
+                        ctrl.pressedQueue.jump = false;
+                    }
+
+                    return {
+                        moveX: typeof ctrl.moveVector.x === 'number' ? ctrl.moveVector.x : 0,
+                        moveY: typeof ctrl.moveVector.y === 'number' ? ctrl.moveVector.y : 0,
+                        lookDeltaX: dx,
+                        lookDeltaY: dy,
+                        sprint: Boolean(ctrl.actions.sprint),
+                        crouch: Boolean(ctrl.actions.crouch),
+                        jump: jumpTriggered
+                    };
+                }
+
+                if (typeof ctrl.getState === 'function') {
+                    return ctrl.getState();
+                }
             }
+
             return {
                 moveX: 0,
                 moveY: 0,
@@ -220,19 +247,15 @@
             };
         }
 
-        /**
-         * 每幀更新視角轉向、戰術移動、滑鏟／蹲跳與碰撞滑行
-         */
         update(deltaTime, overrideInput) {
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const inp = this._readInputSnapshot(overrideInput);
 
-            // 1. 視角轉向（yaw / pitch）
             const sens = GameState && typeof GameState.get === 'function'
                 ? clamp(GameState.get('settings.sensitivity', 1.0), 0.1, 4.0)
                 : 1.0;
             const aimSensScale = this.isAiming ? 0.58 : 1.0;
-            const lookScale = 0.0022 * sens * aimSensScale;
+            const lookScale = 0.0032 * sens * aimSensScale;
 
             const lookX = typeof inp.lookDeltaX === 'number' ? inp.lookDeltaX : 0;
             const lookY = typeof inp.lookDeltaY === 'number' ? inp.lookDeltaY : 0;
@@ -244,7 +267,6 @@
                 this.inputSystem.consumeLookDelta();
             }
 
-            // 2. 計算世界水平前向與右向向量
             const forwardX = -Math.sin(this.yaw);
             const forwardZ = -Math.cos(this.yaw);
             const rightX = Math.cos(this.yaw);
@@ -265,7 +287,6 @@
                 this._slideCooldownTimer = Math.max(0, this._slideCooldownTimer - dt);
             }
 
-            // 3. 蹲下與衝刺滑鏟切換判定
             const crouchDown = Boolean(inp.crouch);
             const crouchJustPressed = crouchDown && !this._crouchPressedPrev;
             this._crouchPressedPrev = crouchDown;
@@ -285,8 +306,8 @@
                 }
             }
 
-            // 4. 衝刺與耐力管理
-            const wantsSprint = Boolean(inp.sprint) &&
+            const wantsSprint =
+                Boolean(inp.sprint) &&
                 moveForward > 0.15 &&
                 !this.isCrouching &&
                 !this.isSliding &&
@@ -301,7 +322,6 @@
                 this.stamina = Math.min(100, this.stamina + 16 * dt);
             }
 
-            // 5. 水平速度計算
             if (this.isSliding) {
                 this._slideTimer -= dt;
                 const slideRatio = clamp(this._slideTimer / MOVEMENT_CONFIG.slideDuration, 0, 1);
@@ -331,7 +351,6 @@
                 this.velocity.z = lerp(this.velocity.z, targetVz, blend);
             }
 
-            // 6. 跳躍與垂直重力
             if (Boolean(inp.jump) && this.isGrounded && !this.isSliding) {
                 this.isCrouching = false;
                 this.isGrounded = false;
@@ -342,7 +361,6 @@
                 this.velocity.y -= MOVEMENT_CONFIG.gravity * dt;
             }
 
-            // 7. 水平位移、碰撞滑行與戰場邊界限制
             let nextX = this.position.x + this.velocity.x * dt;
             let nextZ = this.position.z + this.velocity.z * dt;
 
@@ -366,7 +384,6 @@
             this.position.x = nextX;
             this.position.z = nextZ;
 
-            // 8. 垂直高度與地形貼地判定
             const groundY = this._getGroundY(this.position.x, this.position.z, this.position.y);
             this.position.y += this.velocity.y * dt;
 
@@ -378,7 +395,6 @@
                 this.isGrounded = false;
             }
 
-            // 9. 眼高平滑插值與相機同步
             let targetEye = MOVEMENT_CONFIG.eyeHeightStand;
             if (this.isSliding) {
                 targetEye = MOVEMENT_CONFIG.eyeHeightSlide;
@@ -426,9 +442,7 @@
         }
 
         _syncState(speedRatio) {
-            if (!GameState || typeof GameState.patch !== 'function') {
-                return;
-            }
+            if (!GameState || typeof GameState.patch !== 'function') return;
             GameState.patch('player', {
                 position: { x: this.position.x, y: this.position.y, z: this.position.z },
                 yaw: this.yaw,
@@ -453,9 +467,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const playerMovementInstance = new PlayerMovement();
 
     const moduleExport = {
