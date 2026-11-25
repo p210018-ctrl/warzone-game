@@ -1,508 +1,808 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/01_event_bus_state.js
- * 檔案說明：全局事件匯流排 (Event Bus)、遊戲狀態機 (State Machine)
- *           以及所有 37 個模組共享的標準數據結構定義。
- *           此版本已修復 Logger.system 缺失問題，並包含完整的武器數據庫。
- * 掛載目標：window.WZ
- * =================================================================================
+ * ============================================================================
+ * 01_event_bus_state.js
+ * 核心事件匯流排（EventBus）與集中式遊戲狀態管理中心（GameState）
+ * ============================================================================
+ * 職責：
+ * 1. 建立全域命名空間 window.TacticalWarfare（若尚未存在）
+ * 2. 提供解耦的發布／訂閱事件系統（支援 on / once / off / emit / 萬用監聽）
+ * 3. 定義全專案統一事件常數，避免跨模組字串拼寫錯誤
+ * 4. 管理玩家狀態、武器彈藥、戰局數據、設定與系統階段，並支援路徑讀寫與重置
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
-    }
-
-    factory(global.WZ);
-
-})(typeof window !== 'undefined' ? window : this, function (WZ) {
-
-    /* =========================================================================
-     * 第一部分：全局日誌系統 (Logger)
-     * ========================================================================= */
-
-    const Logger = {
-        _prefix: '[WZM]',
-        _colors: {
-            info: 'color: #3498db; font-weight: bold;',
-            success: 'color: #2ecc71; font-weight: bold;',
-            warn: 'color: #f1c40f; font-weight: bold;',
-            error: 'color: #e74c3c; font-weight: bold;',
-            event: 'color: #9b59b6; font-weight: bold;',
-            state: 'color: #e67e22; font-weight: bold;',
-            system: 'color: #00f3ff; font-weight: bold;' // 確保包含 system 顏色
-        },
-
-        info: function (msg, ...data) {
-            if (!WZ.Config || !WZ.Config.DEBUG_MODE) return;
-            console.log(`%c${this._prefix} [INFO] ${msg}`, this._colors.info, ...data);
-        },
-
-        success: function (msg, ...data) {
-            if (!WZ.Config || !WZ.Config.DEBUG_MODE) return;
-            console.log(`%c${this._prefix} [SUCCESS] ${msg}`, this._colors.success, ...data);
-        },
-
-        warn: function (msg, ...data) {
-            if (!WZ.Config || !WZ.Config.DEBUG_MODE) return;
-            console.warn(`%c${this._prefix} [WARN] ${msg}`, this._colors.warn, ...data);
-        },
-
-        error: function (msg, ...data) {
-            console.error(`%c${this._prefix} [ERROR] ${msg}`, this._colors.error, ...data);
-        },
-
-        event: function (msg, ...data) {
-            if (!WZ.Config || !WZ.Config.DEBUG_MODE) return;
-            console.log(`%c${this._prefix} [EVENT] ${msg}`, this._colors.event, ...data);
-        },
-
-        state: function (msg, ...data) {
-            if (!WZ.Config || !WZ.Config.DEBUG_MODE) return;
-            console.log(`%c${this._prefix} [STATE] ${msg}`, this._colors.state, ...data);
-        },
-
-        // 🔴 核心修復點：補齊 system 方法
-        system: function (msg, ...data) {
-            console.log(`%c${this._prefix} [SYSTEM] ${msg}`, this._colors.system, ...data);
-        }
+    // ------------------------------------------------------------------------
+    // 1. 初始化全域命名空間
+    // ------------------------------------------------------------------------
+    const TacticalWarfare = global.TacticalWarfare || {
+        expectedModules: [],
+        loadedModules: {},
+        runtimeErrors: []
     };
+    global.TacticalWarfare = TacticalWarfare;
 
-    Logger.system('js/01_event_bus_state.js 初始化開始...');
-
-    /* =========================================================================
-     * 第二部分：深度拷貝與凍結工具
-     * ========================================================================= */
-
-    function deepClone(obj) {
-        if (obj === null || typeof obj !== 'object') return obj;
-        if (obj instanceof Date) return new Date(obj.getTime());
-        if (obj instanceof Array) {
-            var copyArr = [];
-            for (var i = 0; i < obj.length; i++) {
-                copyArr[i] = deepClone(obj[i]);
-            }
-            return copyArr;
-        }
-        if (obj instanceof Object) {
-            var copyObj = {};
-            for (var attr in obj) {
-                if (obj.hasOwnProperty(attr)) {
-                    copyObj[attr] = deepClone(obj[attr]);
-                }
-            }
-            return copyObj;
-        }
-        throw new Error('deepClone: 無法拷貝的物件類型');
+    if (typeof TacticalWarfare.registerModule !== 'function') {
+        TacticalWarfare.registerModule = function (moduleName, moduleExport) {
+            TacticalWarfare[moduleName] = moduleExport;
+            TacticalWarfare.loadedModules[moduleName] = true;
+        };
     }
 
-    function deepFreeze(obj) {
-        if (Object.isFrozen(obj)) return obj;
-        var propNames = Object.getOwnPropertyNames(obj);
-        for (var i = 0; i < propNames.length; i++) {
-            var propName = propNames[i];
-            var prop = obj[propName];
-            if (prop !== null && (typeof prop === 'object' || typeof prop === 'function')) {
-                deepFreeze(prop);
-            }
+    // ------------------------------------------------------------------------
+    // 2. 統一事件常數表（供所有後續模組共用）
+    // ------------------------------------------------------------------------
+    const Events = Object.freeze({
+        // 系統與戰局生命週期
+        SYSTEM_READY: 'system:ready',
+        GAME_START: 'game:start',
+        GAME_PAUSE: 'game:pause',
+        GAME_RESUME: 'game:resume',
+        GAME_OVER: 'game:over',
+        GAME_RESET: 'game:reset',
+        POINTER_LOCK_CHANGE: 'input:pointerLockChange',
+        SETTINGS_CHANGED: 'settings:changed',
+
+        // 狀態變更通知
+        STATE_CHANGED: 'state:changed',
+        STATE_RESET: 'state:reset',
+
+        // 玩家移動與生理狀態
+        PLAYER_SPAWN: 'player:spawn',
+        PLAYER_MOVE: 'player:move',
+        PLAYER_STANCE_CHANGE: 'player:stanceChange',
+        PLAYER_SPRINT_CHANGE: 'player:sprintChange',
+        PLAYER_JUMP: 'player:jump',
+        PLAYER_LAND: 'player:land',
+        PLAYER_SLIDE_START: 'player:slideStart',
+        PLAYER_SLIDE_END: 'player:slideEnd',
+        PLAYER_DAMAGE: 'player:damage',
+        PLAYER_HEAL: 'player:heal',
+        PLAYER_ARMOR_CHANGE: 'player:armorChange',
+        PLAYER_ARMOR_BREAK: 'player:armorBreak',
+        PLAYER_PLATE_START: 'player:plateStart',
+        PLAYER_PLATE_PROGRESS: 'player:plateProgress',
+        PLAYER_PLATE_FINISH: 'player:plateFinish',
+        PLAYER_PLATE_CANCEL: 'player:plateCancel',
+        PLAYER_DEATH: 'player:death',
+
+        // 武器與射擊戰鬥
+        WEAPON_EQUIP: 'weapon:equip',
+        WEAPON_SWITCH_START: 'weapon:switchStart',
+        WEAPON_SWITCH_FINISH: 'weapon:switchFinish',
+        WEAPON_FIRE: 'weapon:fire',
+        WEAPON_DRY_FIRE: 'weapon:dryFire',
+        WEAPON_ADS_CHANGE: 'weapon:adsChange',
+        WEAPON_FIREMODE_CHANGE: 'weapon:fireModeChange',
+        WEAPON_RELOAD_START: 'weapon:reloadStart',
+        WEAPON_RELOAD_PROGRESS: 'weapon:reloadProgress',
+        WEAPON_RELOAD_FINISH: 'weapon:reloadFinish',
+        WEAPON_RELOAD_CANCEL: 'weapon:reloadCancel',
+        WEAPON_AMMO_CHANGE: 'weapon:ammoChange',
+        WEAPON_RECOIL: 'weapon:recoil',
+
+        // 彈道、命中與場景互動
+        PROJECTILE_FIRED: 'combat:projectileFired',
+        BULLET_IMPACT: 'combat:bulletImpact',
+        EXPLOSION_TRIGGERED: 'combat:explosionTriggered',
+        BARREL_DETONATED: 'world:barrelDetonated',
+        PICKUP_SPAWNED: 'world:pickupSpawned',
+        PICKUP_COLLECTED: 'world:pickupCollected',
+
+        // 敵軍與波次管理
+        WAVE_START: 'wave:start',
+        WAVE_CLEAR: 'wave:clear',
+        ENEMY_SPAWN: 'enemy:spawn',
+        ENEMY_ALERT: 'enemy:alert',
+        ENEMY_FIRE: 'enemy:fire',
+        ENEMY_HIT: 'enemy:hit',
+        ENEMY_KILL: 'enemy:kill',
+
+        // 抬頭顯示器與音效回饋
+        HUD_HITMARKER: 'hud:hitmarker',
+        HUD_DAMAGE_DIRECTION: 'hud:damageDirection',
+        HUD_KILLFEED: 'hud:killfeed',
+        HUD_BANNER: 'hud:banner',
+        HUD_ACTION_PROGRESS: 'hud:actionProgress',
+        AUDIO_PLAY: 'audio:play',
+        AUDIO_PLAY_3D: 'audio:play3d'
+    });
+
+    // ------------------------------------------------------------------------
+    // 3. 工具函式：深層拷貝與數值限制
+    // ------------------------------------------------------------------------
+    function deepClone(source) {
+        if (source === null || typeof source !== 'object') {
+            return source;
         }
-        return Object.freeze(obj);
+        if (Array.isArray(source)) {
+            const arrayCopy = [];
+            for (let i = 0; i < source.length; i = i + 1) {
+                arrayCopy[i] = deepClone(source[i]);
+            }
+            return arrayCopy;
+        }
+        const objectCopy = {};
+        const keys = Object.keys(source);
+        for (let i = 0; i < keys.length; i = i + 1) {
+            const key = keys[i];
+            objectCopy[key] = deepClone(source[key]);
+        }
+        return objectCopy;
     }
 
-    function clamp(value, min, max) {
-        return Math.max(min, Math.min(max, value));
+    function clampNumber(value, minValue, maxValue) {
+        if (value < minValue) {
+            return minValue;
+        }
+        if (value > maxValue) {
+            return maxValue;
+        }
+        return value;
     }
 
-    /* =========================================================================
-     * 第三部分：事件匯流排 (EventBus)
-     * ========================================================================= */
-
+    // ------------------------------------------------------------------------
+    // 4. EventBus 事件匯流排類別
+    // ------------------------------------------------------------------------
     class EventBus {
-        constructor() {
+        constructor(options) {
+            const config = options || {};
             this._listeners = new Map();
-            this._emitStack = [];
-            this._maxEmitDepth = 10;
-            this._uid = 0;
-            Logger.info('EventBus 實例化完成');
+            this._wildcardListeners = [];
+            this._debugMode = Boolean(config.debug);
+            this._historyLimit = typeof config.historyLimit === 'number' ? config.historyLimit : 60;
+            this._eventHistory = [];
         }
 
-        on(event, callback, priority = 0, context = null, once = false) {
-            if (typeof event !== 'string' || !event.trim()) {
-                Logger.error('EventBus.on 失敗：事件名稱必須是非空字串');
-                return () => {};
-            }
+        /**
+         * 訂閱事件，回傳解除訂閱函式
+         */
+        on(eventName, callback, context) {
             if (typeof callback !== 'function') {
-                Logger.error('EventBus.on 失敗：回調必須是函數');
-                return () => {};
+                throw new TypeError('EventBus.on 需要傳入函式作為 callback');
             }
 
-            if (!this._listeners.has(event)) {
-                this._listeners.set(event, []);
+            const entry = {
+                callback: callback,
+                context: context || null,
+                once: false
+            };
+
+            if (eventName === '*') {
+                this._wildcardListeners.push(entry);
+                return () => this.off('*', callback, context);
             }
-            const listeners = this._listeners.get(event);
-            const id = ++this._uid;
 
-            const listenerObj = { id, fn: callback, priority, context, once };
-            listeners.push(listenerObj);
-            listeners.sort((a, b) => b.priority - a.priority);
+            if (!this._listeners.has(eventName)) {
+                this._listeners.set(eventName, []);
+            }
+            this._listeners.get(eventName).push(entry);
 
-            return () => this.off(event, callback);
+            return () => this.off(eventName, callback, context);
         }
 
-        once(event, callback, priority = 0, context = null) {
-            return this.on(event, callback, priority, context, true);
+        /**
+         * 訂閱單次事件，觸發一次後自動移除
+         */
+        once(eventName, callback, context) {
+            if (typeof callback !== 'function') {
+                throw new TypeError('EventBus.once 需要傳入函式作為 callback');
+            }
+
+            const entry = {
+                callback: callback,
+                context: context || null,
+                once: true
+            };
+
+            if (eventName === '*') {
+                this._wildcardListeners.push(entry);
+                return () => this.off('*', callback, context);
+            }
+
+            if (!this._listeners.has(eventName)) {
+                this._listeners.set(eventName, []);
+            }
+            this._listeners.get(eventName).push(entry);
+
+            return () => this.off(eventName, callback, context);
         }
 
-        off(event, callback) {
-            if (!this._listeners.has(event)) return;
-            const listeners = this._listeners.get(event);
-            if (!callback) {
-                this._listeners.delete(event);
-                return;
-            }
-            const filtered = listeners.filter(l => l.fn !== callback);
-            if (filtered.length !== listeners.length) {
-                if (filtered.length === 0) this._listeners.delete(event);
-                else this._listeners.set(event, filtered);
-            }
-        }
+        /**
+         * 取消訂閱指定事件
+         */
+        off(eventName, callback, context) {
+            const targetContext = context || null;
 
-        emit(event, ...args) {
-            if (!event) return;
-            if (this._emitStack.length >= this._maxEmitDepth) {
-                Logger.error(`EventBus 偵測到無限循環！已阻止事件 "${event}"`);
-                return;
-            }
-            if (this._emitStack.includes(event)) {
-                Logger.warn(`EventBus 偵測到同步重入事件: "${event}"，已忽略。`);
-                return;
-            }
-
-            this._emitStack.push(event);
-            try {
-                if (!this._listeners.has(event)) {
-                    this._emitStack.pop();
+            if (eventName === '*') {
+                if (!callback) {
+                    this._wildcardListeners = [];
                     return;
                 }
-                const listeners = this._listeners.get(event);
-                const snapshot = [...listeners];
-                
-                for (let i = 0; i < snapshot.length; i++) {
-                    const listener = snapshot[i];
-                    const currentListeners = this._listeners.get(event);
-                    if (!currentListeners || !currentListeners.find(l => l.id === listener.id)) {
-                        continue;
+                this._wildcardListeners = this._wildcardListeners.filter(function (entry) {
+                    const sameCallback = entry.callback === callback;
+                    const sameContext = !context || entry.context === targetContext;
+                    return !(sameCallback && sameContext);
+                });
+                return;
+            }
+
+            const list = this._listeners.get(eventName);
+            if (!list) {
+                return;
+            }
+
+            if (!callback) {
+                this._listeners.delete(eventName);
+                return;
+            }
+
+            const remaining = list.filter(function (entry) {
+                const sameCallback = entry.callback === callback;
+                const sameContext = !context || entry.context === targetContext;
+                return !(sameCallback && sameContext);
+            });
+
+            if (remaining.length === 0) {
+                this._listeners.delete(eventName);
+            } else {
+                this._listeners.set(eventName, remaining);
+            }
+        }
+
+        /**
+         * 發布事件並通知所有監聽器（單一監聽器異常不中斷其餘流程）
+         */
+        emit(eventName, payload) {
+            if (typeof eventName !== 'string' || eventName.length === 0) {
+                return 0;
+            }
+
+            const timestamp = performance.now();
+            if (this._historyLimit > 0) {
+                this._eventHistory.push({
+                    eventName: eventName,
+                    timestamp: timestamp,
+                    hasPayload: payload !== undefined
+                });
+                if (this._eventHistory.length > this._historyLimit) {
+                    this._eventHistory.shift();
+                }
+            }
+
+            if (this._debugMode) {
+                console.debug('[EventBus]', eventName, payload);
+            }
+
+            let invokedCount = 0;
+
+            // 執行特定事件監聽器
+            const list = this._listeners.get(eventName);
+            if (list && list.length > 0) {
+                const snapshotList = list.slice();
+                const survivors = [];
+
+                for (let i = 0; i < snapshotList.length; i = i + 1) {
+                    const entry = snapshotList[i];
+                    if (!entry.once) {
+                        survivors.push(entry);
                     }
-                    if (listener.once) this.off(event, listener.fn);
                     try {
-                        listener.fn.apply(listener.context, args);
-                    } catch (err) {
-                        Logger.error(`事件 "${event}" 的監聽器執行出錯:`, err);
+                        entry.callback.call(entry.context, payload, eventName);
+                        invokedCount = invokedCount + 1;
+                    } catch (error) {
+                        console.error('[EventBus] 監聽器執行失敗 (' + eventName + '):', error);
                     }
                 }
-            } finally {
-                this._emitStack.pop();
+
+                if (survivors.length === 0) {
+                    this._listeners.delete(eventName);
+                } else {
+                    // 保留執行期間新加入的監聽器
+                    const currentList = this._listeners.get(eventName) || [];
+                    const merged = survivors.slice();
+                    for (let j = 0; j < currentList.length; j = j + 1) {
+                        if (snapshotList.indexOf(currentList[j]) === -1) {
+                            merged.push(currentList[j]);
+                        }
+                    }
+                    this._listeners.set(eventName, merged);
+                }
             }
+
+            // 執行萬用字元 '*' 監聽器
+            if (this._wildcardListeners.length > 0) {
+                const wildcardSnapshot = this._wildcardListeners.slice();
+                this._wildcardListeners = this._wildcardListeners.filter(function (entry) {
+                    return !entry.once;
+                });
+
+                for (let k = 0; k < wildcardSnapshot.length; k = k + 1) {
+                    const wildcardEntry = wildcardSnapshot[k];
+                    try {
+                        wildcardEntry.callback.call(wildcardEntry.context, {
+                            eventName: eventName,
+                            payload: payload,
+                            timestamp: timestamp
+                        });
+                        invokedCount = invokedCount + 1;
+                    } catch (error) {
+                        console.error('[EventBus] 萬用監聽器執行失敗:', error);
+                    }
+                }
+            }
+
+            return invokedCount;
         }
 
-        clear() {
+        /**
+         * 清除單一或全部事件監聽器
+         */
+        clear(eventName) {
+            if (typeof eventName === 'string') {
+                if (eventName === '*') {
+                    this._wildcardListeners = [];
+                } else {
+                    this._listeners.delete(eventName);
+                }
+                return;
+            }
             this._listeners.clear();
-            this._emitStack = [];
-            Logger.event('EventBus 已清空');
-        }
-    }
-
-    /* =========================================================================
-     * 第四部分：遊戲狀態機 (State Machine)
-     * ========================================================================= */
-
-    const GAME_STATES = {
-        LOBBY: 'LOBBY',
-        PLAYING: 'PLAYING',
-        PAUSED: 'PAUSED',
-        CUSTOMIZING: 'CUSTOMIZING',
-        GAMEOVER: 'GAMEOVER'
-    };
-
-    class GameStateMachine {
-        constructor() {
-            this._currentState = GAME_STATES.LOBBY;
-            this._previousState = null;
-            this._stateEnterTime = performance.now();
-            this._transitions = {
-                [GAME_STATES.LOBBY]: [GAME_STATES.PLAYING, GAME_STATES.CUSTOMIZING],
-                [GAME_STATES.PLAYING]: [GAME_STATES.PAUSED, GAME_STATES.GAMEOVER, GAME_STATES.CUSTOMIZING],
-                [GAME_STATES.PAUSED]: [GAME_STATES.PLAYING, GAME_STATES.LOBBY, GAME_STATES.CUSTOMIZING],
-                [GAME_STATES.CUSTOMIZING]: [GAME_STATES.LOBBY, GAME_STATES.PLAYING, GAME_STATES.PAUSED],
-                [GAME_STATES.GAMEOVER]: [GAME_STATES.LOBBY, GAME_STATES.PLAYING]
-            };
-            this._hooks = { onEnter: {}, onLeave: {} };
-            Logger.state(`遊戲狀態機初始化，當前: ${this._currentState}`);
+            this._wildcardListeners = [];
         }
 
-        get currentState() { return this._currentState; }
-        get previousState() { return this._previousState; }
-
-        onEnter(state, callback) {
-            if (!this._hooks.onEnter[state]) this._hooks.onEnter[state] = [];
-            this._hooks.onEnter[state].push(callback);
-        }
-
-        onLeave(state, callback) {
-            if (!this._hooks.onLeave[state]) this._hooks.onLeave[state] = [];
-            this._hooks.onLeave[state].push(callback);
-        }
-
-        canTransitionTo(targetState) {
-            if (!Object.values(GAME_STATES).includes(targetState)) {
-                Logger.error(`狀態轉換失敗：未知的狀態 "${targetState}"`);
-                return false;
-            }
-            if (this._currentState === targetState) return true;
-            const allowed = this._transitions[this._currentState] || [];
-            if (!allowed.includes(targetState)) {
-                Logger.warn(`狀態轉換被拒絕：不允許從 "${this._currentState}" 轉換到 "${targetState}"`);
-                return false;
-            }
-            return true;
-        }
-
-        transitionTo(targetState, payload = null) {
-            if (!this.canTransitionTo(targetState)) return false;
-            if (this._currentState === targetState) return true;
-
-            const oldState = this._currentState;
-            const timeInState = performance.now() - this._stateEnterTime;
-            Logger.state(`狀態轉換: ${oldState} -> ${targetState} (在 ${oldState} 停留了 ${timeInState.toFixed(2)} ms)`);
-
-            if (this._hooks.onLeave[oldState]) {
-                this._hooks.onLeave[oldState].forEach(fn => {
-                    try { fn(targetState, payload); } catch (e) { Logger.error('onLeave Hook 出錯', e); }
-                });
+        getListenerCount(eventName) {
+            if (typeof eventName === 'string') {
+                if (eventName === '*') {
+                    return this._wildcardListeners.length;
+                }
+                const list = this._listeners.get(eventName);
+                return list ? list.length : 0;
             }
 
-            this._previousState = oldState;
-            this._currentState = targetState;
-            this._stateEnterTime = performance.now();
-
-            if (this._hooks.onEnter[targetState]) {
-                this._hooks.onEnter[targetState].forEach(fn => {
-                    try { fn(oldState, payload); } catch (e) { Logger.error('onEnter Hook 出錯', e); }
-                });
-            }
-
-            if (WZ.bus) {
-                WZ.bus.emit('STATE_CHANGED', {
-                    from: oldState,
-                    to: targetState,
-                    payload: payload,
-                    duration: timeInState
-                });
-
-                if (targetState === GAME_STATES.PLAYING) WZ.bus.emit('GAME_START', payload);
-                else if (targetState === GAME_STATES.PAUSED) WZ.bus.emit('GAME_PAUSE', payload);
-                else if (targetState === GAME_STATES.GAMEOVER) WZ.bus.emit('GAME_OVER', payload);
-                else if (targetState === GAME_STATES.LOBBY) WZ.bus.emit('RETURN_TO_LOBBY', payload);
-            }
-            return true;
-        }
-    }
-
-    /* =========================================================================
-     * 第五部分：全局配置與武器數據庫
-     * ========================================================================= */
-
-    const Config = deepFreeze({
-        DEBUG_MODE: true,
-        VERSION: '1.0.0',
-        MAX_ACTIVE_BULLETS: 100,
-        MAX_ACTIVE_ENEMIES: 50,
-        MAX_PARTICLES: 200,
-        PLAYER_BASE_SPEED: 4.6,
-        PLAYER_SPRINT_MULTIPLIER: 1.5,
-        PLAYER_TAC_SPRINT_MULTIPLIER: 2.2,
-        PLAYER_JUMP_VELOCITY: 6.6,
-        GRAVITY: 18.0,
-        RAYCAST_MAX_DISTANCE: 100.0,
-        NETWORK_TICK_RATE: 30,
-        DEFAULT_FOV: 72,
-        ADS_FOV: 50,
-        TAC_SPRINT_FOV: 86
-    });
-
-    const WEAPONS_DB = deepFreeze({
-        M4A1: {
-            id: 'M4A1',
-            name: 'M4A1',
-            class: 'Assault Rifle',
-            ammoType: '5.56 NATO',
-            rpm: 750,
-            fireInterval: 60 / 750,
-            damage: { head: 54, chest: 34, stomach: 34, limb: 28, vehicle: 12 },
-            bulletVelocity: 850,
-            maxRange: 150,
-            recoil: { vertical: 0.8, horizontal: 0.3, recoveryRate: 15, kickback: 8.0 },
-            magSize: 30, reserveAmmo: 120, reloadTime: 2.1, emptyReloadTime: 2.5,
-            adsTime: 0.28, adsZoom: 1.3, hipfireSpread: 3.5, adsSpread: 0.1,
-            playerMoveSpeedMultiplier: 1.0, adsMoveSpeedMultiplier: 0.6, sprintOutTime: 0.15,
-        },
-        MP5: {
-            id: 'MP5',
-            name: 'MP5',
-            class: 'Submachine Gun',
-            ammoType: '9mm',
-            rpm: 850,
-            fireInterval: 60 / 850,
-            damage: { head: 42, chest: 24, stomach: 24, limb: 18, vehicle: 8 },
-            bulletVelocity: 400,
-            maxRange: 60,
-            recoil: { vertical: 0.5, horizontal: 0.2, recoveryRate: 18, kickback: 5.0 },
-            magSize: 30, reserveAmmo: 120, reloadTime: 1.8, emptyReloadTime: 2.2,
-            adsTime: 0.22, adsZoom: 1.2, hipfireSpread: 2.0, adsSpread: 0.05,
-            playerMoveSpeedMultiplier: 1.1, adsMoveSpeedMultiplier: 0.7, sprintOutTime: 0.12,
-        },
-        'AX-50': {
-            id: 'AX-50',
-            name: 'AX-50',
-            class: 'Sniper Rifle',
-            ammoType: '.50 BMG',
-            rpm: 40,
-            fireInterval: 60 / 40,
-            damage: { head: 250, chest: 150, stomach: 120, limb: 90, vehicle: 80 },
-            bulletVelocity: 1200,
-            maxRange: 500,
-            recoil: { vertical: 3.5, horizontal: 1.0, recoveryRate: 5, kickback: 20.0 },
-            magSize: 5, reserveAmmo: 25, reloadTime: 3.0, emptyReloadTime: 3.5,
-            adsTime: 0.6, adsZoom: 4.0, hipfireSpread: 8.0, adsSpread: 0.0,
-            playerMoveSpeedMultiplier: 0.85, adsMoveSpeedMultiplier: 0.4, sprintOutTime: 0.3,
-        },
-        X16: {
-            id: 'X16',
-            name: 'X16',
-            class: 'Pistol',
-            ammoType: '9mm',
-            rpm: 450,
-            fireInterval: 60 / 450,
-            damage: { head: 38, chest: 20, stomach: 20, limb: 15, vehicle: 5 },
-            bulletVelocity: 300,
-            maxRange: 30,
-            recoil: { vertical: 0.6, horizontal: 0.3, recoveryRate: 20, kickback: 4.0 },
-            magSize: 15, reserveAmmo: 60, reloadTime: 1.5, emptyReloadTime: 1.8,
-            adsTime: 0.18, adsZoom: 1.1, hipfireSpread: 4.0, adsSpread: 0.2,
-            playerMoveSpeedMultiplier: 1.15, adsMoveSpeedMultiplier: 0.85, sprintOutTime: 0.1,
-        }
-    });
-
-    /* =========================================================================
-     * 第六部分：共享數據結構
-     * ========================================================================= */
-
-    const createPlayerState = () => {
-        return {
-            id: 'player_01', name: 'Operator', team: 'blue', isAlive: true, isBot: false,
-            health: { max: 150, current: 150, regenRate: 15, regenDelay: 4.0 },
-            armor: { max: 150, current: 150, plates: 3, maxPlates: 3 },
-            loadout: { primary: 'M4A1', secondary: 'X16', lethal: 'grenade', tactical: 'flash' },
-            activeWeapon: 'primary',
-            weaponStates: {
-                primary: { mag: 30, reserve: 120 },
-                secondary: { mag: 15, reserve: 60 }
-            },
-            transform: {
-                position: { x: 0, y: 1.68, z: 15 },
-                rotation: { x: 0, y: 0, z: 0 },
-                velocity: { x: 0, y: 0, z: 0 },
-                isGrounded: true, radius: 0.45, height: 1.68
-            },
-            posture: {
-                isCrouching: false, isSliding: false, slideTimer: 0,
-                isSprinting: false, isTacSprinting: false, tacSprintTimer: 0
-            },
-            stats: { kills: 0, deaths: 0, assists: 0, damageDealt: 0, score: 0, shotsFired: 0, shotsHit: 0 },
-            statusEffects: {
-                isReloading: false, reloadProgress: 0, isFiring: false,
-                isAimingDownSights: false, aimProgress: 0, hitmarkerTimer: 0, lastDamageTime: 0
-            },
-            settings: { sensitivity: 50, invertY: false, aimAssist: true }
-        };
-    };
-
-    const createSettingsState = () => {
-        return {
-            graphics: { quality: 'high', fpsLimit: 60, shadowsEnabled: true, effectsQuality: 'high' },
-            audio: { masterVolume: 1.0, musicVolume: 0.7, sfxVolume: 1.0, voiceVolume: 1.0, isMuted: false },
-            controls: {
-                sensitivity: 50, adsSensitivityMultiplier: 0.8, invertY: false,
-                vibrationEnabled: true, aimAssistEnabled: true, aimAssistIntensity: 50, crosshairType: 'dynamic'
-            },
-            customLayout: {}
-        };
-    };
-
-    const createEnemyPool = (maxSize = Config.MAX_ACTIVE_ENEMIES) => {
-        const pool = [];
-        for (let i = 0; i < maxSize; i++) {
-            pool.push({
-                poolIndex: i, isActive: false, id: `enemy_${i}`,
-                health: 100, armor: 0, isAlive: false,
-                position: { x: 0, y: 0, z: 0 }, rotation: { yaw: 0 }, velocity: { x: 0, z: 0 },
-                aiState: 'idle', targetPlayerId: null, lastSeenPosition: { x: 0, y: 0, z: 0 },
-                weaponId: 'M4A1', magAmmo: 30, stateTimer: 0, fireCooldown: 0,
-                animPhase: 0, flinchAmount: 0
+            let total = this._wildcardListeners.length;
+            this._listeners.forEach(function (list) {
+                total = total + list.length;
             });
+            return total;
         }
-        return pool;
-    };
 
-    /* =========================================================================
-     * 第七部分：導出與初始化
-     * ========================================================================= */
-
-    const bus = new EventBus();
-    const stateMachine = new GameStateMachine();
-
-    const globalState = {
-        gameState: GAME_STATES.LOBBY,
-        player: createPlayerState(),
-        enemies: createEnemyPool(),
-        settings: createSettingsState(),
-        time: { matchStartTime: 0, matchDuration: 600, currentTime: 0 },
-        score: { blueTeam: 0, redTeam: 0, maxScore: 150 }
-    };
-
-    // 掛載至 WZ 命名空間
-    WZ.bus = bus;
-    WZ.State = stateMachine;
-    WZ.GameStates = GAME_STATES;
-    WZ.Config = Config;
-    WZ.WeaponsDB = WEAPONS_DB;
-    WZ.Data = { createPlayerState, createSettingsState, createEnemyPool };
-    WZ.GlobalStore = globalState;
-    WZ.Utils = { deepClone, deepFreeze, Logger, clamp };
-
-    // 監聽狀態變化，同步更新 GlobalStore
-    bus.on('STATE_CHANGED', (data) => {
-        globalState.gameState = data.to;
-        if (data.to === GAME_STATES.PLAYING) {
-            globalState.time.matchStartTime = performance.now();
-            globalState.time.currentTime = globalState.time.matchDuration;
-            globalState.score.blueTeam = 0;
-            globalState.score.redTeam = 0;
+        getRecentEvents() {
+            return this._eventHistory.slice();
         }
-    }, 9999);
 
-    // 全局錯誤捕捉
-    window.addEventListener('error', (event) => {
-        Logger.error(`全局未捕獲錯誤: ${event.message} (於 ${event.filename}:${event.lineno})`);
+        setDebugMode(enabled) {
+            this._debugMode = Boolean(enabled);
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 5. 預設遊戲狀態工廠函式
+    // ------------------------------------------------------------------------
+    function createDefaultSettings() {
+        return {
+            mouseSensitivity: 0.0022,
+            adsSensitivityMultiplier: 0.55,
+            invertY: false,
+            baseFov: 75,
+            masterVolume: 0.85,
+            sfxVolume: 0.9,
+            ambientVolume: 0.45,
+            showCrosshair: true,
+            showMinimap: true,
+            graphicsQuality: 'high'
+        };
+    }
+
+    function createDefaultWeaponAmmoMap() {
+        return {
+            M4A1: { magazine: 30, magSize: 30, reserve: 150, maxReserve: 210, fireMode: 'AUTO' },
+            MP5SD: { magazine: 35, magSize: 35, reserve: 175, maxReserve: 245, fireMode: 'AUTO' },
+            AX50: { magazine: 5, magSize: 5, reserve: 25, maxReserve: 40, fireMode: 'BOLT' },
+            X16: { magazine: 15, magSize: 15, reserve: 75, maxReserve: 120, fireMode: 'SEMI' }
+        };
+    }
+
+    function createInitialGameState(existingSettings) {
+        return {
+            // 系統狀態：BOOT | MENU | PLAYING | PAUSED | GAMEOVER
+            phase: 'MENU',
+            isPointerLocked: false,
+            isInitialized: false,
+
+            // 時間控制
+            time: {
+                elapsed: 0,
+                delta: 0,
+                matchDuration: 0,
+                timeScale: 1.0,
+                fps: 60
+            },
+
+            // 戰局與波次統計
+            match: {
+                wave: 1,
+                waveInProgress: false,
+                waveIntermissionTimer: 0,
+                enemiesAlive: 0,
+                enemiesRemainingToSpawn: 0,
+                enemiesTotalInWave: 0,
+                kills: 0,
+                headshots: 0,
+                explosiveKills: 0,
+                score: 0,
+                streak: 0,
+                bestStreak: 0,
+                shotsFired: 0,
+                shotsHit: 0,
+                damageDealt: 0,
+                damageTaken: 0
+            },
+
+            // 玩家本體狀態
+            player: {
+                alive: true,
+                health: 100,
+                maxHealth: 100,
+                healthRegenDelayTimer: 0,
+                armor: 150,
+                maxArmor: 150,
+                armorPerPlate: 50,
+                sparePlates: 4,
+                maxSparePlates: 8,
+                isPlating: false,
+                plateProgress: 0,
+                stance: 'stand', // 'stand' | 'crouch' | 'slide'
+                isSprinting: false,
+                isGrounded: true,
+                isAiming: false,
+                isFiring: false,
+                stamina: 100,
+                maxStamina: 100,
+                moveSpeed: 0,
+                position: { x: 0, y: 1.7, z: 0 },
+                velocity: { x: 0, y: 0, z: 0 },
+                rotation: { yaw: 0, pitch: 0 },
+                lastDamageTime: 0
+            },
+
+            // 武器與彈藥狀態
+            weapon: {
+                slots: ['M4A1', 'MP5SD', 'AX50', 'X16'],
+                currentSlotIndex: 0,
+                currentId: 'M4A1',
+                ammo: createDefaultWeaponAmmoMap(),
+                isReloading: false,
+                reloadProgress: 0,
+                isSwitching: false,
+                switchProgress: 0,
+                adsAlpha: 0,
+                currentSpread: 0.015,
+                recoilPitch: 0,
+                recoilYaw: 0,
+                lastFireTime: 0
+            },
+
+            // 戰場實體計數
+            world: {
+                mapId: 'tactical_depot',
+                activeBarrels: 0,
+                activePickups: 0,
+                activeDecals: 0
+            },
+
+            // 使用者偏好設定（跨局保留）
+            settings: existingSettings ? deepClone(existingSettings) : createDefaultSettings()
+        };
+    }
+
+    // ------------------------------------------------------------------------
+    // 6. GameStateStore 集中式狀態管理類別
+    // ------------------------------------------------------------------------
+    class GameStateStore {
+        constructor(eventBus) {
+            this._bus = eventBus;
+            this._state = createInitialGameState(null);
+        }
+
+        /**
+         * 取得完整狀態物件參考（高效能循環讀取用）
+         */
+        get raw() {
+            return this._state;
+        }
+
+        /**
+         * 透過點路徑讀取狀態，例如 get('player.health')
+         */
+        get(path, fallbackValue) {
+            if (typeof path !== 'string' || path.length === 0) {
+                return this._state;
+            }
+            const segments = path.split('.');
+            let cursor = this._state;
+
+            for (let i = 0; i < segments.length; i = i + 1) {
+                if (cursor === null || cursor === undefined || typeof cursor !== 'object') {
+                    return fallbackValue;
+                }
+                cursor = cursor[segments[i]];
+            }
+
+            return cursor === undefined ? fallbackValue : cursor;
+        }
+
+        /**
+         * 透過點路徑寫入狀態，並於數值變化時發送 STATE_CHANGED
+         */
+        set(path, value, silent) {
+            if (typeof path !== 'string' || path.length === 0) {
+                return false;
+            }
+            const segments = path.split('.');
+            let cursor = this._state;
+
+            for (let i = 0; i < segments.length - 1; i = i + 1) {
+                const key = segments[i];
+                if (cursor[key] === null || typeof cursor[key] !== 'object') {
+                    cursor[key] = {};
+                }
+                cursor = cursor[key];
+            }
+
+            const finalKey = segments[segments.length - 1];
+            const previousValue = cursor[finalKey];
+
+            if (previousValue === value) {
+                return false;
+            }
+
+            cursor[finalKey] = value;
+
+            if (!silent && this._bus) {
+                this._bus.emit(Events.STATE_CHANGED, {
+                    path: path,
+                    value: value,
+                    previousValue: previousValue
+                });
+            }
+
+            return true;
+        }
+
+        /**
+         * 批次更新指定區段欄位，例如 patch('player', { health: 80, armor: 100 })
+         */
+        patch(sectionPath, partialData, silent) {
+            if (!partialData || typeof partialData !== 'object') {
+                return;
+            }
+            const keys = Object.keys(partialData);
+            for (let i = 0; i < keys.length; i = i + 1) {
+                const key = keys[i];
+                const fullPath = sectionPath ? sectionPath + '.' + key : key;
+                this.set(fullPath, partialData[key], silent);
+            }
+        }
+
+        /**
+         * 設定遊戲主階段並廣播對應生命週期事件
+         */
+        setPhase(nextPhase) {
+            const previousPhase = this._state.phase;
+            if (previousPhase === nextPhase) {
+                return;
+            }
+            this._state.phase = nextPhase;
+
+            if (this._bus) {
+                this._bus.emit(Events.STATE_CHANGED, {
+                    path: 'phase',
+                    value: nextPhase,
+                    previousValue: previousPhase
+                });
+
+                if (nextPhase === 'PLAYING' && previousPhase === 'PAUSED') {
+                    this._bus.emit(Events.GAME_RESUME, { previousPhase: previousPhase });
+                } else if (nextPhase === 'PLAYING') {
+                    this._bus.emit(Events.GAME_START, { previousPhase: previousPhase });
+                } else if (nextPhase === 'PAUSED') {
+                    this._bus.emit(Events.GAME_PAUSE, { previousPhase: previousPhase });
+                } else if (nextPhase === 'GAMEOVER') {
+                    this._bus.emit(Events.GAME_OVER, {
+                        match: deepClone(this._state.match)
+                    });
+                }
+            }
+        }
+
+        /**
+         * 重置單局戰鬥數據（保留設定與系統初始化狀態）
+         */
+        resetMatch(nextPhase) {
+            const preservedSettings = deepClone(this._state.settings);
+            const wasInitialized = this._state.isInitialized;
+            const wasLocked = this._state.isPointerLocked;
+
+            this._state = createInitialGameState(preservedSettings);
+            this._state.isInitialized = wasInitialized;
+            this._state.isPointerLocked = wasLocked;
+            if (nextPhase) {
+                this._state.phase = nextPhase;
+            }
+
+            if (this._bus) {
+                this._bus.emit(Events.STATE_RESET, { state: this.snapshot() });
+                this._bus.emit(Events.GAME_RESET, { phase: this._state.phase });
+            }
+        }
+
+        /**
+         * 套用玩家受擊扣甲／扣血規則（護甲優先吸收，破甲時發出事件）
+         */
+        applyPlayerDamage(rawAmount, sourceInfo) {
+            const player = this._state.player;
+            if (!player.alive || rawAmount <= 0) {
+                return { armorLost: 0, healthLost: 0, killed: false, armorBroken: false };
+            }
+
+            let remainingDamage = rawAmount;
+            let armorLost = 0;
+            let healthLost = 0;
+            let armorBroken = false;
+            const previousArmor = player.armor;
+
+            if (player.armor > 0) {
+                // 護甲吸收 80% 傷害，剩餘穿透至血量，破甲後全額扣血
+                const armorAbsorb = Math.min(player.armor, remainingDamage * 0.85);
+                player.armor = clampNumber(player.armor - armorAbsorb, 0, player.maxArmor);
+                armorLost = previousArmor - player.armor;
+                remainingDamage = Math.max(0, remainingDamage - armorAbsorb);
+
+                if (previousArmor > 0 && player.armor <= 0) {
+                    armorBroken = true;
+                }
+            }
+
+            if (remainingDamage > 0) {
+                const previousHealth = player.health;
+                player.health = clampNumber(player.health - remainingDamage, 0, player.maxHealth);
+                healthLost = previousHealth - player.health;
+            }
+
+            player.lastDamageTime = this._state.time.elapsed;
+            player.healthRegenDelayTimer = 4.5;
+            this._state.match.damageTaken = this._state.match.damageTaken + rawAmount;
+
+            const killed = player.health <= 0;
+            if (killed) {
+                player.alive = false;
+            }
+
+            if (this._bus) {
+                this._bus.emit(Events.PLAYER_DAMAGE, {
+                    amount: rawAmount,
+                    armorLost: armorLost,
+                    healthLost: healthLost,
+                    health: player.health,
+                    armor: player.armor,
+                    source: sourceInfo || null
+                });
+
+                if (armorLost > 0) {
+                    this._bus.emit(Events.PLAYER_ARMOR_CHANGE, {
+                        armor: player.armor,
+                        maxArmor: player.maxArmor,
+                        sparePlates: player.sparePlates
+                    });
+                }
+
+                if (armorBroken) {
+                    this._bus.emit(Events.PLAYER_ARMOR_BREAK, { source: sourceInfo || null });
+                }
+
+                if (killed) {
+                    this._bus.emit(Events.PLAYER_DEATH, { source: sourceInfo || null });
+                    this.setPhase('GAMEOVER');
+                }
+            }
+
+            return {
+                armorLost: armorLost,
+                healthLost: healthLost,
+                killed: killed,
+                armorBroken: armorBroken
+            };
+        }
+
+        /**
+         * 記錄玩家擊殺與連殺加分
+         */
+        recordKill(details) {
+            const info = details || {};
+            const match = this._state.match;
+            const isHeadshot = Boolean(info.isHeadshot);
+            const isExplosive = Boolean(info.isExplosive);
+            const basePoints = typeof info.points === 'number' ? info.points : 100;
+            const bonusPoints = (isHeadshot ? 50 : 0) + (isExplosive ? 40 : 0);
+
+            match.kills = match.kills + 1;
+            match.streak = match.streak + 1;
+            if (match.streak > match.bestStreak) {
+                match.bestStreak = match.streak;
+            }
+            if (isHeadshot) {
+                match.headshots = match.headshots + 1;
+            }
+            if (isExplosive) {
+                match.explosiveKills = match.explosiveKills + 1;
+            }
+            match.score = match.score + basePoints + bonusPoints;
+
+            if (this._bus) {
+                this._bus.emit(Events.ENEMY_KILL, {
+                    enemyName: info.enemyName || '敵軍步兵',
+                    weaponName: info.weaponName || this._state.weapon.currentId,
+                    isHeadshot: isHeadshot,
+                    isExplosive: isExplosive,
+                    pointsEarned: basePoints + bonusPoints,
+                    totalKills: match.kills,
+                    totalScore: match.score,
+                    streak: match.streak
+                });
+            }
+        }
+
+        /**
+         * 取得目前武器彈藥物件
+         */
+        getCurrentWeaponAmmo() {
+            const currentId = this._state.weapon.currentId;
+            return this._state.weapon.ammo[currentId] || null;
+        }
+
+        /**
+         * 計算目前命中率（百分比 0~100）
+         */
+        getAccuracyPercent() {
+            const fired = this._state.match.shotsFired;
+            if (fired <= 0) {
+                return 0;
+            }
+            return Math.round((this._state.match.shotsHit / fired) * 100);
+        }
+
+        /**
+         * 產生完整深層快照（除錯或結算報表用）
+         */
+        snapshot() {
+            return deepClone(this._state);
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 7. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const eventBusInstance = new EventBus({
+        debug: false,
+        historyLimit: 80
     });
 
-    window.addEventListener('unhandledrejection', (event) => {
-        Logger.error('未處理的 Promise 拒絕:', event.reason);
-    });
+    const gameStateInstance = new GameStateStore(eventBusInstance);
 
-    Logger.success('js/01_event_bus_state.js 已成功載入並掛載至 window.WZ');
+    const moduleExport = {
+        Events: Events,
+        EventBusClass: EventBus,
+        GameStateStoreClass: GameStateStore,
+        bus: eventBusInstance,
+        state: gameStateInstance,
+        createInitialGameState: createInitialGameState,
+        createDefaultSettings: createDefaultSettings
+    };
 
-});
+    // 同時掛載便捷別名，方便後續所有模組直接呼叫
+    TacticalWarfare.Events = Events;
+    TacticalWarfare.EventBus = eventBusInstance;
+    TacticalWarfare.GameState = gameStateInstance;
+    TacticalWarfare.registerModule('01_event_bus_state', moduleExport);
+})(window);
