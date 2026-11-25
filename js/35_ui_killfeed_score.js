@@ -1,881 +1,343 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/35_ui_killfeed_score.js
- * 檔案說明：擊殺正反饋系統。包含經驗值跳字 (XP Popup)、右上角擊殺資訊流
- *           (Kill Feed)、連殺提示 (Streak) 與波次結算面板 (Wave Summary)。
- *           自動識別玩家狀態 (滑鏟、飛撲、爆頭) 給予對應分數與提示。
- *           掛載於 window.WZ.UIKillfeed。
- * 目標行數：1000 - 1400 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 35_ui_killfeed_score.js
+ * 戰術擊殺播報（Killfeed）、連殺加乘、波次橫幅與計分結算系統
+ * ============================================================================
+ * 職責：
+ * 1. 監聽 ENEMY_KILL / WAVE_START / WAVE_CLEAR / GAME_RESET 事件計算分數、擊殺數與連殺數
+ * 2. 維護 DOM 擊殺播報列表（顯示武器／爆頭／得分）與中央波次／清除戰術提示橫幅
+ * 3. 同步更新 GameState 積分與波次資料，並支援逾時自動淡出與戰局重置清空
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('35_ui_killfeed_score.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
+    const KILLFEED_CONFIG = Object.freeze({
+        maxFeedItems: 5,
+        feedItemLifetime: 4.0,
+        streakWindowSec: 5.5,
+        baseKillPoints: 100,
+        headshotBonusPoints: 50,
+        streakStepPoints: 25
+    });
 
-    /* =========================================================================
-     * 第一部分：環境檢測與配置常數
-     * ========================================================================= */
-
-    Logger.system('開始載入擊殺反饋系統 (js/35_ui_killfeed_score.js)...');
-
-    // 定義擊殺類型與對應的 XP 分數
-    const KILL_TYPES = {
-        NORMAL: { name: '擊殺', xp: 100, color: '#ffffff' },
-        HEADSHOT: { name: '爆頭擊殺', xp: 150, color: '#ffd700' },
-        SLIDE: { name: '滑鏟擊殺', xp: 150, color: '#00f3ff' },
-        DIVE: { name: '飛撲擊殺', xp: 200, color: '#ff00ff' },
-        MULTI: { name: '多重擊殺', xp: 250, color: '#ff8c00' }
-    };
-
-    // 連殺里程碑
-    const STREAK_MILESTONES = [
-        { count: 2, name: '雙殺 (Double Kill)' },
-        { count: 3, name: '三殺 (Triple Kill)' },
-        { count: 4, name: '四殺 (Quad Kill)' },
-        { count: 5, name: '五連殺 (Frenzy Kill)' },
-        { count: 8, name: '八連殺 (Ultra Kill)' },
-        { count: 10, name: '十連殺 (Unstoppable)' }
-    ];
-
-    const CONFIG = {
-        // XP 跳字設定
-        XP_POPUP_DURATION: 1.5,     // 持續時間 (秒)
-        XP_POPUP_RISE_DISTANCE: 80, // 上升距離 (像素)
-        XP_POPUP_OFFSET_X: 0,       // 水平偏移 (相對於中心)
-        XP_POPUP_OFFSET_Y: 50,      // 垂直偏移 (在準心下方)
-
-        // Kill Feed 設定
-        KILLFEED_MAX_ITEMS: 5,      // 最大顯示條數
-        KILLFEED_ITEM_DURATION: 5.0,// 每條存活時間 (秒)
-        KILLFEED_FADE_OUT: 0.5,     // 淡出時間 (秒)
-
-        // 連殺提示設定
-        STREAK_DURATION: 2.0,       // 連殺文字停留時間
-        STREAK_SCALE_START: 0.5,    // 出現時起始縮放
-        STREAK_SCALE_END: 1.2,      // 彈出後的縮放
-
-        // 結算面板設定
-        SUMMARY_ANIMATION_DURATION: 0.5, // 面板彈入動畫時間
-    };
-
-    /* =========================================================================
-     * 第二部分：UI 輔助與動畫工具 (UI Helpers & Animations)
-     * ========================================================================= */
-
-    class DOMHelper {
-        static createDiv(styles = {}) {
-            const div = document.createElement('div');
-            Object.assign(div.style, styles);
-            return div;
-        }
-
-        static createText(text, styles = {}) {
-            const span = document.createElement('span');
-            span.innerText = text;
-            Object.assign(span.style, styles);
-            return span;
-        }
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) return minVal;
+        if (val > maxVal) return maxVal;
+        return val;
     }
 
-    /**
-     * 用於管理 DOM 元素的存活與動畫狀態
-     */
-    class UIElement {
-        constructor(element, duration) {
-            this.element = element;
-            this.duration = duration;
-            this.timer = 0;
-            this.isActive = true;
-            this.startTime = performance.now();
-        }
-
-        update(dt) {
-            this.timer += dt;
-            if (this.timer >= this.duration) {
-                this.isActive = false;
-            }
-        }
-    }
-
-    /* =========================================================================
-     * 第三部分：XP 跳字系統 (XPPopupSystem)
-     * 在螢幕中下方顯示飄浮的擊殺經驗值
-     * ========================================================================= */
-
-    class XPPopupSystem {
+    // ------------------------------------------------------------------------
+    // 1. UiKillfeedScore 主類別
+    // ------------------------------------------------------------------------
+    class UiKillfeedScore {
         constructor() {
-            this.container = null;
-            this.activePopups = [];
-        }
+            this.initialized = false;
+            this.score = 0;
+            this.kills = 0;
+            this.headshots = 0;
+            this.streak = 0;
+            this._streakTimer = 0;
 
-        init(parent) {
-            this.container = DOMHelper.createDiv({
-                position: 'fixed',
-                left: '50%',
-                top: '50%',
-                width: '0',
-                height: '0',
-                pointerEvents: 'none',
-                zIndex: '220'
-            });
-            parent.appendChild(this.container);
-            Logger.info('XP 跳字系統已建立');
+            this._container = null;
+            this._feedEl = null;
+            this._bannerEl = null;
+            this._bannerTimer = 0;
+            this._entries = [];
+            this._unsubscribers = [];
         }
 
         /**
-         * 觸發 XP 跳字
-         * @param {Object} killType 擊殺類型資料 (包含 name, xp, color)
+         * 初始化擊殺播報與計分系統
          */
-        trigger(killType) {
-            if (!this.container) return;
+        init(options) {
+            const opts = options || {};
+            const doc = global.document;
+            this._container = opts.container || (doc ? doc.body : null);
 
-            // 建立跳字容器
-            const popup = DOMHelper.createDiv({
-                position: 'absolute',
-                left: `${CONFIG.XP_POPUP_OFFSET_X}px`,
-                top: `${CONFIG.XP_POPUP_OFFSET_Y + (Math.random() - 0.5) * 20}px`,
-                transform: 'translate(-50%, -50%) scale(0.5)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                opacity: '1',
-                transition: 'none',
-                textShadow: '0 2px 4px rgba(0,0,0,0.8)'
-            });
+            this.resetScore(false);
 
-            // 1. 擊殺類型文字
-            const typeText = DOMHelper.createText(killType.name, {
-                color: killType.color,
-                fontSize: '18px',
-                fontWeight: '900',
-                letterSpacing: '2px',
-                fontFamily: '-apple-system, "SF Pro", sans-serif',
-                marginBottom: '4px'
-            });
-
-            // 2. XP 數值
-            const xpText = DOMHelper.createText(`+${killType.xp} XP`, {
-                color: '#ffffff',
-                fontSize: '24px',
-                fontWeight: '900',
-                letterSpacing: '1px',
-                fontFamily: 'monospace'
-            });
-
-            popup.appendChild(typeText);
-            popup.appendChild(xpText);
-
-            this.container.appendChild(popup);
-
-            // 加入活躍列表
-            this.activePopups.push({
-                element: popup,
-                timer: 0,
-                duration: CONFIG.XP_POPUP_DURATION,
-                startY: CONFIG.XP_POPUP_OFFSET_Y,
-                color: killType.color
-            });
-        }
-
-        update(dt) {
-            for (let i = this.activePopups.length - 1; i >= 0; i--) {
-                const p = this.activePopups[i];
-                p.timer += dt;
-
-                const progress = p.timer / p.duration;
-
-                if (progress >= 1.0) {
-                    if (p.element.parentNode) {
-                        p.element.parentNode.removeChild(p.element);
-                    }
-                    this.activePopups.splice(i, 1);
-                    continue;
-                }
-
-                // 動畫曲線
-                // 階段 1: 0.0 - 0.2 (彈出放大)
-                // 階段 2: 0.2 - 0.8 (上升)
-                // 階段 3: 0.8 - 1.0 (淡出)
-
-                let scale = 1.0;
-                let yOffset = 0;
-                let opacity = 1.0;
-
-                if (progress < 0.2) {
-                    // 彈出
-                    const t = progress / 0.2;
-                    scale = 0.5 + t * 0.8; // 0.5 -> 1.3
-                    opacity = t;
-                } else if (progress < 0.8) {
-                    // 上升
-                    const t = (progress - 0.2) / 0.6;
-                    scale = 1.3 - t * 0.3; // 1.3 -> 1.0
-                    yOffset = -t * CONFIG.XP_POPUP_RISE_DISTANCE;
-                    opacity = 1.0;
-                } else {
-                    // 淡出
-                    const t = (progress - 0.8) / 0.2;
-                    scale = 1.0;
-                    yOffset = -CONFIG.XP_POPUP_RISE_DISTANCE;
-                    opacity = 1.0 - t;
-                }
-
-                p.element.style.transform = `translate(-50%, -50%) scale(${scale}) translateY(${yOffset}px)`;
-                p.element.style.opacity = opacity.toString();
+            if (doc && this._container && !this._feedEl) {
+                this._buildDom(doc);
             }
-        }
-    }
 
-    /* =========================================================================
-     * 第四部分：擊殺資訊流 (KillFeedSystem)
-     * 右上角顯示擊殺資訊
-     * ========================================================================= */
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
+            }
 
-    class KillFeedSystem {
-        constructor() {
-            this.container = null;
-            this.activeItems = [];
+            this._syncState();
+            return this;
         }
 
-        init(parent) {
-            this.container = DOMHelper.createDiv({
-                position: 'fixed',
-                top: 'calc(20px + env(safe-area-inset-top))',
-                right: 'calc(20px + env(safe-area-inset-right))',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                gap: '6px',
-                pointerEvents: 'none',
-                zIndex: '210'
-            });
-            parent.appendChild(this.container);
-            Logger.info('擊殺資訊流已建立');
+        _buildDom(doc) {
+            const feed = doc.createElement('div');
+            feed.id = 'tw-killfeed-list';
+            feed.style.cssText = [
+                'position:fixed',
+                'top:98px',
+                'right:18px',
+                'z-index:520',
+                'display:flex',
+                'flex-direction:column',
+                'align-items:flex-end',
+                'gap:5px',
+                'pointer-events:none',
+                'font-family:system-ui,-apple-system,sans-serif'
+            ].join(';');
+
+            const banner = doc.createElement('div');
+            banner.id = 'tw-tactical-banner';
+            banner.style.cssText = [
+                'position:fixed',
+                'top:18%',
+                'left:50%',
+                'transform:translate(-50%,-50%)',
+                'z-index:530',
+                'padding:8px 22px',
+                'border-radius:6px',
+                'background:rgba(10,16,24,0.82)',
+                'border:1px solid rgba(251,191,36,0.45)',
+                'color:#fef08a',
+                'font-size:16px',
+                'font-weight:800',
+                'letter-spacing:0.12em',
+                'opacity:0',
+                'transition:opacity 0.2s ease',
+                'pointer-events:none',
+                'font-family:system-ui,-apple-system,sans-serif'
+            ].join(';');
+
+            this._container.appendChild(feed);
+            this._container.appendChild(banner);
+            this._feedEl = feed;
+            this._bannerEl = banner;
+        }
+
+        _bindEvents() {
+            if (!EventBus || !Events) return;
+
+            if (Events.ENEMY_KILL) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.ENEMY_KILL, (payload) => {
+                        this.recordKill(payload || {});
+                    })
+                );
+            }
+
+            if (Events.WAVE_START) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.WAVE_START, (payload) => {
+                        const wNum = payload && payload.wave ? payload.wave : (GameState && GameState.get ? GameState.get('wave.currentWave', 1) : 1);
+                        this.showBanner('WAVE ' + wNum + ' INBOUND');
+                        this._syncState();
+                    })
+                );
+            }
+
+            if (Events.WAVE_CLEAR) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.WAVE_CLEAR, (payload) => {
+                        const wNum = payload && payload.wave ? payload.wave : 1;
+                        this.score += 250;
+                        this.showBanner('WAVE ' + wNum + ' CLEARED  +250');
+                        this._syncState();
+                    })
+                );
+            }
+
+            if (Events.GAME_RESET) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_RESET, () => {
+                        this.resetScore(true);
+                    })
+                );
+            }
         }
 
         /**
-         * 新增一條擊殺資訊
-         * @param {string} killer 擊殺者
-         * @param {string} weapon 武器
-         * @param {string} victim 受害者
-         * @param {boolean} isHeadshot 是否爆頭
-         * @param {boolean} isPlayer 是否是玩家擊殺
+         * 記錄一次敵軍擊殺、計算分數與新增擊殺播報條目
          */
-        addItem(killer, weapon, victim, isHeadshot = false, isPlayer = false) {
-            if (!this.container) return;
+        recordKill(info) {
+            const data = info || {};
+            const isHeadshot = Boolean(data.isHeadshot);
+            const weaponId = data.weaponId ||
+                (GameState && typeof GameState.get === 'function' ? GameState.get('weapons.activeId', 'M4A1') : 'M4A1');
 
-            // 如果超過最大數量，移除最舊的一條
-            if (this.activeItems.length >= CONFIG.KILLFEED_MAX_ITEMS) {
-                const oldest = this.activeItems.shift();
-                if (oldest && oldest.element.parentNode) {
-                    oldest.element.parentNode.removeChild(oldest.element);
-                }
-            }
-
-            // 建立資訊條
-            const item = DOMHelper.createDiv({
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: 'rgba(10, 12, 16, 0.7)',
-                border: isPlayer ? '1px solid rgba(212, 175, 55, 0.8)' : '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '4px',
-                padding: '6px 12px',
-                backdropFilter: 'blur(4px)',
-                boxShadow: isPlayer ? '0 0 10px rgba(212, 175, 55, 0.4)' : '0 2px 8px rgba(0,0,0,0.5)',
-                transform: 'translateX(100%)',
-                opacity: '0',
-                transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s'
-            });
-
-            // 擊殺者名稱
-            const killerText = DOMHelper.createText(killer, {
-                color: isPlayer ? '#d4af37' : '#3498db',
-                fontWeight: '700',
-                fontSize: '14px',
-                fontFamily: 'monospace'
-            });
-
-            // 武器圖示/名稱
-            const weaponText = DOMHelper.createText(`[${weapon}]`, {
-                color: '#aaa',
-                fontSize: '12px',
-                margin: '0 4px'
-            });
-
-            // 爆頭圖標
-            let headshotIcon = null;
+            this.kills += 1;
             if (isHeadshot) {
-                headshotIcon = DOMHelper.createText('🎯', {
-                    fontSize: '12px',
-                    marginRight: '4px'
-                });
+                this.headshots += 1;
             }
 
-            // 受害者名稱
-            const victimText = DOMHelper.createText(victim, {
-                color: '#e74c3c',
-                fontWeight: '700',
-                fontSize: '14px',
-                fontFamily: 'monospace'
+            this.streak = this._streakTimer > 0 ? this.streak + 1 : 1;
+            this._streakTimer = KILLFEED_CONFIG.streakWindowSec;
+
+            const streakBonus = Math.max(0, this.streak - 1) * KILLFEED_CONFIG.streakStepPoints;
+            const hsBonus = isHeadshot ? KILLFEED_CONFIG.headshotBonusPoints : 0;
+            const gained = KILLFEED_CONFIG.baseKillPoints + hsBonus + streakBonus;
+            this.score += gained;
+
+            this._pushFeedEntry({
+                weaponId: weaponId,
+                isHeadshot: isHeadshot,
+                points: gained,
+                streak: this.streak,
+                age: 0
             });
 
-            item.appendChild(killerText);
-            item.appendChild(weaponText);
-            if (headshotIcon) item.appendChild(headshotIcon);
-            item.appendChild(victimText);
-
-            this.container.appendChild(item);
-
-            // 觸發進入動畫 (稍微延遲以確保 DOM 已渲染)
-            requestAnimationFrame(() => {
-                item.style.transform = 'translateX(0)';
-                item.style.opacity = '1';
-            });
-
-            // 加入活躍列表
-            this.activeItems.push({
-                element: item,
-                timer: 0,
-                duration: CONFIG.KILLFEED_ITEM_DURATION
-            });
+            this._syncState();
+            return gained;
         }
 
-        update(dt) {
-            for (let i = this.activeItems.length - 1; i >= 0; i--) {
-                const item = this.activeItems[i];
-                item.timer += dt;
-
-                // 最後 0.5 秒開始淡出
-                const fadeStart = item.duration - CONFIG.KILLFEED_FADE_OUT;
-                if (item.timer > fadeStart) {
-                    const t = (item.timer - fadeStart) / CONFIG.KILLFEED_FADE_OUT;
-                    item.element.style.opacity = (1.0 - t).toString();
-                    item.element.style.transform = `translateX(${t * 20}px)`;
-                }
-
-                if (item.timer >= item.duration) {
-                    if (item.element.parentNode) {
-                        item.element.parentNode.removeChild(item.element);
-                    }
-                    this.activeItems.splice(i, 1);
-                }
+        _pushFeedEntry(entry) {
+            this._entries.unshift(entry);
+            if (this._entries.length > KILLFEED_CONFIG.maxFeedItems) {
+                this._entries.length = KILLFEED_CONFIG.maxFeedItems;
             }
-        }
-    }
-
-    /* =========================================================================
-     * 第五部分：連殺提示系統 (StreakSystem)
-     * 螢幕中央的連殺大字提示
-     * ========================================================================= */
-
-    class StreakSystem {
-        constructor() {
-            this.container = null;
-            this.activeStreaks = [];
-            this.currentStreak = 0;
-            this.lastKillTime = 0;
-            this.streakTimeout = 3.0; // 超過 3 秒沒擊殺則重置連殺
+            this._renderFeedDom();
         }
 
-        init(parent) {
-            this.container = DOMHelper.createDiv({
-                position: 'fixed',
-                left: '50%',
-                top: '30%',
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-                zIndex: '230',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '10px'
-            });
-            parent.appendChild(this.container);
-            Logger.info('連殺提示系統已建立');
+        _renderFeedDom() {
+            const doc = global.document;
+            if (!doc || !this._feedEl) return;
+
+            this._feedEl.innerHTML = '';
+            for (let i = 0; i < this._entries.length; i = i + 1) {
+                const item = this._entries[i];
+                const lifeRatio = clamp(1 - item.age / KILLFEED_CONFIG.feedItemLifetime, 0, 1);
+
+                const row = doc.createElement('div');
+                row.style.cssText = [
+                    'background:rgba(12,18,28,0.82)',
+                    'border-right:3px solid ' + (item.isHeadshot ? '#fbbf24' : '#ef4444'),
+                    'border-radius:4px',
+                    'padding:4px 10px',
+                    'color:#f1f5f9',
+                    'font-size:12px',
+                    'font-weight:600',
+                    'opacity:' + lifeRatio.toFixed(2)
+                ].join(';');
+
+                const hsTag = item.isHeadshot ? ' [HS]' : '';
+                const streakTag = item.streak >= 2 ? ' x' + item.streak : '';
+                row.textContent = 'YOU  [' + item.weaponId + ']' + hsTag + streakTag + '  +' + item.points;
+                this._feedEl.appendChild(row);
+            }
         }
 
         /**
-         * 新增擊殺，計算連殺
+         * 顯示中央戰術橫幅提示
          */
-        addKill() {
-            const now = performance.now() / 1000;
-            
-            // 檢查是否超時
-            if (now - this.lastKillTime > this.streakTimeout) {
-                this.currentStreak = 0;
-            }
-
-            this.currentStreak++;
-            this.lastKillTime = now;
-
-            // 檢查是否達到里程碑
-            const milestone = STREAK_MILESTONES.find(m => m.count === this.currentStreak);
-            if (milestone) {
-                this._showStreak(milestone.name);
-            }
+        showBanner(text, durationSec) {
+            if (!this._bannerEl) return;
+            this._bannerEl.textContent = String(text || '');
+            this._bannerEl.style.opacity = '1';
+            this._bannerTimer = typeof durationSec === 'number' && durationSec > 0 ? durationSec : 2.2;
         }
 
-        _showStreak(text) {
-            if (!this.container) return;
+        resetScore(clearDom) {
+            this.score = 0;
+            this.kills = 0;
+            this.headshots = 0;
+            this.streak = 0;
+            this._streakTimer = 0;
+            this._bannerTimer = 0;
+            this._entries = [];
 
-            const el = DOMHelper.createText(text, {
-                color: '#ffd700',
-                fontSize: '36px',
-                fontWeight: '900',
-                letterSpacing: '4px',
-                fontFamily: '-apple-system, "SF Pro", sans-serif',
-                textShadow: '0 0 20px rgba(255,215,0,0.8), 0 4px 8px rgba(0,0,0,0.8)',
-                transform: 'scale(0.5)',
-                opacity: '0',
-                transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                textTransform: 'uppercase'
-            });
-
-            this.container.appendChild(el);
-
-            // 彈出動畫
-            requestAnimationFrame(() => {
-                el.style.transform = `scale(${CONFIG.STREAK_SCALE_END})`;
-                el.style.opacity = '1';
-            });
-
-            // 加入活躍列表
-            this.activeStreaks.push({
-                element: el,
-                timer: 0,
-                duration: CONFIG.STREAK_DURATION
-            });
-        }
-
-        update(dt) {
-            for (let i = this.activeStreaks.length - 1; i >= 0; i--) {
-                const s = this.activeStreaks[i];
-                s.timer += dt;
-
-                const progress = s.timer / s.duration;
-
-                if (progress >= 1.0) {
-                    if (s.element.parentNode) {
-                        s.element.parentNode.removeChild(s.element);
-                    }
-                    this.activeStreaks.splice(i, 1);
-                    continue;
-                }
-
-                // 停留 0.5 秒後開始淡出
-                if (progress > 0.7) {
-                    const t = (progress - 0.7) / 0.3;
-                    s.element.style.opacity = (1.0 - t).toString();
-                    s.element.style.transform = `scale(${CONFIG.STREAK_SCALE_END + t * 0.2})`;
-                }
+            if (clearDom !== false) {
+                if (this._feedEl) this._feedEl.innerHTML = '';
+                if (this._bannerEl) this._bannerEl.style.opacity = '0';
             }
-        }
-    }
-
-    /* =========================================================================
-     * 第六部分：波次結算面板 (WaveSummarySystem)
-     * 遊戲結束或波次結束時的統計面板
-     * ========================================================================= */
-
-    class WaveSummarySystem {
-        constructor() {
-            this.modal = null;
-            this.isOpen = false;
-            this.stats = {
-                totalKills: 0,
-                headshots: 0,
-                slideKills: 0,
-                diveKills: 0,
-                totalXP: 0
-            };
+            this._syncState();
         }
 
-        init(parent) {
-            // 建立隱藏的結算面板
-            this.modal = DOMHelper.createDiv({
-                position: 'fixed',
-                inset: '0',
-                backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                backdropFilter: 'blur(8px)',
-                zIndex: '9999',
-                display: 'none',
-                justifyContent: 'center',
-                alignItems: 'center',
-                flexDirection: 'column',
-                pointerEvents: 'auto'
-            });
-
-            parent.appendChild(this.modal);
-
-            // 監聽遊戲結束事件
-            if (WZ.bus) {
-                WZ.bus.on('GAME_OVER', (data) => {
-                    this.stats = data.stats || this.stats;
-                    this.show();
-                });
+        _syncState() {
+            if (GameState && typeof GameState.patch === 'function') {
+                GameState.patch('wave', {
+                    score: this.score,
+                    kills: this.kills,
+                    headshots: this.headshots,
+                    streak: this.streak
+                }, true);
             }
-
-            Logger.info('波次結算面板已建立');
         }
 
         /**
-         * 顯示結算面板
+         * 每幀更新連殺計時、播報條目淡出與中央橫幅計時
          */
-        show() {
-            if (this.isOpen) return;
-            this.isOpen = true;
+        update(deltaTime) {
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
 
-            this.modal.innerHTML = ''; // 清空舊內容
-            this.modal.style.display = 'flex';
-
-            // 面板容器 (帶有彈入動畫)
-            const panel = DOMHelper.createDiv({
-                width: '500px',
-                backgroundColor: 'rgba(20, 22, 28, 0.95)',
-                border: '2px solid #d4af37',
-                borderRadius: '8px',
-                padding: '40px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.8), 0 0 50px rgba(212,175,55,0.2)',
-                transform: 'scale(0.8) translateY(30px)',
-                opacity: '0',
-                transition: `all ${CONFIG.SUMMARY_ANIMATION_DURATION}s cubic-bezier(0.175, 0.885, 0.32, 1.275)`
-            });
-
-            // 標題
-            const title = DOMHelper.createText('任務結算', {
-                color: '#d4af37',
-                fontSize: '32px',
-                fontWeight: '900',
-                letterSpacing: '4px',
-                marginBottom: '30px',
-                textShadow: '0 0 10px rgba(212,175,55,0.5)'
-            });
-            panel.appendChild(title);
-
-            // 統計數據網格
-            const statsGrid = DOMHelper.createDiv({
-                width: '100%',
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '20px',
-                marginBottom: '30px'
-            });
-
-            const createStatBox = (label, value, color = '#fff') => {
-                const box = DOMHelper.createDiv({
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    backgroundColor: 'rgba(255,255,255,0.05)',
-                    padding: '15px',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255,255,255,0.1)'
-                });
-
-                const valueText = DOMHelper.createText(value.toString(), {
-                    color: color,
-                    fontSize: '28px',
-                    fontWeight: '900',
-                    fontFamily: 'monospace'
-                });
-
-                const labelText = DOMHelper.createText(label, {
-                    color: '#888',
-                    fontSize: '12px',
-                    marginTop: '5px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px'
-                });
-
-                box.appendChild(valueText);
-                box.appendChild(labelText);
-                return box;
-            };
-
-            statsGrid.appendChild(createStatBox('總擊殺', this.stats.totalKills, '#fff'));
-            statsGrid.appendChild(createStatBox('爆頭數', this.stats.headshots, '#ffd700'));
-            statsGrid.appendChild(createStatBox('滑鏟擊殺', this.stats.slideKills, '#00f3ff'));
-            statsGrid.appendChild(createStatBox('飛撲擊殺', this.stats.diveKills, '#ff00ff'));
-
-            panel.appendChild(statsGrid);
-
-            // 總 XP 顯示
-            const xpContainer = DOMHelper.createDiv({
-                width: '100%',
-                padding: '20px',
-                backgroundColor: 'rgba(212, 175, 55, 0.1)',
-                border: '1px solid rgba(212, 175, 55, 0.5)',
-                borderRadius: '6px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '40px'
-            });
-
-            const xpLabel = DOMHelper.createText('總獲得經驗值', {
-                color: '#d4af37',
-                fontSize: '18px',
-                fontWeight: '700'
-            });
-
-            const xpValue = DOMHelper.createText(`+${this.stats.totalXP} XP`, {
-                color: '#ffd700',
-                fontSize: '32px',
-                fontWeight: '900',
-                fontFamily: 'monospace',
-                textShadow: '0 0 10px rgba(255,215,0,0.5)'
-            });
-
-            xpContainer.appendChild(xpLabel);
-            xpContainer.appendChild(xpValue);
-            panel.appendChild(xpContainer);
-
-            // 按鈕組
-            const btnGroup = DOMHelper.createDiv({
-                display: 'flex',
-                gap: '20px'
-            });
-
-            // 返回大廳按鈕
-            const lobbyBtn = DOMHelper.createDiv({
-                padding: '12px 30px',
-                backgroundColor: 'transparent',
-                border: '1px solid #888',
-                borderRadius: '4px',
-                color: '#fff',
-                fontSize: '16px',
-                fontWeight: '700',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textAlign: 'center'
-            });
-            lobbyBtn.innerText = '返回大廳';
-            lobbyBtn.onmouseenter = () => { lobbyBtn.style.backgroundColor = 'rgba(255,255,255,0.1)'; };
-            lobbyBtn.onmouseleave = () => { lobbyBtn.style.backgroundColor = 'transparent'; };
-            lobbyBtn.onclick = () => {
-                this.hide();
-                if (WZ.State) WZ.State.transitionTo('LOBBY');
-            };
-
-            // 再次部署按鈕
-            const redeployBtn = DOMHelper.createDiv({
-                padding: '12px 30px',
-                backgroundColor: '#d4af37',
-                border: 'none',
-                borderRadius: '4px',
-                color: '#000',
-                fontSize: '16px',
-                fontWeight: '700',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-                textAlign: 'center'
-            });
-            redeployBtn.innerText = '再次部署';
-            redeployBtn.onmouseenter = () => { redeployBtn.style.backgroundColor = '#fff'; };
-            redeployBtn.onmouseleave = () => { redeployBtn.style.backgroundColor = '#d4af37'; };
-            redeployBtn.onclick = () => {
-                this.hide();
-                if (WZ.State) WZ.State.transitionTo('PLAYING');
-            };
-
-            btnGroup.appendChild(lobbyBtn);
-            btnGroup.appendChild(redeployBtn);
-            panel.appendChild(btnGroup);
-
-            this.modal.appendChild(panel);
-
-            // 觸發彈入動畫
-            requestAnimationFrame(() => {
-                panel.style.transform = 'scale(1) translateY(0)';
-                panel.style.opacity = '1';
-            });
-        }
-
-        hide() {
-            if (!this.isOpen) return;
-            this.isOpen = false;
-            this.modal.style.display = 'none';
-        }
-    }
-
-    /* =========================================================================
-     * 第七部分：擊殺反饋總管系統 (KillfeedManager)
-     * ========================================================================= */
-
-    class KillfeedManager {
-        constructor() {
-            this.xpSystem = new XPPopupSystem();
-            this.killfeedSystem = new KillFeedSystem();
-            this.streakSystem = new StreakSystem();
-            this.summarySystem = new WaveSummarySystem();
-
-            this.rootContainer = null;
-            
-            // 統計追蹤
-            this.stats = {
-                totalKills: 0,
-                headshots: 0,
-                slideKills: 0,
-                diveKills: 0,
-                totalXP: 0
-            };
-        }
-
-        init() {
-            Logger.info('初始化擊殺反饋系統...');
-
-            // 1. 建立根容器
-            this.rootContainer = DOMHelper.createDiv({
-                position: 'fixed',
-                inset: '0',
-                pointerEvents: 'none',
-                zIndex: '200'
-            });
-            document.body.appendChild(this.rootContainer);
-
-            // 2. 初始化各子系統
-            this.xpSystem.init(this.rootContainer);
-            this.killfeedSystem.init(this.rootContainer);
-            this.streakSystem.init(this.rootContainer);
-            this.summarySystem.init(this.rootContainer);
-
-            // 3. 綁定事件
-            this._setupEvents();
-
-            Logger.success('擊殺反饋系統初始化完畢');
-        }
-
-        _setupEvents() {
-            if (!WZ.bus) return;
-
-            // 監聽敵人死亡事件
-            WZ.bus.on('ENEMY_DIED', (data) => {
-                this._handleKill(data);
-            });
-
-            Logger.info('擊殺反饋事件綁定完成');
-        }
-
-        _handleKill(data) {
-            const { enemyId, hitData } = data;
-            
-            if (!hitData) return;
-
-            // 1. 判斷擊殺類型
-            let killType = KILL_TYPES.NORMAL;
-
-            // 檢查玩家狀態
-            let playerState = 'IDLE';
-            if (WZ.PlayerMove) {
-                playerState = WZ.PlayerMove.getState();
+            if (this._streakTimer > 0) {
+                this._streakTimer = Math.max(0, this._streakTimer - dt);
+                if (this._streakTimer <= 0) {
+                    this.streak = 0;
+                    this._syncState();
+                }
             }
 
-            // 檢查命中部位
-            const isHeadshot = hitData.hitPart === 'HEAD';
-
-            // 優先級：飛撲 > 滑鏟 > 爆頭 > 普通
-            if (playerState === 'DIVE') {
-                killType = KILL_TYPES.DIVE;
-                this.stats.diveKills++;
-            } else if (playerState === 'SLIDE') {
-                killType = KILL_TYPES.SLIDE;
-                this.stats.slideKills++;
-            } else if (isHeadshot) {
-                killType = KILL_TYPES.HEADSHOT;
-                this.stats.headshots++;
-            }
-
-            // 更新總統計
-            this.stats.totalKills++;
-            this.stats.totalXP += killType.xp;
-
-            // 2. 觸發 XP 跳字
-            this.xpSystem.trigger(killType);
-
-            // 3. 觸發 Kill Feed
-            // 假設玩家名稱是 "PLAYER"
-            const weaponName = data.weaponId || 'M4A1';
-            this.killfeedSystem.addItem(
-                'YOU', 
-                weaponName, 
-                `Enemy ${enemyId}`, 
-                isHeadshot,
-                true
-            );
-
-            // 4. 觸發連殺
-            this.streakSystem.addKill();
-
-            Logger.event(`玩家擊殺敵人 ${enemyId} (${killType.name})，獲得 ${killType.xp} XP`);
-        }
-
-        update(dt) {
-            this.xpSystem.update(dt);
-            this.killfeedSystem.update(dt);
-            this.streakSystem.update(dt);
-        }
-    }
-
-    /* =========================================================================
-     * 第八部分：導出與初始化
-     * ========================================================================= */
-
-    // 1. 實例化
-    const killfeedManager = new KillfeedManager();
-
-    // 2. 掛載到 WZ 命名空間
-    WZ.UIKillfeed = killfeedManager;
-
-    // 3. 監聽 CORE_SYSTEM_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('CORE_SYSTEM_READY', () => {
-            Logger.system('接收到核心系統就緒事件，準備初始化擊殺反饋系統...');
-            killfeedManager.init();
-            WZ.bus.emit('UI_KILLFEED_READY');
-        });
-    }
-
-    // 4. 將更新掛載到主渲染循環中
-    if (WZ.Renderer) {
-        const originalOnRender = WZ.Renderer.onRender;
-        WZ.Renderer.onRender = (alpha, dt) => {
-            killfeedManager.update(dt);
-            if (originalOnRender) {
-                originalOnRender(alpha, dt);
-            }
-        };
-        Logger.info('KillfeedManager 已成功掛載至主渲染循環');
-    } else {
-        // 延遲掛載
-        const checkInterval = setInterval(() => {
-            if (WZ.Renderer) {
-                clearInterval(checkInterval);
-                const originalOnRender = WZ.Renderer.onRender;
-                WZ.Renderer.onRender = (alpha, dt) => {
-                    killfeedManager.update(dt);
-                    if (originalOnRender) {
-                        originalOnRender(alpha, dt);
+            if (this._entries.length > 0) {
+                let changed = false;
+                for (let i = this._entries.length - 1; i >= 0; i = i - 1) {
+                    this._entries[i].age += dt;
+                    if (this._entries[i].age >= KILLFEED_CONFIG.feedItemLifetime) {
+                        this._entries.splice(i, 1);
+                        changed = true;
                     }
-                };
-                Logger.info('KillfeedManager 延遲掛載成功');
+                }
+                if (changed) {
+                    this._renderFeedDom();
+                }
             }
-        }, 100);
+
+            if (this._bannerTimer > 0) {
+                this._bannerTimer = Math.max(0, this._bannerTimer - dt);
+                if (this._bannerTimer <= 0 && this._bannerEl) {
+                    this._bannerEl.style.opacity = '0';
+                }
+            }
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+            this._entries = [];
+
+            if (this._feedEl && this._feedEl.parentNode) {
+                this._feedEl.parentNode.removeChild(this._feedEl);
+            }
+            if (this._bannerEl && this._bannerEl.parentNode) {
+                this._bannerEl.parentNode.removeChild(this._bannerEl);
+            }
+            this._feedEl = null;
+            this._bannerEl = null;
+            this.initialized = false;
+        }
     }
 
-    Logger.success('js/35_ui_killfeed_score.js 已成功載入並掛載至 window.WZ.UIKillfeed');
+    // ------------------------------------------------------------------------
+    // 2. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const uiKillfeedScoreInstance = new UiKillfeedScore();
 
-}); // 結束工廠函數
+    const moduleExport = {
+        UiKillfeedScoreClass: UiKillfeedScore,
+        instance: uiKillfeedScoreInstance,
+        KILLFEED_CONFIG: KILLFEED_CONFIG
+    };
+
+    TacticalWarfare.UiKillfeedScore = uiKillfeedScoreInstance;
+    TacticalWarfare.registerModule('35_ui_killfeed_score', moduleExport);
+})(window);
