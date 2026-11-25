@@ -136,6 +136,7 @@
             this.recoilOffset = { pitch: 0, yaw: 0 };
             this._isFiringHeld = false;
             this._touchFiring = false;
+            this._activeTouchIds = new Set();
             this._semiTriggered = false;
 
             this.isReloading = false;
@@ -144,6 +145,20 @@
 
             this._unsubscribers = [];
             this._domListeners = [];
+        }
+
+        _resetRuntimeFlags() {
+            this._fireCooldown = 0;
+            this._spreadBonus = 0;
+            this._isFiringHeld = false;
+            this._touchFiring = false;
+            this._activeTouchIds.clear();
+            this._semiTriggered = false;
+            this.isReloading = false;
+            this._reloadTimer = 0;
+            this._reloadWeaponId = null;
+            this.recoilOffset.pitch = 0;
+            this.recoilOffset.yaw = 0;
         }
 
         init(options) {
@@ -159,6 +174,7 @@
                 TacticalWarfare.InputController ||
                 null;
 
+            this._resetRuntimeFlags();
             this.resetAmmo();
             if (GameState && typeof GameState.get === 'function') {
                 this.activeWeaponId = GameState.get('weapons.activeId', 'M4A1') || 'M4A1';
@@ -183,6 +199,12 @@
         _isFireControl(target) {
             if (!target || !target.closest) return false;
             const el = target.closest('[data-action="fire"], [data-fire], .fire-btn, #fire-btn, [aria-label*="fire" i], [aria-label*="開火"]');
+            return Boolean(el);
+        }
+
+        _isMoveJoystick(target) {
+            if (!target || !target.closest) return false;
+            const el = target.closest('[data-joystick="move"], [data-action="move"], .move-stick, #move-stick, .joystick-left');
             return Boolean(el);
         }
 
@@ -211,7 +233,7 @@
             };
 
             const onTouchStart = (ev) => {
-                if (!ev || !ev.touches || ev.touches.length === 0) return;
+                if (!ev || !ev.changedTouches) return;
                 const target = ev.target;
 
                 if (this._isReloadControl(target)) {
@@ -219,20 +241,21 @@
                     return;
                 }
 
-                // 右半側螢幕或明確的開火按鈕觸控皆視為開火輸入
-                let hasRightOrFireTouch = this._isFireControl(target);
-                if (!hasRightOrFireTouch) {
-                    const midX = (global.innerWidth || 1024) * 0.5;
-                    for (let i = 0; i < ev.touches.length; i = i + 1) {
-                        const t = ev.touches[i];
-                        if (t && typeof t.clientX === 'number' && t.clientX >= midX) {
-                            hasRightOrFireTouch = true;
-                            break;
-                        }
-                    }
+                if (this._isMoveJoystick(target)) {
+                    return;
                 }
 
-                if (hasRightOrFireTouch) {
+                // 只要不是純移動搖桿或換彈按鈕，任何觸控（含開火鍵與畫面觸控）都記錄並驅動開火
+                let added = false;
+                for (let i = 0; i < ev.changedTouches.length; i = i + 1) {
+                    const t = ev.changedTouches[i];
+                    if (!t) continue;
+                    const id = typeof t.identifier === 'number' ? t.identifier : i;
+                    this._activeTouchIds.add(id);
+                    added = true;
+                }
+
+                if (added) {
                     if (!this._touchFiring) {
                         this._semiTriggered = false;
                     }
@@ -241,22 +264,19 @@
             };
 
             const onTouchEndOrCancel = (ev) => {
-                if (!ev || !ev.touches || ev.touches.length === 0) {
-                    this._touchFiring = false;
-                    this._semiTriggered = false;
-                    return;
-                }
-                const midX = (global.innerWidth || 1024) * 0.5;
-                let stillHasRightTouch = false;
-                for (let i = 0; i < ev.touches.length; i = i + 1) {
-                    const t = ev.touches[i];
-                    if (t && typeof t.clientX === 'number' && t.clientX >= midX) {
-                        stillHasRightTouch = true;
-                        break;
+                if (ev && ev.changedTouches && this._activeTouchIds.size > 0) {
+                    for (let i = 0; i < ev.changedTouches.length; i = i + 1) {
+                        const t = ev.changedTouches[i];
+                        if (!t) continue;
+                        const id = typeof t.identifier === 'number' ? t.identifier : i;
+                        this._activeTouchIds.delete(id);
                     }
                 }
-                this._touchFiring = stillHasRightTouch;
-                if (!stillHasRightTouch) {
+
+                const remaining = ev && ev.touches ? ev.touches.length : 0;
+                if (remaining === 0 || this._activeTouchIds.size === 0) {
+                    this._activeTouchIds.clear();
+                    this._touchFiring = false;
                     this._semiTriggered = false;
                 }
             };
@@ -269,9 +289,11 @@
             };
 
             const onWindowBlur = () => {
-                this._isFiringHeld = false;
-                this._touchFiring = false;
-                this._semiTriggered = false;
+                this._resetRuntimeFlags();
+            };
+
+            const onPageShowOrHide = () => {
+                this._resetRuntimeFlags();
             };
 
             doc.addEventListener('mousedown', onMouseDown);
@@ -281,6 +303,8 @@
             doc.addEventListener('touchcancel', onTouchEndOrCancel, { passive: true });
             global.addEventListener('keydown', onKeyDown);
             global.addEventListener('blur', onWindowBlur);
+            global.addEventListener('pageshow', onPageShowOrHide);
+            global.addEventListener('pagehide', onPageShowOrHide);
 
             this._domListeners.push({ target: doc, name: 'mousedown', fn: onMouseDown });
             this._domListeners.push({ target: global, name: 'mouseup', fn: onMouseUp });
@@ -289,6 +313,8 @@
             this._domListeners.push({ target: doc, name: 'touchcancel', fn: onTouchEndOrCancel });
             this._domListeners.push({ target: global, name: 'keydown', fn: onKeyDown });
             this._domListeners.push({ target: global, name: 'blur', fn: onWindowBlur });
+            this._domListeners.push({ target: global, name: 'pageshow', fn: onPageShowOrHide });
+            this._domListeners.push({ target: global, name: 'pagehide', fn: onPageShowOrHide });
         }
 
         _bindEvents() {
@@ -303,6 +329,7 @@
                             this.isReloading = false;
                             this._reloadTimer = 0;
                             this._reloadWeaponId = null;
+                            this._semiTriggered = false;
                             this._fireCooldown = Math.max(this._fireCooldown, 0.14);
                             this._syncAmmoToState();
                         }
@@ -332,17 +359,8 @@
             if (Events.GAME_RESET) {
                 this._unsubscribers.push(
                     EventBus.on(Events.GAME_RESET, () => {
+                        this._resetRuntimeFlags();
                         this.resetAmmo();
-                        this._fireCooldown = 0;
-                        this._spreadBonus = 0;
-                        this._isFiringHeld = false;
-                        this._touchFiring = false;
-                        this._semiTriggered = false;
-                        this.isReloading = false;
-                        this._reloadTimer = 0;
-                        this._reloadWeaponId = null;
-                        this.recoilOffset.pitch = 0;
-                        this.recoilOffset.yaw = 0;
                         this._syncAmmoToState();
                     })
                 );
