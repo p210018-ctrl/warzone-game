@@ -5,7 +5,7 @@
  * ============================================================================
  * 職責：
  * 1. 建立並維護大廳啟動／戰局結算覆蓋層與快速操作列（開始作戰、切換槍械、設定面板、重返大廳）
- * 2. 監聽 GAME_START / GAME_OVER / GAME_RESET 事件自動切換覆蓋層與滑鼠指標鎖定
+ * 2. 監聽 GAME_START / GAME_OVER / GAME_RESET 事件自動切換覆蓋層與同步多點觸控輸入層
  * 3. 處理視窗失焦（blur / visibilitychange）自動暫停與頁面卸載（pagehide / beforeunload）資源清理
  * 4. 在文件載入完成後自動初始化並啟動 MainBootstrap，完成整套引擎的開箱執行
  */
@@ -38,6 +38,15 @@
             this._domListeners = [];
         }
 
+        _getInputController() {
+            return (
+                TacticalWarfare.MultiTouchController ||
+                TacticalWarfare.InputController ||
+                TacticalWarfare.InputSystem ||
+                null
+            );
+        }
+
         /**
          * 初始化執行階段殼層與主啟動器
          */
@@ -59,6 +68,11 @@
 
             if (this.bootstrap && typeof this.bootstrap.init === 'function' && !this.bootstrap.initialized) {
                 this.bootstrap.init(opts.bootstrapOptions || {});
+            }
+
+            const inputCtrl = this._getInputController();
+            if (inputCtrl && typeof inputCtrl.init === 'function' && !inputCtrl.initialized) {
+                inputCtrl.init(opts.input || {});
             }
 
             const phase = GameState && typeof GameState.get === 'function'
@@ -138,8 +152,7 @@
             quickBar.style.cssText = [
                 'position:fixed',
                 'top:16px',
-                'left:50%',
-                'transform:translateX(-50%)',
+                'right:185px',
                 'z-index:650',
                 'display:none',
                 'gap:8px',
@@ -249,6 +262,40 @@
             }
         }
 
+        _syncInputController(isCombat) {
+            const ctrl = this._getInputController();
+            if (!ctrl) return;
+
+            if (typeof ctrl.init === 'function' && !ctrl.initialized) {
+                ctrl.init();
+            }
+
+            if (typeof ctrl.setEnabled === 'function') {
+                ctrl.setEnabled(Boolean(isCombat));
+            } else {
+                ctrl.enabled = Boolean(isCombat);
+            }
+
+            if (typeof ctrl.resetAllInputs === 'function' && !isCombat) {
+                ctrl.resetAllInputs();
+            }
+
+            const mode = ctrl.touchControlsMode || 'auto';
+            const canTouch =
+                Boolean(ctrl.isTouchCapable) ||
+                ctrl.activeInputMode === 'touch' ||
+                ('ontouchstart' in global) ||
+                (global.navigator && global.navigator.maxTouchPoints > 0);
+
+            const shouldShowTouchUI = Boolean(isCombat) && mode !== 'off' && (mode === 'always' || canTouch);
+
+            if (typeof ctrl.setTouchUIVisible === 'function') {
+                ctrl.setTouchUIVisible(shouldShowTouchUI);
+            } else if (ctrl.uiLayer && ctrl.uiLayer.classList) {
+                ctrl.uiLayer.classList.toggle('tw-touch-visible', shouldShowTouchUI);
+            }
+        }
+
         _syncOverlayForPhase(phase) {
             const isLobby = phase === 'lobby' || phase === 'menu';
             const isGameOver = phase === 'gameover';
@@ -273,26 +320,40 @@
                     if (wEl) wEl.textContent = String(Number(wave.currentWave || 1));
                 }
             }
+
+            this._syncInputController(isCombat);
         }
 
         startCombat(waveNumber) {
+            if (GameState && typeof GameState.patch === 'function') {
+                GameState.patch({ phase: 'combat' }, true);
+            }
+
             if (this.bootstrap && typeof this.bootstrap.setPaused === 'function') {
                 this.bootstrap.setPaused(false);
             }
             if (this.bootstrap && typeof this.bootstrap.startCombat === 'function') {
                 this.bootstrap.startCombat(waveNumber || 1);
             }
+
             this._syncOverlayForPhase('combat');
+            this._syncInputController(true);
         }
 
         returnToLobby() {
+            if (GameState && typeof GameState.patch === 'function') {
+                GameState.patch({ phase: 'lobby' }, true);
+            }
+
             if (this.bootstrap && typeof this.bootstrap.setPaused === 'function') {
                 this.bootstrap.setPaused(false);
             }
             if (this.bootstrap && typeof this.bootstrap.returnToLobby === 'function') {
                 this.bootstrap.returnToLobby();
             }
+
             this._syncOverlayForPhase('lobby');
+            this._syncInputController(false);
         }
 
         openSettings() {
@@ -311,6 +372,8 @@
         }
 
         dispose() {
+            this._syncInputController(false);
+
             for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
                 if (typeof this._unsubscribers[i] === 'function') {
                     this._unsubscribers[i]();
