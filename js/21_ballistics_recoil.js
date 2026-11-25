@@ -245,7 +245,6 @@
                     return;
                 }
 
-                // 只要不是純移動搖桿或換彈按鈕，任何觸控（含開火鍵與畫面觸控）都記錄並驅動開火
                 let added = false;
                 for (let i = 0; i < ev.changedTouches.length; i = i + 1) {
                     const t = ev.changedTouches[i];
@@ -347,6 +346,32 @@
                 );
             }
 
+            if (Events.FIRE_START || Events.WEAPON_FIRE_START || Events.TOUCH_FIRE) {
+                const startEvt = Events.FIRE_START || Events.WEAPON_FIRE_START || Events.TOUCH_FIRE;
+                this._unsubscribers.push(
+                    EventBus.on(startEvt, (payload) => {
+                        if (payload && typeof payload.active === 'boolean') {
+                            this._touchFiring = payload.active;
+                            if (!payload.active) this._semiTriggered = false;
+                        } else {
+                            this._touchFiring = true;
+                            this._semiTriggered = false;
+                        }
+                    })
+                );
+            }
+
+            if (Events.FIRE_STOP || Events.WEAPON_FIRE_STOP) {
+                const stopEvt = Events.FIRE_STOP || Events.WEAPON_FIRE_STOP;
+                this._unsubscribers.push(
+                    EventBus.on(stopEvt, () => {
+                        this._touchFiring = false;
+                        this._isFiringHeld = false;
+                        this._semiTriggered = false;
+                    })
+                );
+            }
+
             if (Events.PICKUP_COLLECTED) {
                 this._unsubscribers.push(
                     EventBus.on(Events.PICKUP_COLLECTED, (payload) => {
@@ -409,11 +434,16 @@
                 if (
                     GameState.get('weapons.isFiring', false) ||
                     GameState.get('input.fire', false) ||
-                    GameState.get('input.isFiring', false)
+                    GameState.get('input.isFiring', false) ||
+                    GameState.get('controls.fire', false)
                 ) {
                     inputFiring = true;
                 }
-                if (GameState.get('weapons.reloadRequested', false) || GameState.get('input.reload', false)) {
+                if (
+                    GameState.get('weapons.reloadRequested', false) ||
+                    GameState.get('input.reload', false) ||
+                    GameState.get('controls.reload', false)
+                ) {
                     this.startReload(this.activeWeaponId);
                     return false;
                 }
