@@ -3,11 +3,6 @@
  * 14_weapon_m4_urgi.js
  * M4A1 URGI 突擊步槍 3D 模型、槍口錨點與專屬槍械動畫模組
  * ============================================================================
- * 職責：
- * 1. 建構 M4A1 URGI 步槍多層級 3D 網格（機匣、URGI 護木、槍管、槍口、彈匣、槍托、瞄具）
- * 2. 提供世界空間與武器空間的精準槍口火光錨點（muzzlePoint）與拋殼口（ejectionPort）
- * 3. 實作開火後座位移／上揚、彈匣裝填動畫、腰射／開鏡位置插值與顯示切換
- * 4. 監聽 EventBus 的開火、換彈與裝備事件，自動驅動槍械視覺回饋
  */
 (function (global) {
     'use strict';
@@ -20,9 +15,6 @@
     const Events = TacticalWarfare.Events || {};
     const EventBus = TacticalWarfare.EventBus;
 
-    // ------------------------------------------------------------------------
-    // 1. M4A1 URGI 槍械視覺與運動參數表
-    // ------------------------------------------------------------------------
     const M4_URGI_SPECS = Object.freeze({
         id: 'M4A1',
         displayName: 'M4A1 URGI',
@@ -37,12 +29,8 @@
     });
 
     function clamp(val, minVal, maxVal) {
-        if (val < minVal) {
-            return minVal;
-        }
-        if (val > maxVal) {
-            return maxVal;
-        }
+        if (val < minVal) return minVal;
+        if (val > maxVal) return maxVal;
         return val;
     }
 
@@ -50,9 +38,6 @@
         return a + (b - a) * t;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. WeaponM4Urgi 主類別
-    // ------------------------------------------------------------------------
     class WeaponM4Urgi {
         constructor() {
             this.initialized = false;
@@ -67,13 +52,12 @@
             this.muzzleFlashMat = null;
 
             this._materials = null;
-            this._isVisible = false;
+            this._isVisible = true;
             this._isAiming = false;
             this._isSprinting = false;
             this._reloadProgress = 0;
             this._isReloading = false;
 
-            // 後座力與槍口火光動態狀態
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
             this._recoilRotX = 0;
@@ -83,9 +67,23 @@
             this._unsubscribers = [];
         }
 
-        /**
-         * 初始化 M4A1 URGI 模型並掛載至武器場景或指定父節點
-         */
+        _resolveDefaultParent() {
+            const rc = TacticalWarfare.RendererCore;
+            if (!rc) return null;
+            if (typeof rc.getWeaponCamera === 'function') {
+                const wc = rc.getWeaponCamera();
+                if (wc) return wc;
+            }
+            if (typeof rc.getCamera === 'function') {
+                const cam = rc.getCamera();
+                if (cam) return cam;
+            }
+            if (typeof rc.getScene === 'function') {
+                return rc.getScene();
+            }
+            return null;
+        }
+
         init(options) {
             const THREE = global.THREE;
             if (!THREE) {
@@ -93,25 +91,32 @@
             }
 
             const opts = options || {};
-            this.parentGroup = opts.parentGroup ||
-                (TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getWeaponCamera()) ||
-                null;
+            this.parentGroup = opts.parentGroup || opts.camera || this._resolveDefaultParent();
             this.textureFactory = opts.textureFactory || TacticalWarfare.PBRTextureFactory || null;
 
             if (!this.parentGroup) {
-                throw new Error('14_weapon_m4_urgi.js 找不到有效的武器相機或父節點');
+                return this;
+            }
+
+            const rc = TacticalWarfare.RendererCore;
+            const scene = rc && typeof rc.getScene === 'function' ? rc.getScene() : null;
+            if (scene && this.parentGroup !== scene && !this.parentGroup.parent) {
+                scene.add(this.parentGroup);
             }
 
             this.clear();
             this._buildMaterials();
             this._buildMeshHierarchy();
-            this.setVisible(Boolean(opts.visible));
+
+            const initialVisible = typeof opts.visible === 'boolean' ? opts.visible : true;
+            this.setVisible(initialVisible);
 
             if (!this.initialized) {
                 this._bindEvents();
                 this.initialized = true;
             }
 
+            this.update(0.016, { x: 0, y: 0 });
             return this;
         }
 
@@ -130,7 +135,6 @@
                 })
                 : new THREE.MeshStandardMaterial({ color: 0x24282e, roughness: 0.36, metalness: 0.85 });
 
-            // URGI 經典沙色／古銅陽極氧化護木與槍托
             const urgiBronzeMat = tf && typeof tf.getMaterial === 'function'
                 ? tf.getMaterial({
                     cacheKey: 'm4_urgi_bronze',
@@ -194,7 +198,6 @@
             this.weaponBodyGroup.name = 'M4UrgiBodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 上下機匣
             const upperGeo = new THREE.BoxGeometry(0.044, 0.052, 0.21);
             const upperMesh = new THREE.Mesh(upperGeo, this._materials.receiver);
             upperMesh.position.set(0, 0.008, -0.05);
@@ -205,14 +208,12 @@
             lowerMesh.position.set(0, -0.028, -0.035);
             this.weaponBodyGroup.add(lowerMesh);
 
-            // 握把
             const gripGeo = new THREE.BoxGeometry(0.032, 0.088, 0.042);
             const gripMesh = new THREE.Mesh(gripGeo, this._materials.bronze);
             gripMesh.position.set(0, -0.078, -0.01);
             gripMesh.rotation.x = 0.24;
             this.weaponBodyGroup.add(gripMesh);
 
-            // 2. 伸縮槍托
             const stockRodGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.18, 10);
             stockRodGeo.rotateX(Math.PI / 2);
             const stockRod = new THREE.Mesh(stockRodGeo, this._materials.barrel);
@@ -224,13 +225,11 @@
             stockBody.position.set(0, -0.022, 0.18);
             this.weaponBodyGroup.add(stockBody);
 
-            // 3. URGI 自由浮動護木
             const handguardGeo = new THREE.BoxGeometry(0.046, 0.050, 0.27);
             const handguardMesh = new THREE.Mesh(handguardGeo, this._materials.bronze);
             handguardMesh.position.set(0, 0.010, -0.285);
             this.weaponBodyGroup.add(handguardMesh);
 
-            // 4. 槍管與槍口制退器
             const barrelGeo = new THREE.CylinderGeometry(0.009, 0.011, 0.16, 12);
             barrelGeo.rotateX(Math.PI / 2);
             const barrelMesh = new THREE.Mesh(barrelGeo, this._materials.barrel);
@@ -243,7 +242,6 @@
             muzzleBrake.position.set(0, 0.012, -0.56);
             this.weaponBodyGroup.add(muzzleBrake);
 
-            // 5. 全息反射式瞄具框與紅點準星
             const opticBaseGeo = new THREE.BoxGeometry(0.038, 0.012, 0.072);
             const opticBase = new THREE.Mesh(opticBaseGeo, this._materials.receiver);
             opticBase.position.set(0, 0.040, -0.055);
@@ -259,7 +257,6 @@
             dotMesh.position.set(0, 0.064, -0.055);
             this.weaponBodyGroup.add(dotMesh);
 
-            // 6. 彈匣網格（獨立抽換動畫用）
             const magGeo = new THREE.BoxGeometry(0.032, 0.135, 0.062);
             this.magazineMesh = new THREE.Mesh(magGeo, this._materials.mag);
             this.magazineMesh.name = 'M4UrgiMagazine';
@@ -267,7 +264,6 @@
             this.magazineMesh.rotation.x = 0.14;
             this.weaponBodyGroup.add(this.magazineMesh);
 
-            // 7. 槍口火光錨點與星芒火光網格
             this.muzzleAnchor = new THREE.Object3D();
             this.muzzleAnchor.name = 'M4UrgiMuzzleAnchor';
             this.muzzleAnchor.position.set(
@@ -286,19 +282,13 @@
         }
 
         _bindEvents() {
-            if (!EventBus || !Events) {
-                return;
-            }
+            if (!EventBus || !Events) return;
 
             if (Events.WEAPON_FIRE) {
                 this._unsubscribers.push(
                     EventBus.on(Events.WEAPON_FIRE, (payload) => {
-                        if (!this._isVisible) {
-                            return;
-                        }
-                        if (payload && payload.weaponId && payload.weaponId !== M4_URGI_SPECS.id) {
-                            return;
-                        }
+                        if (!this._isVisible) return;
+                        if (payload && payload.weaponId && payload.weaponId !== M4_URGI_SPECS.id) return;
                         this.triggerFireKick();
                     })
                 );
@@ -347,9 +337,6 @@
             }
         }
 
-        /**
-         * 觸發開火後座跳動與槍口火光
-         */
         triggerFireKick() {
             this._recoilPosZ = Math.min(0.08, this._recoilPosZ + M4_URGI_SPECS.recoilKickZ);
             this._recoilPosY = Math.min(0.035, this._recoilPosY + M4_URGI_SPECS.recoilKickY);
@@ -385,31 +372,28 @@
             this._isSprinting = Boolean(sprinting);
         }
 
-        /**
-         * 取得槍口錨點世界座標（若需要主世界座標可轉至世界空間）
-         */
         getMuzzleWorldPosition(targetVector) {
             const THREE = global.THREE;
             const out = targetVector || new THREE.Vector3();
-            if (this.muzzleAnchor) {
+            if (this.muzzleAnchor && this.rootGroup) {
                 this.rootGroup.updateMatrixWorld(true);
                 this.muzzleAnchor.getWorldPosition(out);
             }
             return out;
         }
 
-        /**
-         * 每幀更新槍身位置插值、後座力回彈、彈匣抽換與火光消退
-         */
         update(deltaTime, bobOffset) {
+            if (!this.rootGroup && global.THREE) {
+                this.init({ visible: this._isVisible });
+            }
             if (!this._isVisible || !this.rootGroup) {
                 return;
             }
 
+            this.rootGroup.visible = true;
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const alpha = 1 - Math.exp(-16 * dt);
 
-            // 決定目標基礎位置（開鏡居中、衝刺收槍、其餘腰射）
             let targetPos = M4_URGI_SPECS.hipPosition;
             let targetRotX = 0;
             let targetRotY = 0;
@@ -438,7 +422,6 @@
             this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY, alpha);
             this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ, alpha);
 
-            // 後座力回彈
             const recoilDecay = Math.exp(-22 * dt);
             this._recoilPosZ *= recoilDecay;
             this._recoilPosY *= recoilDecay;
@@ -450,7 +433,6 @@
                 this.weaponBodyGroup.rotation.set(this._recoilRotX, 0, this._recoilRotZ);
             }
 
-            // 換彈彈匣抽插動畫（0.0~0.45 退匣、0.45~0.55 換匣、0.55~1.0 插匣）
             if (this.magazineMesh) {
                 let magDropY = 0;
                 if (this._isReloading) {
@@ -466,7 +448,6 @@
                 this.magazineMesh.position.y = -0.105 + magDropY;
             }
 
-            // 槍口火光計時消退
             if (this._flashTimer > 0) {
                 this._flashTimer = Math.max(0, this._flashTimer - dt);
                 if (this._flashTimer <= 0 && this.muzzleFlashMesh && this.muzzleFlashMat) {
@@ -511,9 +492,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const weaponM4UrgiInstance = new WeaponM4Urgi();
 
     const moduleExport = {
