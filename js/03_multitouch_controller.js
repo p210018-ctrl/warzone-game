@@ -3,17 +3,6 @@
  * 03_multitouch_controller.js
  * 多點觸控虛擬操縱系統與桌面鍵鼠（Pointer Lock）統一輸入核心
  * ============================================================================
- * 職責：
- * 1. 提供與裝置無關的統一輸入介面（InputController / MultiTouchController），
- *    讓後續玩家移動、開火與武器系統無需區分手機觸控或電腦鍵鼠。
- * 2. 實作真正的多指獨立追蹤（strict touch.identifier !== null）：
- *    - 左半區浮動虛擬搖桿（移動 + 前推到底自動觸發衝刺）
- *    - 右半區自由滑動視角（支援微調精準瞄準與快速甩槍加速曲線）
- *    - 右側開火鍵支援「按住射擊同時滑動壓槍／跟槍」
- *    - 左側輔助開火鍵與戰術快捷鍵（開鏡、換彈、跳躍、蹲下、切槍、手榴彈、暫停）
- * 3. 整合桌面端 WASD 移動、Shift 衝刺、C/Ctrl 蹲下、Space 跳躍、R 換彈、
- *    G 投擲、1~3/Q/滾輪切槍，以及滑鼠 Pointer Lock 與異常抖動濾波。
- * 4. 視窗失焦、暫停或退出鎖定時自動清空按鍵狀態，杜絕卡鍵與無限開火。
  */
 (function (global) {
     'use strict';
@@ -27,9 +16,6 @@
     const EventBus = TacticalWarfare.EventBus;
     const GameState = TacticalWarfare.GameState;
 
-    // ------------------------------------------------------------------------
-    // 1. 輸入預設參數與按鍵對照表
-    // ------------------------------------------------------------------------
     const INPUT_DEFAULTS = Object.freeze({
         mouseSensitivity: 0.0022,
         touchSensitivity: 0.0048,
@@ -45,9 +31,6 @@
     const TOUCH_UI_STYLE_ID = 'tw-multitouch-ui-styles';
     const TOUCH_UI_CONTAINER_ID = 'touch-controls-layer';
 
-    // ------------------------------------------------------------------------
-    // 2. 動態注入戰術觸控 HUD 樣式（免依賴外部 CSS）
-    // ------------------------------------------------------------------------
     function injectTouchStyles() {
         const doc = global.document;
         if (!doc || doc.getElementById(TOUCH_UI_STYLE_ID)) {
@@ -248,9 +231,6 @@
         doc.head.appendChild(style);
     }
 
-    // ------------------------------------------------------------------------
-    // 3. MultiTouchController 主類別（整合觸控與桌面鍵鼠）
-    // ------------------------------------------------------------------------
     class MultiTouchController {
         constructor() {
             this.initialized = false;
@@ -401,9 +381,6 @@
             }
         }
 
-        // --------------------------------------------------------------------
-        // 4. 觸控 HUD 建立與按鈕管理
-        // --------------------------------------------------------------------
         _buildTouchUI() {
             const doc = global.document;
             let container = doc.getElementById(TOUCH_UI_CONTAINER_ID);
@@ -477,9 +454,6 @@
             this.joystickKnob.style.transform = 'translate3d(0px, 0px, 0px)';
         }
 
-        // --------------------------------------------------------------------
-        // 5. 多點觸控事件處理
-        // --------------------------------------------------------------------
         _bindTouchEvents() {
             const passiveFalse = { passive: false };
 
@@ -516,20 +490,13 @@
         }
 
         _onLeftZoneTouchStart(event) {
-            if (!this.enabled) {
-                return;
-            }
+            if (!this.enabled) return;
             event.preventDefault();
             this._markTouchModeActive();
-
-            if (this._joystickTouchId !== null) {
-                return;
-            }
+            if (this._joystickTouchId !== null) return;
 
             const touch = event.changedTouches[0];
-            if (!touch) {
-                return;
-            }
+            if (!touch) return;
 
             this._joystickTouchId = touch.identifier;
             this._joystickOrigin.x = touch.clientX;
@@ -544,15 +511,11 @@
         }
 
         _onLeftZoneTouchMove(event) {
-            if (!this.enabled || this._joystickTouchId === null) {
-                return;
-            }
+            if (!this.enabled || this._joystickTouchId === null) return;
             event.preventDefault();
 
             const touch = this._findTouchById(event.changedTouches, this._joystickTouchId);
-            if (!touch) {
-                return;
-            }
+            if (!touch) return;
 
             const maxR = this.config.joystickMaxRadius;
             let dx = touch.clientX - this._joystickOrigin.x;
@@ -566,20 +529,13 @@
             }
 
             this.joystickKnob.style.transform = 'translate3d(' + dx.toFixed(1) + 'px, ' + dy.toFixed(1) + 'px, 0px)';
-
-            const normX = dx / maxR;
-            const normY = -dy / maxR;
-            this._updateTouchMove(normX, normY);
+            this._updateTouchMove(dx / maxR, -dy / maxR);
         }
 
         _onLeftZoneTouchEnd(event) {
-            if (this._joystickTouchId === null) {
-                return;
-            }
+            if (this._joystickTouchId === null) return;
             const touch = this._findTouchById(event.changedTouches, this._joystickTouchId);
-            if (!touch) {
-                return;
-            }
+            if (!touch) return;
 
             event.preventDefault();
             this._joystickTouchId = null;
@@ -621,20 +577,13 @@
         }
 
         _onRightZoneTouchStart(event) {
-            if (!this.enabled) {
-                return;
-            }
+            if (!this.enabled) return;
             event.preventDefault();
             this._markTouchModeActive();
-
-            if (this._lookTouchId !== null) {
-                return;
-            }
+            if (this._lookTouchId !== null) return;
 
             const touch = event.changedTouches[0];
-            if (!touch) {
-                return;
-            }
+            if (!touch) return;
 
             this._lookTouchId = touch.identifier;
             this._lookLastPos.x = touch.clientX;
@@ -643,15 +592,11 @@
         }
 
         _onRightZoneTouchMove(event) {
-            if (!this.enabled || this._lookTouchId === null) {
-                return;
-            }
+            if (!this.enabled || this._lookTouchId === null) return;
             event.preventDefault();
 
             const touch = this._findTouchById(event.changedTouches, this._lookTouchId);
-            if (!touch) {
-                return;
-            }
+            if (!touch) return;
 
             const now = global.performance ? global.performance.now() : Date.now();
             const dtMs = Math.max(4, now - this._lookLastTime);
@@ -666,21 +611,15 @@
         }
 
         _onRightZoneTouchEnd(event) {
-            if (this._lookTouchId === null) {
-                return;
-            }
+            if (this._lookTouchId === null) return;
             const touch = this._findTouchById(event.changedTouches, this._lookTouchId);
-            if (!touch) {
-                return;
-            }
+            if (!touch) return;
             event.preventDefault();
             this._lookTouchId = null;
         }
 
         _onButtonTouchStart(event) {
-            if (!this.enabled) {
-                return;
-            }
+            if (!this.enabled) return;
             event.preventDefault();
             event.stopPropagation();
             this._markTouchModeActive();
@@ -713,7 +652,6 @@
                     this._emitInputAction('crouch', this._touchCrouchToggled);
                 } else if (action === 'jump') {
                     this.pressedQueue.jump = true;
-                    this.actions.jump = true;
                     this._emitInputAction('jump', true);
                 } else if (action === 'reload') {
                     this.pressedQueue.reload = true;
@@ -734,13 +672,9 @@
         }
 
         _onButtonTouchMove(event) {
-            if (!this.enabled || this._fireDragTouchId === null) {
-                return;
-            }
+            if (!this.enabled || this._fireDragTouchId === null) return;
             const touch = this._findTouchById(event.changedTouches, this._fireDragTouchId);
-            if (!touch) {
-                return;
-            }
+            if (!touch) return;
 
             event.preventDefault();
             event.stopPropagation();
@@ -764,9 +698,7 @@
             for (let i = 0; i < event.changedTouches.length; i = i + 1) {
                 const touch = event.changedTouches[i];
                 const record = this._buttonTouchMap.get(touch.identifier);
-                if (!record) {
-                    continue;
-                }
+                if (!record) continue;
 
                 this._buttonTouchMap.delete(touch.identifier);
                 record.element.classList.remove('pressed');
@@ -778,8 +710,6 @@
                     }
                 } else if (record.action === 'fireHold') {
                     this._touchFireCount = Math.max(0, this._touchFireCount - 1);
-                } else if (record.action === 'jump') {
-                    this.actions.jump = false;
                 }
             }
 
@@ -798,9 +728,7 @@
         }
 
         _findTouchById(touchList, targetId) {
-            if (!touchList) {
-                return null;
-            }
+            if (!touchList) return null;
             for (let i = 0; i < touchList.length; i = i + 1) {
                 if (touchList[i].identifier === targetId) {
                     return touchList[i];
@@ -809,9 +737,6 @@
             return null;
         }
 
-        // --------------------------------------------------------------------
-        // 6. 桌面端鍵盤與滑鼠事件處理
-        // --------------------------------------------------------------------
         _bindDesktopEvents() {
             const doc = global.document;
 
@@ -833,6 +758,14 @@
                     this._resetJoystickVisualPosition();
                 }
             };
+            this._boundHandlers.canvasClick = (e) => {
+                if (!this.enabled || this.isTouchCapable) return;
+                if (e.target && e.target.closest && e.target.closest('button, [data-rt], .tw-btn')) return;
+                const phase = GameState && typeof GameState.get === 'function' ? GameState.get('phase', '') : '';
+                if ((phase === 'combat' || phase === 'playing') && !this.pointerLocked) {
+                    this.requestPointerLock(this.pointerLockElement);
+                }
+            };
 
             global.addEventListener('keydown', this._boundHandlers.keyDown);
             global.addEventListener('keyup', this._boundHandlers.keyUp);
@@ -844,12 +777,11 @@
             global.addEventListener('blur', this._boundHandlers.windowBlur);
             global.addEventListener('resize', this._boundHandlers.windowResize);
             doc.addEventListener('pointerlockchange', this._boundHandlers.pointerLockChange);
+            doc.addEventListener('click', this._boundHandlers.canvasClick);
         }
 
         _onKeyDown(event) {
-            if (!this.enabled) {
-                return;
-            }
+            if (!this.enabled) return;
             const tag = event.target && event.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
                 return;
@@ -908,9 +840,7 @@
         }
 
         _onMouseMove(event) {
-            if (!this.enabled || !this.pointerLocked) {
-                return;
-            }
+            if (!this.enabled || !this.pointerLocked) return;
 
             const limit = this.config.mouseSpikeLimit;
             const rawX = event.movementX || 0;
@@ -931,9 +861,7 @@
         }
 
         _onMouseDown(event) {
-            if (!this.enabled || !this.pointerLocked) {
-                return;
-            }
+            if (!this.enabled || !this.pointerLocked) return;
             if (event.button === 0) {
                 this._mouseButtons.left = true;
             } else if (event.button === 2) {
@@ -944,6 +872,7 @@
         }
 
         _onMouseUp(event) {
+            if (!this.enabled) return;
             if (event.button === 0) {
                 this._mouseButtons.left = false;
             } else if (event.button === 2) {
@@ -954,9 +883,7 @@
         }
 
         _onWheel(event) {
-            if (!this.enabled || !this.pointerLocked) {
-                return;
-            }
+            if (!this.enabled || !this.pointerLocked) return;
             if (event.deltaY > 4) {
                 this.pressedQueue.weaponNext = true;
                 this._emitInputAction('weaponNext', true);
@@ -987,13 +914,8 @@
             }
         }
 
-        // --------------------------------------------------------------------
-        // 7. 跨模組事件連動與狀態合併
-        // --------------------------------------------------------------------
         _bindSystemEvents() {
-            if (!EventBus) {
-                return;
-            }
+            if (!EventBus) return;
 
             if (Events.SETTINGS_CHANGED) {
                 this._unsubscribers.push(
@@ -1062,7 +984,9 @@
 
             const keySprint = Boolean(this._keysDown.ShiftLeft || this._keysDown.ShiftRight);
             this.actions.sprint = (keySprint || this._touchMove.autoSprint) && !this.actions.ads && !this.actions.crouch;
-            this.actions.jump = Boolean(this._keysDown.Space) || this.actions.jump;
+
+            const touchJumpHeld = this._buttonTouchMap && Array.from(this._buttonTouchMap.values()).some((r) => r.action === 'jump');
+            this.actions.jump = Boolean(this._keysDown.Space) || touchJumpHeld;
         }
 
         _markTouchModeActive() {
@@ -1096,9 +1020,7 @@
         }
 
         _emitInputAction(actionName, value) {
-            if (!EventBus) {
-                return;
-            }
+            if (!EventBus) return;
             EventBus.emit(Events.INPUT_ACTION || 'input:action', {
                 action: actionName,
                 value: value,
@@ -1106,9 +1028,6 @@
             });
         }
 
-        // --------------------------------------------------------------------
-        // 8. 對外公開 API
-        // --------------------------------------------------------------------
         requestPointerLock(targetElement) {
             const el = targetElement || this.pointerLockElement || global.document.body;
             if (!el || (this.isTouchCapable && this.activeInputMode === 'touch')) {
@@ -1265,6 +1184,9 @@
             global.removeEventListener('blur', this._boundHandlers.windowBlur);
             global.removeEventListener('resize', this._boundHandlers.windowResize);
             doc.removeEventListener('pointerlockchange', this._boundHandlers.pointerLockChange);
+            if (this._boundHandlers.canvasClick) {
+                doc.removeEventListener('click', this._boundHandlers.canvasClick);
+            }
 
             for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
                 if (typeof this._unsubscribers[i] === 'function') {
@@ -1281,9 +1203,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 9. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const controllerInstance = new MultiTouchController();
 
     const moduleExport = {
