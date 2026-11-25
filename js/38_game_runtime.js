@@ -1,4 +1,4 @@
-/* Ultimate FPS Vertical Slice - Gun Feel & Particles Edition */
+/* Ultimate FPS Vertical Slice - Hitmarker, Reload Animation & Heavy Recoil Edition */
 (function (global) {
   'use strict';
   const THREE = global.THREE;
@@ -16,7 +16,7 @@
       this.keys = new Set();
       
       this.enemies = [];
-      this.particles = []; // 用於管理所有特效 (火花、彈殼)
+      this.particles = []; 
       
       // 玩家數值
       this.health = 150; this.armor = 150; this.mag = 30; this.reserve = 120;
@@ -27,21 +27,22 @@
       this.stick = { active: false, pointerId: null, x: 0, y: 0, dx: 0, dy: 0 };
       this.lookPointer = null; this.fireHeld = false;
       
-      // 💥 槍械抖動與後座力變數
-      this.recoilPitch = 0;      // 實體後座力 (相機上抬)
+      // 💥 槍械抖動與後座力變數 (數值已加大)
+      this.recoilPitch = 0;      
       this.recoilYaw = 0;
-      this.weaponKickZ = 0;      // 視覺後座力 (槍枝後退)
-      this.weaponKickY = 0;      // 視覺後座力 (槍枝上抬)
-      this.weaponKickRot = 0;    // 視覺後座力 (槍枝翻轉)
-      this.bobTime = 0;          // 移動搖晃時間
-      this.screenShake = 0;      // 螢幕震動
+      this.weaponKickZ = 0;      
+      this.weaponKickY = 0;      
+      this.weaponKickRot = 0;    
+      this.bobTime = 0;          
+      this.screenShake = 0;      
 
+      this._initHitmarkerUI(); // 初始化紅叉
       this._loop = this._loop.bind(this);
       
       try {
         this._bindInput();
         this._bindUI();
-      } catch (e) { alert("UI绑定失败：" + e.message); }
+      } catch (e) { console.error(e); }
 
       if (!THREE || !this.canvas) return;
       
@@ -54,6 +55,43 @@
         console.error('[WZ Runtime] 初始化失敗', error); 
         alert(`3D 初始化失敗：${error.message}`);
       }
+    }
+
+    // 動態生成紅叉 UI 和樣式
+    _initHitmarkerUI() {
+      const style = document.createElement('style');
+      style.innerHTML = `
+        #hitmarker {
+          position: fixed; left: 50%; top: 50%; width: 40px; height: 40px;
+          transform: translate(-50%, -50%) scale(1); pointer-events: none;
+          z-index: 100; opacity: 0; transition: opacity 0.1s;
+        }
+        .hm-line {
+          position: absolute; width: 2px; height: 10px; background: #ff3333;
+          box-shadow: 0 0 4px #ff0000, 0 0 8px #ff0000;
+        }
+        /* 四根斜線組成 X */
+        .hm-line:nth-child(1) { left: 10px; top: 0px; transform: rotate(-45deg); }
+        .hm-line:nth-child(2) { right: 10px; top: 0px; transform: rotate(45deg); }
+        .hm-line:nth-child(3) { left: 10px; bottom: 0px; transform: rotate(45deg); }
+        .hm-line:nth-child(4) { right: 10px; bottom: 0px; transform: rotate(-45deg); }
+      `;
+      document.head.appendChild(style);
+      
+      this.hitmarkerEl = document.createElement('div');
+      this.hitmarkerEl.id = 'hitmarker';
+      this.hitmarkerEl.innerHTML = '<div class="hm-line"></div><div class="hm-line"></div><div class="hm-line"></div><div class="hm-line"></div>';
+      document.body.appendChild(this.hitmarkerEl);
+    }
+
+    _showHitmarker() {
+      this.hitmarkerEl.style.opacity = '1';
+      this.hitmarkerEl.style.transform = 'translate(-50%, -50%) scale(1.3)';
+      clearTimeout(this.hmTimer);
+      this.hmTimer = setTimeout(() => {
+        this.hitmarkerEl.style.opacity = '0';
+        this.hitmarkerEl.style.transform = 'translate(-50%, -50%) scale(1)';
+      }, 150);
     }
 
     _initThree() {
@@ -104,47 +142,35 @@
 
     _createWeaponView() {
       this.weaponGroup = new THREE.Group();
-      // 武器的基準位置（放在右下角）
       this.weaponBasePos = new THREE.Vector3(0.25, -0.25, -0.4);
       this.weaponGroup.position.copy(this.weaponBasePos);
       this.camera.add(this.weaponGroup);
 
-      // 建立一把幾何體精緻 M4（防止 GLTF 加載失敗導致崩潰）
       const black = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.8, roughness: 0.3 });
       const tan = new THREE.MeshStandardMaterial({ color: 0xb89f7d, metalness: 0.2, roughness: 0.6 });
       
       const addPart = (geo, mat, x, y, z, rx=0) => {
         const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(x, y, z);
-        mesh.rotation.x = rx;
-        this.weaponGroup.add(mesh);
-        return mesh;
+        mesh.position.set(x, y, z); mesh.rotation.x = rx;
+        this.weaponGroup.add(mesh); return mesh;
       };
       
-      // 槍身
       addPart(new THREE.BoxGeometry(0.08, 0.1, 0.4), black, 0, 0, 0);
-      // 護木
       addPart(new THREE.BoxGeometry(0.07, 0.08, 0.3), tan, 0, 0, -0.35);
-      // 槍管
       addPart(new THREE.CylinderGeometry(0.015, 0.015, 0.4, 8), black, 0, 0.01, -0.6, Math.PI/2);
-      // 彈匣
       addPart(new THREE.BoxGeometry(0.05, 0.15, 0.1), black, 0, -0.12, -0.05);
-      // 握把
       addPart(new THREE.BoxGeometry(0.05, 0.15, 0.08), black, 0, -0.12, 0.15);
 
-      // 槍口火焰 (Muzzle Flash)
       const flashMat = new THREE.MeshBasicMaterial({ color: 0xffdd44, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
       this.muzzleFlash = new THREE.Mesh(new THREE.SphereGeometry(0.06, 4, 4), flashMat);
-      this.muzzleFlash.position.set(0, 0.01, -0.85); // 槍口位置
+      this.muzzleFlash.position.set(0, 0.01, -0.85);
       this.muzzleFlash.visible = false;
       this.weaponGroup.add(this.muzzleFlash);
 
-      // 槍口點光源 (照亮周圍)
       this.muzzleLight = new THREE.PointLight(0xffaa00, 0, 5);
       this.muzzleLight.position.copy(this.muzzleFlash.position);
       this.weaponGroup.add(this.muzzleLight);
 
-      // 音效
       this.gunSound = new Audio('https://actions.google.com/sounds/v1/weapons/machine_gun_fire.ogg');
       this.gunSound.volume = 0.3;
     }
@@ -226,86 +252,74 @@
     }
 
     jump(){if(this.state==='combat'&&this.grounded){this.jumpVelocity=6;this.grounded=false}}
-    reload(){if(this.state!=='combat'||this.reloadTimer>0||this.mag>=30||this.reserve<=0)return;this.reloadTimer=1.5}
+    
+    reload(){
+      if(this.state!=='combat'||this.reloadTimer>0||this.mag>=30||this.reserve<=0)return;
+      this.reloadTimer=1.8; // 換彈時間 1.8 秒
+    }
     
     fire(){
       if(this.state!=='combat'||this.reloadTimer>0||this.fireTimer>0||this.mag<=0)return;
       this.mag--; this.fireTimer = 0.09; this._updateHud();
 
-      // 💥 精髓：觸發槍械抖動與後座力
-      this.recoilPitch += 0.03 + Math.random() * 0.02;  // 相機上抬
-      this.recoilYaw += (Math.random() - 0.5) * 0.02;   // 相機左右偏
-      this.weaponKickZ += 0.1;                          // 槍枝猛烈後退
-      this.weaponKickY += 0.04;                         // 槍枝上抬
-      this.weaponKickRot += 0.15;                       // 槍枝翻轉
-      this.screenShake = 0.05;                          // 螢幕震動
+      // 💥 精髓：超級加倍的後座力與抖動
+      this.recoilPitch += 0.06 + Math.random() * 0.04;  // 準心狂飆
+      this.recoilYaw += (Math.random() - 0.5) * 0.04;
+      this.weaponKickZ += 0.25;                         // 槍枝猛退
+      this.weaponKickY += 0.1;                          // 槍枝狂抬
+      this.weaponKickRot += 0.35;                       // 槍枝翻轉幅度加大
+      this.screenShake = 0.15;                          // 畫面劇烈震動
 
-      // 音效與火光
       if(this.gunSound) { this.gunSound.currentTime = 0; this.gunSound.play().catch(()=>{}); }
       this.muzzleFlash.visible = true;
       this.muzzleLight.intensity = 3;
       setTimeout(() => { this.muzzleFlash.visible = false; this.muzzleLight.intensity = 0; }, 40);
 
-      // 拋彈殼
       this._spawnShell();
 
-      // 射線檢測
       this.camera.updateMatrixWorld(true);
       const ray = new THREE.Raycaster();
       ray.setFromCamera(new THREE.Vector2(0,0), this.camera);
       
-      // 把箱子也加入射線檢測，這樣打到牆會有火花
       const targets = [...this.enemies.filter(e=>e.alive).flatMap(e=>e.root.children), ...this.scene.children.filter(c=>c.geometry && c.geometry.type === 'BoxGeometry')];
       const hit = ray.intersectObjects(targets, false)[0];
       
       if(hit){
-        // 產生命中火花
         this._spawnHitSpark(hit.point);
         
         const enemy = this.enemies.find(e=>e.alive && e.root === hit.object.parent);
         if(enemy){
           enemy.health -= 35;
-          // 讓敵人受擊發光
-          enemy.root.children[0].material.emissive = new THREE.Color(0xff0000);
-          setTimeout(()=>{ enemy.root.children[0].material.emissive = new THREE.Color(0x000000); }, 100);
+          // 觸發紅叉命中反饋
+          this._showHitmarker();
 
           if(enemy.health <= 0){
             enemy.alive = false; enemy.root.visible = false;
             const score = $('score-blue');
             if(score) score.textContent = String((Number(score.textContent)||0) + 1);
-            this.toast('TARGET ELIMINATED');
+            // 已移除 TARGET ELIMINATED 文字
           }
         }
       }
     }
 
-    // 生成彈殼
     _spawnShell() {
       const geo = new THREE.CylinderGeometry(0.01, 0.01, 0.04, 6);
       const mat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 1 });
       const shell = new THREE.Mesh(geo, mat);
-      shell.position.set(0.25, -0.1, -0.3); // 槍枝右側
+      shell.position.set(0.25, -0.1, -0.3); 
       this.camera.add(shell);
-      
-      // 彈殼物理屬性
-      shell.userData = {
-        velocity: new THREE.Vector3(1.5 + Math.random(), 1 + Math.random(), 0), // 往右拋
-        life: 1.0
-      };
+      shell.userData = { velocity: new THREE.Vector3(1.5 + Math.random(), 1 + Math.random(), 0), life: 1.0 };
       this.particles.push(shell);
     }
 
-    // 生成命中火花
     _spawnHitSpark(pos) {
       const geo = new THREE.SphereGeometry(0.03, 3, 3);
       const mat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
       for(let i=0; i<5; i++) {
         const spark = new THREE.Mesh(geo, mat);
         spark.position.copy(pos);
-        spark.userData = {
-          velocity: new THREE.Vector3((Math.random()-0.5)*4, (Math.random()-0.5)*4, (Math.random()-0.5)*4),
-          life: 0.3
-        };
+        spark.userData = { velocity: new THREE.Vector3((Math.random()-0.5)*4, (Math.random()-0.5)*4, (Math.random()-0.5)*4), life: 0.3 };
         this.scene.add(spark);
         this.particles.push(spark);
       }
@@ -318,12 +332,7 @@
       x += this.stick.dx; y -= this.stick.dy;
       const len = Math.hypot(x,y); if(len>1){x/=len;y/=len}
       
-      // 💥 移動時的槍械呼吸/搖晃
-      if (len > 0.1) {
-        this.bobTime += dt * 12; // 走路頻率
-      } else {
-        this.bobTime += dt * 3;  // 待機時的輕微呼吸
-      }
+      if (len > 0.1) { this.bobTime += dt * 15; } else { this.bobTime += dt * 4; }
 
       const speed = 5;
       const forwardX = -Math.sin(this.player.yaw), forwardZ = -Math.cos(this.player.yaw);
@@ -339,17 +348,15 @@
       this.player.y += this.jumpVelocity * dt;
       if(this.player.y <= 0){ this.player.y = 0; this.jumpVelocity = 0; this.grounded = true; }
       
-      // 螢幕震動 (Screen Shake)
       let shakeX = 0, shakeY = 0;
       if(this.screenShake > 0) {
         shakeX = (Math.random() - 0.5) * this.screenShake;
         shakeY = (Math.random() - 0.5) * this.screenShake;
-        this.screenShake -= dt * 0.5;
+        this.screenShake -= dt * 0.8;
       }
 
       this.camera.position.set(this.player.x + shakeX, 1.65 + this.player.y + shakeY, this.player.z);
       
-      // 將相機角度 = 玩家控制 + 後座力偏移
       this.camera.rotation.order = 'YXZ';
       this.camera.rotation.set(this.player.pitch + this.recoilPitch, this.player.yaw + this.recoilYaw, 0);
     }
@@ -373,18 +380,12 @@
       }
     }
     
-    _respawn(){ this.health=150; this.armor=150; this.player={x:0,y:0,z:15,yaw:0,pitch:0}; this.recoilPitch=0; this.toast('重新部署'); }
+    _respawn(){ this.health=150; this.armor=150; this.player={x:0,y:0,z:15,yaw:0,pitch:0}; this.recoilPitch=0; }
     _updateHud(){
       const h=$('health-value'),a=$('armor-value'),m=$('ammo-mag'),r=$('ammo-reserve'),f=$('health-fill');
       if(h)h.textContent=String(this.health); if(a)a.textContent=String(this.armor);
       if(m)m.textContent=String(this.mag); if(r)r.textContent=String(this.reserve);
       if(f)f.style.width=`${this.health/150*100}%`;
-    }
-    toast(text){
-      const status=$('status'); if(!status)return;
-      status.textContent=text; status.classList.add('show');
-      global.clearTimeout(this.toastTimer);
-      this.toastTimer=global.setTimeout(()=>status.classList.remove('show'),1500);
     }
 
     _updateParticles(dt) {
@@ -392,18 +393,12 @@
         const p = this.particles[i];
         p.userData.life -= dt;
         if (p.userData.life <= 0) {
-          this.scene.remove(p); // 如果是彈殼，它加在 camera 上，這裡簡單起見全加 scene 也可
-          this.camera.remove(p);
-          this.particles.splice(i, 1);
-          continue;
+          this.scene.remove(p); this.camera.remove(p);
+          this.particles.splice(i, 1); continue;
         }
-        // 簡單物理模擬
         p.position.addScaledVector(p.userData.velocity, dt);
-        if (p.userData.velocity.y !== undefined) {
-           p.userData.velocity.y -= 9.8 * dt; // 重力
-        }
-        p.rotation.x += dt * 5;
-        p.rotation.y += dt * 5;
+        if (p.userData.velocity.y !== undefined) p.userData.velocity.y -= 9.8 * dt; 
+        p.rotation.x += dt * 5; p.rotation.y += dt * 5;
       }
     }
 
@@ -416,6 +411,7 @@
         this.fireTimer = Math.max(0, this.fireTimer - dt);
         if(this.fireHeld) this.fire();
         
+        // 換彈邏輯
         if(this.reloadTimer > 0){
           this.reloadTimer -= dt;
           if(this.reloadTimer <= 0){
@@ -429,26 +425,37 @@
         this._updateEnemies(dt);
         this._updateParticles(dt);
 
-        // 💥 精髓：後座力彈簧恢復 (Spring Recovery)
+        // 後座力恢復
         this.recoilPitch = THREE.MathUtils.lerp(this.recoilPitch, 0, 10 * dt);
         this.recoilYaw = THREE.MathUtils.lerp(this.recoilYaw, 0, 10 * dt);
-        
-        this.weaponKickZ = THREE.MathUtils.lerp(this.weaponKickZ, 0, 15 * dt);
-        this.weaponKickY = THREE.MathUtils.lerp(this.weaponKickY, 0, 15 * dt);
-        this.weaponKickRot = THREE.MathUtils.lerp(this.weaponKickRot, 0, 15 * dt);
+        this.weaponKickZ = THREE.MathUtils.lerp(this.weaponKickZ, 0, 12 * dt);
+        this.weaponKickY = THREE.MathUtils.lerp(this.weaponKickY, 0, 12 * dt);
+        this.weaponKickRot = THREE.MathUtils.lerp(this.weaponKickRot, 0, 12 * dt);
 
-        // 💥 精髓：槍械模型最終位置計算 = 基準位置 + 後座力 + 移動搖晃
         if(this.weaponGroup) {
-          const bobX = Math.cos(this.bobTime) * 0.015;
-          const bobY = Math.sin(this.bobTime * 2) * 0.015;
+          // 呼吸與移動搖晃
+          const bobX = Math.cos(this.bobTime) * 0.02;
+          const bobY = Math.sin(this.bobTime * 2) * 0.02;
 
+          // 💥 換彈動作 (下沉與旋轉)
+          let reloadDrop = 0;
+          let reloadRot = 0;
+          if(this.reloadTimer > 0) {
+            // 使用 sin 曲線讓下沉和抬起變得平滑 (0 -> 1 -> 0)
+            const progress = 1 - (this.reloadTimer / 1.8);
+            const curve = Math.sin(progress * Math.PI);
+            reloadDrop = curve * 0.6;     // 往下沉 0.6 單位
+            reloadRot = curve * 0.8;      // 往右旋轉
+          }
+
+          // 計算最終位置
           this.weaponGroup.position.x = this.weaponBasePos.x + bobX;
-          this.weaponGroup.position.y = this.weaponBasePos.y + bobY + this.weaponKickY;
+          this.weaponGroup.position.y = this.weaponBasePos.y + bobY + this.weaponKickY - reloadDrop;
           this.weaponGroup.position.z = this.weaponBasePos.z + this.weaponKickZ;
           
-          // 旋轉抖動
-          this.weaponGroup.rotation.x = this.weaponKickRot;
-          this.weaponGroup.rotation.z = Math.sin(this.bobTime) * 0.02;
+          // 計算最終旋轉
+          this.weaponGroup.rotation.x = this.weaponKickRot - reloadRot * 0.5;
+          this.weaponGroup.rotation.z = Math.sin(this.bobTime) * 0.03 + reloadRot;
         }
 
         const time = $('match-time');
