@@ -1,681 +1,431 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/24_audio_foley_env.js
- * 檔案說明：基於 Web Audio API 的擬音與環境音效合成引擎。
- *           無需任何外部音效檔，實時物理建模生成角色腳步聲、滑鏟摩擦、
- *           飛撲落地、裝備晃動以及子彈破空聲。
- *           包含動態頻率跟隨、立體聲定位與空間音訊模擬。
- *           掛載於 window.WZ.AudioFoley。
- * 目標行數：1000 - 1400 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 24_audio_foley_env.js
+ * 戰場環境底噪、腳步表面擬音、跳躍落地與武器切槍音效系統（Audio Foley & Ambience）
+ * ============================================================================
+ * 職責：
+ * 1. 管理戰場低迴環境底噪（微風／遠處戰區低頻氛圍，支援暫停／靜音與音量同步）
+ * 2. 依玩家移動速度、衝刺／蹲下／滑鏟狀態與地面材質（concrete / dirt / metal）
+ *    自動觸發節奏與音色匹配的腳步擬音
+ * 3. 監聽 EventBus 的武器切換、玩家受擊與遊戲狀態事件，播放切槍與受擊擬音
+ * 4. 共享 AudioProcedural 的 AudioContext 與 masterGain，維持統一音量與靜音控制
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('24_audio_foley_env.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
-
-    /* =========================================================================
-     * 第一部分：環境檢測與音訊上下文獲取
-     * ========================================================================= */
-
-    Logger.system('開始載入擬音與環境音效系統 (js/24_audio_foley_env.js)...');
-
-    // 檢查 Web Audio API 支援度
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-
-    if (!AudioContext) {
-        Logger.error('此瀏覽器不支援 Web Audio API，無法初始化擬音系統！');
-        return;
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) {
+            return minVal;
+        }
+        if (val > maxVal) {
+            return maxVal;
+        }
+        return val;
     }
 
-    // 嘗試獲取已存在的音訊上下文 (由 AudioWeapons 建立)
-    // 如果沒有，則自己建立一個
-    let audioCtx = null;
-    let masterGain = null;
-
-    if (WZ.AudioWeapons && WZ.AudioWeapons.ctx) {
-        audioCtx = WZ.AudioWeapons.ctx;
-        masterGain = WZ.AudioWeapons.outputNode;
-        Logger.info('成功連接至現有的 AudioContext');
-    } else {
-        try {
-            audioCtx = new AudioContext();
-            masterGain = audioCtx.createGain();
-            masterGain.gain.value = 1.0;
-            masterGain.connect(audioCtx.destination);
-            Logger.info('建立獨立的 AudioContext');
-            
-            // 註冊解鎖事件 (iOS)
-            const unlockAudio = () => {
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
-                document.removeEventListener('touchstart', unlockAudio);
-                document.removeEventListener('mousedown', unlockAudio);
-            };
-            document.addEventListener('touchstart', unlockAudio, { passive: true });
-            document.addEventListener('mousedown', unlockAudio, { passive: true });
-        } catch (e) {
-            Logger.error('AudioContext 初始化失敗', e);
-            return;
-        }
-    }
-
-    /* =========================================================================
-     * 第二部分：擬音數學與合成工具庫 (Foley Math & Synth Utilities)
-     * ========================================================================= */
-
-    const FoleyMath = {
-        /**
-         * 將分貝 (dB) 轉換為線性增益 (Gain)
-         */
-        dbToGain: function (db) {
-            return Math.pow(10, db / 20);
-        },
-
-        /**
-         * 在指定範圍內產生隨機數
-         */
-        randomRange: function (min, max) {
-            return Math.random() * (max - min) + min;
-        },
-
-        /**
-         * 線性插值
-         */
-        lerp: function (a, b, t) {
-            return a + (b - a) * t;
-        },
-
-        /**
-         * 限制數值範圍
-         */
-        clamp: function (val, min, max) {
-            return Math.max(min, Math.min(max, val));
-        }
-    };
-
-    class FoleySynthUtils {
-        /**
-         * 生成白噪聲緩衝區
-         */
-        static createNoiseBuffer(ctx, duration) {
-            const sampleRate = ctx.sampleRate;
-            const bufferSize = Math.floor(sampleRate * duration);
-            const buffer = ctx.createBuffer(1, bufferSize, sampleRate);
-            const data = buffer.getChannelData(0);
-
-            for (let i = 0; i < bufferSize; i++) {
-                data[i] = Math.random() * 2 - 1;
-            }
-
-            return buffer;
-        }
-
-        /**
-         * 建立正弦波震盪器
-         */
-        static createOscillator(ctx, type, freqStart, freqEnd, duration, startTime) {
-            const osc = ctx.createOscillator();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freqStart, startTime);
-            if (freqEnd !== freqStart) {
-                osc.frequency.exponentialRampToValueAtTime(freqEnd, startTime + duration);
-            }
-            return osc;
-        }
-
-        /**
-         * 建立增益包絡線 (ADSR)
-         */
-        static applyEnvelope(gainParam, startTime, attackTime, decayTime, sustainLevel, releaseTime, peakLevel) {
-            gainParam.cancelScheduledValues(startTime);
-            gainParam.setValueAtTime(0, startTime);
-            
-            // Attack
-            gainParam.linearRampToValueAtTime(peakLevel, startTime + attackTime);
-            
-            // Decay
-            gainParam.linearRampToValueAtTime(sustainLevel, startTime + attackTime + decayTime);
-            
-            // Release
-            const releaseStartTime = startTime + attackTime + decayTime;
-            gainParam.exponentialRampToValueAtTime(0.001, releaseStartTime + releaseTime);
-        }
-
-        /**
-         * 建立帶通濾波器
-         */
-        static createBandpassFilter(ctx, frequency, qFactor) {
-            const filter = ctx.createBiquadFilter();
-            filter.type = 'bandpass';
-            filter.frequency.value = frequency;
-            filter.Q.value = qFactor || 1.0;
-            return filter;
-        }
-
-        /**
-         * 建立低通濾波器
-         */
-        static createLowpassFilter(ctx, frequency, qFactor) {
-            const filter = ctx.createBiquadFilter();
-            filter.type = 'lowpass';
-            filter.frequency.value = frequency;
-            filter.Q.value = qFactor || 1.0;
-            return filter;
-        }
-
-        /**
-         * 建立高通濾波器
-         */
-        static createHighpassFilter(ctx, frequency, qFactor) {
-            const filter = ctx.createBiquadFilter();
-            filter.type = 'highpass';
-            filter.frequency.value = frequency;
-            filter.Q.value = qFactor || 1.0;
-            return filter;
-        }
-    }
-
-    /* =========================================================================
-     * 第三部分：擬音核心引擎 (FoleyAudioEngine)
-     * 包含所有角色動作音效的合成邏輯
-     * ========================================================================= */
-
-    class FoleyAudioEngine {
+    // ------------------------------------------------------------------------
+    // 1. AudioFoleyEnv 主類別
+    // ------------------------------------------------------------------------
+    class AudioFoleyEnv {
         constructor() {
-            this.ctx = audioCtx;
-            this.outputNode = masterGain;
+            this.initialized = false;
+            this.audioCore = null;
+            this.terrain = null;
+
+            this._ambienceSource = null;
+            this._ambienceFilter = null;
+            this._ambienceGain = null;
+            this._ambienceRunning = false;
+
+            this._stepTimer = 0;
+            this._wasGrounded = true;
+            this._lastPlayerPos = null;
+
+            this._unsubscribers = [];
         }
 
-        /* =====================================================================
-         * 1. 腳步聲 (Footstep)
-         * 根據移動速度與蹲伏狀態動態調整
-         * ===================================================================== */
         /**
-         * @param {number} speed 移動速度 (0.0 - 1.0)
-         * @param {boolean} isCrouching 是否蹲下
-         * @param {string} surface 材質 ('concrete', 'metal', 'grass')
+         * 初始化環境底噪與擬音系統
          */
-        playFootstep(speed, isCrouching, surface = 'concrete') {
-            if (!this.ctx || this.ctx.state !== 'running') return;
+        init(options) {
+            const opts = options || {};
+            this.audioCore = opts.audioCore || TacticalWarfare.AudioProcedural || null;
+            this.terrain = opts.terrain || TacticalWarfare.MapTerrainGround || null;
 
-            const ctx = this.ctx;
-            const t = ctx.currentTime;
+            this._stepTimer = 0;
+            this._wasGrounded = true;
+            this._lastPlayerPos = null;
 
-            // 建立該腳步的專屬輸出
-            const stepGain = ctx.createGain();
-            stepGain.connect(this.outputNode);
-
-            // 根據速度與蹲伏計算音量與頻率
-            // 速度越慢，音量越小，頻率越低
-            const speedFactor = FoleyMath.clamp(speed, 0.1, 1.0);
-            const volumeMultiplier = isCrouching ? 0.15 : (0.3 + speedFactor * 0.7);
-            
-            // 基礎頻率 (材質不同，頻率不同)
-            let baseFreq = 150; // 預設水泥
-            let noiseFreq = 1000;
-            
-            if (surface === 'metal') {
-                baseFreq = 300;
-                noiseFreq = 2500;
-            } else if (surface === 'grass') {
-                baseFreq = 100;
-                noiseFreq = 600;
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
             }
 
-            // 根據速度調整頻率
-            const freq = baseFreq * (0.5 + speedFactor * 0.5);
-            const noiseHighFreq = noiseFreq * (0.8 + speedFactor * 0.4);
-
-            stepGain.gain.value = volumeMultiplier;
-
-            // 1. 低頻腳掌撞擊 (震盪器)
-            const lowOsc = FoleySynthUtils.createOscillator(
-                ctx, 'triangle', freq, freq * 0.5, 0.08, t
-            );
-            const lowGain = ctx.createGain();
-            FoleySynthUtils.applyEnvelope(lowGain.gain, t, 0.005, 0.03, 0.1, 0.05, 0.6);
-            
-            lowOsc.connect(lowGain);
-            lowGain.connect(stepGain);
-
-            // 2. 高頻摩擦聲 (噪音)
-            const noiseBuffer = FoleySynthUtils.createNoiseBuffer(ctx, 0.1);
-            const noiseSource = ctx.createBufferSource();
-            noiseSource.buffer = noiseBuffer;
-
-            const noiseFilter = FoleySynthUtils.createBandpassFilter(ctx, noiseHighFreq, 0.8);
-            const noiseGain = ctx.createGain();
-            FoleySynthUtils.applyEnvelope(noiseGain.gain, t, 0.002, 0.04, 0.05, 0.04, 0.4);
-
-            noiseSource.connect(noiseFilter);
-            noiseFilter.connect(noiseGain);
-            noiseGain.connect(stepGain);
-
-            // 啟動
-            lowOsc.start(t);
-            lowOsc.stop(t + 0.1);
-            noiseSource.start(t);
-            noiseSource.stop(t + 0.12);
+            return this;
         }
 
-        /* =====================================================================
-         * 2. 滑鏟摩擦聲 (Slide)
-         * 持續的沙地/地面摩擦噪音
-         * ===================================================================== */
-        playSlide() {
-            if (!this.ctx || this.ctx.state !== 'running') return;
-            const ctx = this.ctx;
-            const t = ctx.currentTime;
-
-            const slideGain = ctx.createGain();
-            slideGain.gain.value = 0.6; // 整體音量
-            slideGain.connect(this.outputNode);
-
-            // 1. 主要的沙沙摩擦聲
-            const duration = 0.8; // 模擬滑鏟持續時間
-            const noiseBuffer = FoleySynthUtils.createNoiseBuffer(ctx, duration);
-            const noiseSource = ctx.createBufferSource();
-            noiseSource.buffer = noiseBuffer;
-
-            // 帶通濾波器，中心頻率會隨時間變化，模擬速度減慢
-            const filter = FoleySynthUtils.createBandpassFilter(ctx, 1200, 1.5);
-            filter.frequency.setValueAtTime(1500, t);
-            filter.frequency.exponentialRampToValueAtTime(500, t + duration);
-
-            // 包絡線：淡入、保持、淡出
-            const gain = ctx.createGain();
-            gain.gain.setValueAtTime(0, t);
-            gain.gain.linearRampToValueAtTime(1.0, t + 0.1);
-            gain.gain.setValueAtTime(1.0, t + duration * 0.7);
-            gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
-
-            noiseSource.connect(filter);
-            filter.connect(gain);
-            gain.connect(slideGain);
-
-            // 2. 加上一些低頻的沉重摩擦感
-            const lowOsc = FoleySynthUtils.createOscillator(
-                ctx, 'sawtooth', 80, 50, duration, t
-            );
-            const lowGain = ctx.createGain();
-            FoleySynthUtils.applyEnvelope(lowGain.gain, t, 0.05, 0.1, 0.3, duration - 0.15, 0.2);
-
-            lowOsc.connect(lowGain);
-            lowGain.connect(slideGain);
-
-            // 啟動
-            noiseSource.start(t);
-            noiseSource.stop(t + duration + 0.1);
-            lowOsc.start(t);
-            lowOsc.stop(t + duration + 0.1);
-
-            Logger.event('播放滑鏟摩擦音效');
-        }
-
-        /* =====================================================================
-         * 3. 飛撲重摔聲 (Dive Impact)
-         * 極度沉重的低頻撞擊 + 大量灰塵噪音
-         * ===================================================================== */
-        playDiveImpact() {
-            if (!this.ctx || this.ctx.state !== 'running') return;
-            const ctx = this.ctx;
-            const t = ctx.currentTime;
-
-            const impactGain = ctx.createGain();
-            impactGain.gain.value = 1.0;
-            impactGain.connect(this.outputNode);
-
-            // 1. 極低頻的重摔悶響
-            const lowOsc = FoleySynthUtils.createOscillator(
-                ctx, 'sine', 100, 20, 0.4, t
-            );
-            const lowGain = ctx.createGain();
-            FoleySynthUtils.applyEnvelope(lowGain.gain, t, 0.005, 0.1, 0.2, 0.3, 1.0);
-
-            lowOsc.connect(lowGain);
-            lowGain.connect(impactGain);
-
-            // 2. 撞擊瞬間的灰塵爆裂噪音
-            const noiseBuffer = FoleySynthUtils.createNoiseBuffer(ctx, 0.3);
-            const noiseSource = ctx.createBufferSource();
-            noiseSource.buffer = noiseBuffer;
-
-            const noiseFilter = FoleySynthUtils.createLowpassFilter(ctx, 1000, 0.5);
-            const noiseGain = ctx.createGain();
-            FoleySynthUtils.applyEnvelope(noiseGain.gain, t, 0.002, 0.05, 0.1, 0.2, 0.8);
-
-            noiseSource.connect(noiseFilter);
-            noiseFilter.connect(noiseGain);
-            noiseGain.connect(impactGain);
-
-            // 啟動
-            lowOsc.start(t);
-            lowOsc.stop(t + 0.5);
-            noiseSource.start(t);
-            noiseSource.stop(t + 0.4);
-
-            Logger.event('播放飛撲重摔音效');
-        }
-
-        /* =====================================================================
-         * 4. 跳躍落地聲 (Jump Landing)
-         * 中等強度的撞擊 + 裝備晃動
-         * ===================================================================== */
-        playLanding(fallHeight) {
-            if (!this.ctx || this.ctx.state !== 'running') return;
-            const ctx = this.ctx;
-            const t = ctx.currentTime;
-
-            // 根據掉落高度決定強度
-            const intensity = FoleyMath.clamp((fallHeight || 1.0) / 5.0, 0.2, 1.0);
-
-            const landGain = ctx.createGain();
-            landGain.gain.value = intensity;
-            landGain.connect(this.outputNode);
-
-            // 1. 低頻落地震動
-            const lowOsc = FoleySynthUtils.createOscillator(
-                ctx, 'triangle', 120, 40, 0.15, t
-            );
-            const lowGain = ctx.createGain();
-            FoleySynthUtils.applyEnvelope(lowGain.gain, t, 0.005, 0.05, 0.1, 0.1, 0.8);
-
-            lowOsc.connect(lowGain);
-            lowGain.connect(landGain);
-
-            // 2. 裝備/布料摩擦的噪音
-            const noiseBuffer = FoleySynthUtils.createNoiseBuffer(ctx, 0.15);
-            const noiseSource = ctx.createBufferSource();
-            noiseSource.buffer = noiseBuffer;
-
-            const noiseFilter = FoleySynthUtils.createBandpassFilter(ctx, 800, 0.8);
-            const noiseGain = ctx.createGain();
-            FoleySynthUtils.applyEnvelope(noiseGain.gain, t, 0.01, 0.05, 0.2, 0.1, 0.5 * intensity);
-
-            noiseSource.connect(noiseFilter);
-            noiseFilter.connect(noiseGain);
-            noiseGain.connect(landGain);
-
-            // 啟動
-            lowOsc.start(t);
-            lowOsc.stop(t + 0.2);
-            noiseSource.start(t);
-            noiseSource.stop(t + 0.2);
-
-            Logger.event(`播放跳躍落地音效 (強度: ${intensity.toFixed(2)})`);
-        }
-
-        /* =====================================================================
-         * 5. 裝備晃動聲 (Gear Rattle)
-         * 短促的金屬/塑膠碰撞
-         * ===================================================================== */
-        playGearRattle() {
-            if (!this.ctx || this.ctx.state !== 'running') return;
-            const ctx = this.ctx;
-            const t = ctx.currentTime;
-
-            const rattleGain = ctx.createGain();
-            rattleGain.gain.value = 0.4;
-            rattleGain.connect(this.outputNode);
-
-            // 生成多個隨機的小金屬碰撞聲
-            for (let i = 0; i < 4; i++) {
-                const delay = FoleyMath.randomRange(0, 0.05);
-                const freq = FoleyMath.randomRange(1500, 3000);
-
-                const osc = FoleySynthUtils.createOscillator(
-                    ctx, 'square', freq, freq * 0.8, 0.03, t + delay
-                );
-                
-                const gain = ctx.createGain();
-                FoleySynthUtils.applyEnvelope(gain.gain, t + delay, 0.001, 0.01, 0.05, 0.02, 0.2);
-
-                osc.connect(gain);
-                gain.connect(rattleGain);
-                osc.start(t + delay);
-                osc.stop(t + delay + 0.05);
-            }
-        }
-
-        /* =====================================================================
-         * 6. 子彈掠過破空聲 (Whiz-by)
-         * 極短的高頻帶通噪音，頻率急劇下降，立體聲定位
-         * ===================================================================== */
-        /**
-         * @param {number} pan 立體聲位置 (-1.0 左, 1.0 右)
-         */
-        playWhizBy(pan = 0.0) {
-            if (!this.ctx || this.ctx.state !== 'running') return;
-            const ctx = this.ctx;
-            const t = ctx.currentTime;
-
-            // 建立立體聲定位器
-            const panner = ctx.createStereoPanner();
-            panner.pan.value = FoleyMath.clamp(pan, -1.0, 1.0);
-
-            const whizGain = ctx.createGain();
-            whizGain.gain.value = 0.7;
-            whizGain.connect(panner);
-            panner.connect(this.outputNode);
-
-            // 1. 破空高頻噪音 (極短)
-            const duration = 0.08;
-            const noiseBuffer = FoleySynthUtils.createNoiseBuffer(ctx, duration);
-            const noiseSource = ctx.createBufferSource();
-            noiseSource.buffer = noiseBuffer;
-
-            const filter = FoleySynthUtils.createBandpassFilter(ctx, 4000, 2.0);
-            // 頻率從高急劇下降到低，模擬子彈飛過
-            filter.frequency.setValueAtTime(5000, t);
-            filter.frequency.exponentialRampToValueAtTime(1000, t + duration);
-
-            const gain = ctx.createGain();
-            FoleySynthUtils.applyEnvelope(gain.gain, t, 0.001, 0.02, 0.3, 0.05, 1.0);
-
-            noiseSource.connect(filter);
-            filter.connect(gain);
-            gain.connect(whizGain);
-
-            // 啟動
-            noiseSource.start(t);
-            noiseSource.stop(t + duration + 0.05);
-
-            Logger.event(`播放子彈破空聲 (Pan: ${pan.toFixed(2)})`);
-        }
-    }
-
-    /* =========================================================================
-     * 第四部分：擬音總管系統 (AudioFoleyManager)
-     * ========================================================================= */
-
-    class AudioFoleyManager {
-        constructor() {
-            this.engine = null;
-            this.lastFootstepTime = 0;
-            this.footstepCooldown = 0.4; // 預設腳步聲間隔 (秒)
-            this.playerState = {
-                speed: 0,
-                isCrouching: false,
-                isSprinting: false,
-                isTacSprinting: false,
-                isSliding: false,
-                isGrounded: true
-            };
-            this.currentSurface = 'concrete';
-        }
-
-        init() {
-            if (!audioCtx) {
-                Logger.error('音訊上下文不存在，無法初始化擬音系統');
+        _bindEvents() {
+            if (!EventBus || !Events) {
                 return;
             }
 
-            this.engine = new FoleyAudioEngine();
-            this._setupEvents();
+            if (Events.WEAPON_EQUIP) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.WEAPON_EQUIP, () => {
+                        this.playWeaponSwap();
+                    })
+                );
+            }
 
-            Logger.success('擬音與環境音效系統初始化完畢');
+            if (Events.PLAYER_DAMAGE) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.PLAYER_DAMAGE, (payload) => {
+                        const dmg = payload && typeof payload.damage === 'number' ? payload.damage : 15;
+                        this.playPlayerHurt(clamp(dmg / 40, 0.3, 1.2));
+                    })
+                );
+            }
+
+            if (Events.GAME_START) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_START, () => {
+                        this.startAmbience();
+                    })
+                );
+            }
+
+            if (Events.GAME_OVER || Events.GAME_RESET) {
+                const stopEvt = Events.GAME_OVER || Events.GAME_RESET;
+                this._unsubscribers.push(
+                    EventBus.on(stopEvt, () => {
+                        this.stopAmbience();
+                    })
+                );
+            }
         }
 
-        _setupEvents() {
-            if (!WZ.bus) return;
-
-            // 1. 監聽玩家移動狀態更新 (用於計算速度)
-            WZ.bus.on('PLAYER_POSITION_UPDATE', (data) => {
-                // 假設 data 包含 velocity 向量
-                if (data.velocity) {
-                    const speed = Math.sqrt(data.velocity.x ** 2 + data.velocity.z ** 2);
-                    this.playerState.speed = speed;
+        _getReadyAudio() {
+            if (!this.audioCore) {
+                this.audioCore = TacticalWarfare.AudioProcedural || null;
+            }
+            if (!this.audioCore) {
+                return null;
+            }
+            if (!this.audioCore.ctx || !this.audioCore.masterGain) {
+                if (typeof this.audioCore.unlock === 'function') {
+                    this.audioCore.unlock();
                 }
-            });
-
-            // 2. 監聽蹲伏狀態
-            WZ.bus.on('CROUCH_STATE_CHANGED', (isCrouching) => {
-                this.playerState.isCrouching = isCrouching;
-            });
-
-            // 3. 監聽衝刺與戰術衝刺
-            WZ.bus.on('SPRINT_STATE_CHANGED', (isSprinting) => {
-                this.playerState.isSprinting = isSprinting;
-                // 衝刺時腳步聲間隔縮短
-                this.footstepCooldown = isSprinting ? 0.3 : 0.4;
-            });
-
-            WZ.bus.on('TAC_SPRINT_TOGGLED', (isTacSprinting) => {
-                this.playerState.isTacSprinting = isTacSprinting;
-                this.footstepCooldown = isTacSprinting ? 0.25 : 0.4;
-            });
-
-            // 4. 監聽滑鏟與飛撲
-            WZ.bus.on('SLIDE_STATE_CHANGED', (isSliding) => {
-                this.playerState.isSliding = isSliding;
-                if (isSliding) {
-                    this.engine.playSlide();
-                }
-            });
-
-            WZ.bus.on('DIVE_STATE_CHANGED', (isDiving) => {
-                if (isDiving) {
-                    // 飛撲起跳時可能會有輕微的起跳音
-                    // 落地撞擊在 PLAYER_LANDED 處理
-                }
-            });
-
-            // 5. 監聽跳躍與落地
-            WZ.bus.on('PLAYER_LANDED', (data) => {
-                this.playerState.isGrounded = true;
-                this.engine.playLanding(data.fallHeight || 1.0);
-                // 落地時伴隨裝備晃動
-                setTimeout(() => {
-                    this.engine.playGearRattle();
-                }, 100);
-            });
-
-            WZ.bus.on('PLAYER_JUMPED', () => {
-                this.playerState.isGrounded = false;
-                this.engine.playGearRattle(); // 起跳時裝備碰撞
-            });
-
-            // 6. 監聽子彈掠過 (由彈道系統發出)
-            WZ.bus.on('BULLET_WHIZBY', (data) => {
-                // data 包含 pan (-1 到 1) 和距離 (可選)
-                this.engine.playWhizBy(data.pan || 0.0);
-            });
-
-            Logger.info('擬音事件綁定完成');
+            }
+            if (!this.audioCore.ctx || !this.audioCore.masterGain || !this.audioCore._noiseBuffer) {
+                return null;
+            }
+            if (this.audioCore.ctx.state === 'suspended' && typeof this.audioCore.ctx.resume === 'function') {
+                this.audioCore.ctx.resume().catch(() => {});
+            }
+            return this.audioCore;
         }
 
         /**
-         * 每幀更新 (主要用於根據速度生成腳步聲)
+         * 啟動低迴戰場環境底噪
          */
-        update(dt) {
-            if (!this.engine) return;
+        startAmbience() {
+            const core = this._getReadyAudio();
+            if (!core || this._ambienceRunning) {
+                return;
+            }
 
-            // 只有在移動且在地面時才產生腳步聲
-            if (this.playerState.speed > 0.5 && this.playerState.isGrounded && !this.playerState.isSliding) {
-                const now = performance.now() / 1000;
-                
-                // 檢查是否達到腳步聲間隔
-                if (now - this.lastFootstepTime > this.footstepCooldown) {
-                    this.lastFootstepTime = now;
+            const ctx = core.ctx;
+            const src = ctx.createBufferSource();
+            src.buffer = core._noiseBuffer;
+            src.loop = true;
 
-                    // 計算速度比例 (假設最高速度為 10)
-                    const speedRatio = FoleyMath.clamp(this.playerState.speed / 10.0, 0.1, 1.0);
-                    
-                    // 根據地面材質與狀態生成腳步聲
-                    this.engine.playFootstep(
-                        speedRatio, 
-                        this.playerState.isCrouching, 
-                        this.currentSurface
-                    );
+            const filter = ctx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.setValueAtTime(240, ctx.currentTime);
+            filter.Q.setValueAtTime(0.7, ctx.currentTime);
 
-                    // 如果是衝刺或戰術衝刺，偶爾加上裝備晃動聲
-                    if ((this.playerState.isSprinting || this.playerState.isTacSprinting) && Math.random() > 0.5) {
-                        setTimeout(() => {
-                            this.engine.playGearRattle();
-                        }, 50);
-                    }
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.001, ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 0.6);
+
+            src.connect(filter);
+            filter.connect(gain);
+            gain.connect(core.masterGain);
+
+            src.start(0);
+
+            this._ambienceSource = src;
+            this._ambienceFilter = filter;
+            this._ambienceGain = gain;
+            this._ambienceRunning = true;
+        }
+
+        /**
+         * 停止戰場環境底噪
+         */
+        stopAmbience() {
+            if (!this._ambienceRunning) {
+                return;
+            }
+            try {
+                if (this._ambienceSource) {
+                    this._ambienceSource.stop();
+                    this._ambienceSource.disconnect();
+                }
+            } catch (_e) {
+                // 忽略已停止音訊節點例外
+            }
+            this._ambienceSource = null;
+            this._ambienceFilter = null;
+            this._ambienceGain = null;
+            this._ambienceRunning = false;
+        }
+
+        /**
+         * 播放單次腳步擬音（依材質調整音色與頻率）
+         */
+        playFootstep(surfaceType, intensity) {
+            const core = this._getReadyAudio();
+            if (!core) {
+                return;
+            }
+
+            const ctx = core.ctx;
+            const now = ctx.currentTime;
+            const surf = surfaceType || 'concrete';
+            const vol = clamp(typeof intensity === 'number' ? intensity : 0.7, 0.15, 1.3);
+
+            // 1. 低頻腳步著地衝擊
+            const osc = ctx.createOscillator();
+            osc.type = surf === 'metal' ? 'triangle' : 'sine';
+            const startFreq = surf === 'metal' ? 195 : (surf === 'dirt' ? 110 : 138);
+            const endFreq = surf === 'metal' ? 68 : 38;
+            osc.frequency.setValueAtTime(startFreq * (0.94 + Math.random() * 0.12), now);
+            osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.065);
+
+            const oGain = ctx.createGain();
+            oGain.gain.setValueAtTime(0.11 * vol, now);
+            oGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+            osc.connect(oGain);
+            oGain.connect(core.masterGain);
+            osc.start(now);
+            osc.stop(now + 0.075);
+
+            // 2. 表面砂礫／金屬摩擦噪音
+            const noise = ctx.createBufferSource();
+            noise.buffer = core._noiseBuffer;
+
+            const bp = ctx.createBiquadFilter();
+            bp.type = 'bandpass';
+            bp.frequency.setValueAtTime(
+                surf === 'metal' ? 1850 : (surf === 'dirt' ? 820 : 1250),
+                now
+            );
+            bp.Q.setValueAtTime(surf === 'metal' ? 2.2 : 1.0, now);
+
+            const nGain = ctx.createGain();
+            nGain.gain.setValueAtTime(0.075 * vol, now);
+            nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+
+            noise.connect(bp);
+            bp.connect(nGain);
+            nGain.connect(core.masterGain);
+            noise.start(now, Math.random() * 0.6, 0.06);
+        }
+
+        /**
+         * 播放跳躍或落地擬音
+         */
+        playJumpLand(isLanding, intensity) {
+            const core = this._getReadyAudio();
+            if (!core) {
+                return;
+            }
+            const ctx = core.ctx;
+            const now = ctx.currentTime;
+            const mult = clamp(typeof intensity === 'number' ? intensity : 1.0, 0.4, 1.5);
+
+            const osc = ctx.createOscillator();
+            osc.type = 'sine';
+            if (isLanding) {
+                osc.frequency.setValueAtTime(125, now);
+                osc.frequency.exponentialRampToValueAtTime(34, now + 0.12);
+            } else {
+                osc.frequency.setValueAtTime(85, now);
+                osc.frequency.exponentialRampToValueAtTime(155, now + 0.08);
+            }
+
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime((isLanding ? 0.18 : 0.10) * mult, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + (isLanding ? 0.13 : 0.09));
+
+            osc.connect(gain);
+            gain.connect(core.masterGain);
+            osc.start(now);
+            osc.stop(now + 0.14);
+        }
+
+        /**
+         * 播放武器切換金屬機械聲
+         */
+        playWeaponSwap() {
+            const core = this._getReadyAudio();
+            if (!core) {
+                return;
+            }
+            const ctx = core.ctx;
+            const now = ctx.currentTime;
+
+            const osc = ctx.createOscillator();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(520, now);
+            osc.frequency.setValueAtTime(840, now + 0.04);
+
+            const gain = this.ctx ? null : ctx.createGain();
+            const gNode = gain || ctx.createGain();
+            gNode.gain.setValueAtTime(0.10, now);
+            gNode.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+            osc.connect(gNode);
+            gNode.connect(core.masterGain);
+            osc.start(now);
+            osc.stop(now + 0.095);
+        }
+
+        /**
+         * 播放玩家受擊擬音
+         */
+        playPlayerHurt(severity) {
+            const core = this._getReadyAudio();
+            if (!core) {
+                return;
+            }
+            const ctx = core.ctx;
+            const now = ctx.currentTime;
+            const sev = clamp(typeof severity === 'number' ? severity : 0.6, 0.25, 1.3);
+
+            const osc = ctx.createOscillator();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(165, now);
+            osc.frequency.exponentialRampToValueAtTime(48, now + 0.15);
+
+            const lp = ctx.createBiquadFilter();
+            lp.type = 'lowpass';
+            lp.frequency.setValueAtTime(900, now);
+
+            const gain = ctx.createGain();
+            gain.gain.setValueAtTime(0.22 * sev, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+            osc.connect(lp);
+            lp.connect(gain);
+            gain.connect(core.masterGain);
+            osc.start(now);
+            osc.stop(now + 0.17);
+        }
+
+        /**
+         * 每幀更新腳步節奏與落地偵測
+         * @param {number} deltaTime - 幀間隔（秒）
+         * @param {Object} playerCtx - { position: {x, y, z}, isGrounded: boolean, isSprinting: boolean, isCrouching: boolean, isSliding: boolean }
+         */
+        update(deltaTime, playerCtx) {
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+            if (!playerCtx || !playerCtx.position) {
+                return;
+            }
+
+            const pos = playerCtx.position;
+            const isGrounded = playerCtx.isGrounded !== false;
+            const isSprinting = Boolean(playerCtx.isSprinting);
+            const isCrouching = Boolean(playerCtx.isCrouching);
+            const isSliding = Boolean(playerCtx.isSliding);
+
+            // 計算水平移動速度
+            let speed = 0;
+            if (this._lastPlayerPos) {
+                const dx = pos.x - this._lastPlayerPos.x;
+                const dz = pos.z - this._lastPlayerPos.z;
+                speed = Math.sqrt(dx * dx + dz * dz) / dt;
+            } else {
+                this._lastPlayerPos = { x: pos.x, y: pos.y, z: pos.z };
+            }
+            this._lastPlayerPos.x = pos.x;
+            this._lastPlayerPos.y = pos.y;
+            this._lastPlayerPos.z = pos.z;
+
+            // 偵測落地衝擊
+            if (isGrounded && !this._wasGrounded) {
+                this.playJumpLand(true, 1.0);
+                this._stepTimer = 0.12;
+            }
+            this._wasGrounded = isGrounded;
+
+            // 查詢腳下表面材質
+            let surface = 'concrete';
+            if (this.terrain && typeof this.terrain.getSurfaceTypeAt === 'function') {
+                surface = this.terrain.getSurfaceTypeAt(pos.x, pos.z);
+            } else if (GameState && typeof GameState.get === 'function') {
+                surface = GameState.get('world.groundSurface', 'concrete') || 'concrete';
+            }
+
+            // 滑鏟時播放持續摩擦擬音
+            if (isGrounded && isSliding && speed > 2.5) {
+                this._stepTimer -= dt;
+                if (this._stepTimer <= 0) {
+                    this.playFootstep(surface, 0.95);
+                    this._stepTimer = 0.14;
+                }
+                return;
+            }
+
+            // 行走／衝刺／蹲走腳步節奏
+            if (isGrounded && speed > 1.2) {
+                const interval = isSprinting ? 0.30 : (isCrouching ? 0.62 : 0.44);
+                const intensity = isSprinting ? 1.05 : (isCrouching ? 0.42 : 0.72);
+                this._stepTimer -= dt;
+                if (this._stepTimer <= 0) {
+                    this.playFootstep(surface, intensity);
+                    this._stepTimer = interval;
+                }
+            } else {
+                this._stepTimer = Math.min(this._stepTimer, 0.08);
+            }
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
                 }
             }
+            this._unsubscribers = [];
+            this.stopAmbience();
+            this._lastPlayerPos = null;
+            this.initialized = false;
         }
     }
 
-    /* =========================================================================
-     * 第五部分：導出與初始化
-     * ========================================================================= */
+    // ------------------------------------------------------------------------
+    // 2. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const audioFoleyEnvInstance = new AudioFoleyEnv();
 
-    // 1. 實例化
-    const audioFoley = new AudioFoleyManager();
+    const moduleExport = {
+        AudioFoleyEnvClass: AudioFoleyEnv,
+        instance: audioFoleyEnvInstance
+    };
 
-    // 2. 掛載到 WZ 命名空間
-    WZ.AudioFoley = audioFoley;
-
-    // 3. 監聽 CORE_SYSTEM_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('CORE_SYSTEM_READY', () => {
-            Logger.system('接收到核心系統就緒事件，準備初始化擬音系統...');
-            audioFoley.init();
-            WZ.bus.emit('AUDIO_FOLEY_READY');
-        });
-    }
-
-    // 4. 將更新掛載到主渲染循環中
-    if (WZ.Renderer) {
-        const originalOnRender = WZ.Renderer.onRender;
-        WZ.Renderer.onRender = (alpha, dt) => {
-            audioFoley.update(dt);
-            if (originalOnRender) {
-                originalOnRender(alpha, dt);
-            }
-        };
-        Logger.info('AudioFoley 已成功掛載至主渲染循環');
-    } else {
-        // 延遲掛載
-        const checkInterval = setInterval(() => {
-            if (WZ.Renderer) {
-                clearInterval(checkInterval);
-                const originalOnRender = WZ.Renderer.onRender;
-                WZ.Renderer.onRender = (alpha, dt) => {
-                    audioFoley.update(dt);
-                    if (originalOnRender) {
-                        originalOnRender(alpha, dt);
-                    }
-                };
-                Logger.info('AudioFoley 延遲掛載成功');
-            }
-        }, 100);
-    }
-
-    Logger.success('js/24_audio_foley_env.js 已成功載入並掛載至 window.WZ.AudioFoley');
-
-}); // 結束工廠函數
+    TacticalWarfare.AudioFoleyEnv = audioFoleyEnvInstance;
+    TacticalWarfare.registerModule('24_audio_foley_env', moduleExport);
+})(window);
