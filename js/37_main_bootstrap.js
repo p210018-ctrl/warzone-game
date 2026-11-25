@@ -120,7 +120,6 @@
                 });
             }
 
-            // [37] 傳入 camera 與 inputSystem 讓 BallisticsRecoil 能取得射擊視角與輸入狀態
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.init === 'function') {
                 TacticalWarfare.BallisticsRecoil.init({
                     scene: scene,
@@ -398,6 +397,11 @@
                         eyePosition: moveRes ? moveRes.eyePosition : { x: 0, y: 1.68, z: 24 },
                         alive: true
                     });
+                }
+
+                // [37] 每幀更新敵軍 3D 網格座標與肢體步態動畫
+                if (TacticalWarfare.EnemySoldierMesh && typeof TacticalWarfare.EnemySoldierMesh.update === 'function') {
+                    TacticalWarfare.EnemySoldierMesh.update(dt);
                 }
 
                 if (TacticalWarfare.GameModeManager && typeof TacticalWarfare.GameModeManager.update === 'function') {
