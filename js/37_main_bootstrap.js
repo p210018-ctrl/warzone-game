@@ -391,15 +391,21 @@
                     TacticalWarfare.BallisticsRecoil.update(dt, isAiming, isMoving);
                 }
 
-                if (TacticalWarfare.EnemyTacticalAI && typeof TacticalWarfare.EnemyTacticalAI.update === 'function') {
-                    TacticalWarfare.EnemyTacticalAI.update(dt, {
-                        position: moveRes ? moveRes.position : { x: 0, y: 0, z: 24 },
-                        eyePosition: moveRes ? moveRes.eyePosition : { x: 0, y: 1.68, z: 24 },
-                        alive: true
-                    });
+                const playerCtx = {
+                    position: moveRes ? moveRes.position : { x: 0, y: 0, z: 24 },
+                    eyePosition: moveRes ? moveRes.eyePosition : { x: 0, y: 1.68, z: 24 },
+                    alive: true
+                };
+
+                // [37] 每幀推進敵軍戰術移動、碰撞滑行與防重疊分離
+                if (TacticalWarfare.EnemyWarzoneLocomotion && typeof TacticalWarfare.EnemyWarzoneLocomotion.update === 'function') {
+                    TacticalWarfare.EnemyWarzoneLocomotion.update(dt, playerCtx);
                 }
 
-                // [37] 每幀更新敵軍 3D 網格座標與肢體步態動畫
+                if (TacticalWarfare.EnemyTacticalAI && typeof TacticalWarfare.EnemyTacticalAI.update === 'function') {
+                    TacticalWarfare.EnemyTacticalAI.update(dt, playerCtx);
+                }
+
                 if (TacticalWarfare.EnemySoldierMesh && typeof TacticalWarfare.EnemySoldierMesh.update === 'function') {
                     TacticalWarfare.EnemySoldierMesh.update(dt);
                 }
