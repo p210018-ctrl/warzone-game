@@ -46,39 +46,12 @@
             height: 100%;
         }
 
-        /* ====================================================================
-           戰術抬頭顯示器主容器
-           ==================================================================== */
-        #tactical-hud-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 20;
-            overflow: hidden;
-        }
-
-        /* 低血量與受擊紅色邊緣暗角 */
-        #damage-vignette-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle at center, transparent 48%, rgba(205, 22, 22, 0.82) 100%);
-            opacity: 0;
-            transition: opacity 0.08s linear;
-        }
-
-        /* 狙擊步槍高倍率開鏡遮罩 */
+        /* 狙擊鏡高倍率開鏡遮罩（由各模組依狀態切換 .active） */
         #sniper-scope-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            position: fixed;
+            inset: 0;
+            z-index: 25;
+            pointer-events: none;
             opacity: 0;
             visibility: hidden;
             transition: opacity 0.12s ease;
@@ -123,398 +96,12 @@
         }
 
         /* ====================================================================
-           動態準星與命中回饋標記
-           ==================================================================== */
-        #dynamic-crosshair-group {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 0;
-            height: 0;
-            transform: translate(-50%, -50%);
-            transition: opacity 0.1s ease;
-        }
-
-        .crosshair-center-dot {
-            position: absolute;
-            left: -1.5px;
-            top: -1.5px;
-            width: 3px;
-            height: 3px;
-            border-radius: 50%;
-            background-color: rgba(255, 255, 255, 0.95);
-            box-shadow: 0 0 4px rgba(0, 0, 0, 0.95);
-        }
-
-        .crosshair-tick {
-            position: absolute;
-            background-color: rgba(242, 249, 255, 0.94);
-            box-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
-        }
-
-        #crosshair-tick-top {
-            width: 2px;
-            height: 11px;
-            left: -1px;
-            bottom: 10px;
-        }
-
-        #crosshair-tick-bottom {
-            width: 2px;
-            height: 11px;
-            left: -1px;
-            top: 10px;
-        }
-
-        #crosshair-tick-left {
-            width: 11px;
-            height: 2px;
-            top: -1px;
-            right: 10px;
-        }
-
-        #crosshair-tick-right {
-            width: 11px;
-            height: 2px;
-            top: -1px;
-            left: 10px;
-        }
-
-        #hitmarker-indicator {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 30px;
-            height: 30px;
-            transform: translate(-50%, -50%) scale(0.9);
-            opacity: 0;
-            transition: transform 0.08s ease-out;
-        }
-
-        .hitmarker-segment {
-            position: absolute;
-            width: 10px;
-            height: 2px;
-            background-color: #ffffff;
-            box-shadow: 0 0 5px rgba(0, 0, 0, 0.9);
-        }
-
-        .hitmarker-segment-top-left {
-            top: 4px;
-            left: 2px;
-            transform: rotate(45deg);
-        }
-
-        .hitmarker-segment-top-right {
-            top: 4px;
-            right: 2px;
-            transform: rotate(-45deg);
-        }
-
-        .hitmarker-segment-bottom-left {
-            bottom: 4px;
-            left: 2px;
-            transform: rotate(-45deg);
-        }
-
-        .hitmarker-segment-bottom-right {
-            bottom: 4px;
-            right: 2px;
-            transform: rotate(45deg);
-        }
-
-        /* 3D 受擊方向圓環容器 */
-        #damage-direction-ring {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 230px;
-            height: 230px;
-            transform: translate(-50%, -50%);
-        }
-
-        /* ====================================================================
-           左上角戰術雷達小地圖
-           ==================================================================== */
-        #tactical-radar-panel {
-            position: absolute;
-            top: 18px;
-            left: 18px;
-            width: 172px;
-            height: 172px;
-            padding: 8px;
-            background-color: rgba(10, 16, 23, 0.76);
-            border: 1px solid rgba(94, 210, 255, 0.38);
-            border-radius: 10px;
-            backdrop-filter: blur(5px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-        }
-
-        #tactical-radar-canvas {
-            display: block;
-            width: 156px;
-            height: 156px;
-        }
-
-        .tactical-radar-footer {
-            position: absolute;
-            bottom: 5px;
-            left: 10px;
-            right: 10px;
-            display: flex;
-            justify-content: space-between;
-            font-size: 10px;
-            letter-spacing: 0.08em;
-            color: rgba(178, 224, 248, 0.85);
-        }
-
-        /* ====================================================================
-           頂部戰局資訊列與右上角擊殺播報
-           ==================================================================== */
-        #top-status-bar {
-            position: absolute;
-            top: 18px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            padding: 8px 20px;
-            background-color: rgba(10, 16, 23, 0.74);
-            border: 1px solid rgba(255, 255, 255, 0.16);
-            border-radius: 8px;
-            backdrop-filter: blur(5px);
-            font-size: 13px;
-            letter-spacing: 0.06em;
-        }
-
-        .status-metric-value {
-            margin-left: 6px;
-            font-weight: 700;
-            color: #5ee2ff;
-            font-variant-numeric: tabular-nums;
-        }
-
-        #killfeed-container {
-            position: absolute;
-            top: 18px;
-            right: 18px;
-            width: 340px;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 6px;
-        }
-
-        /* ====================================================================
-           中央動作進度條與戰術橫幅通知
-           ==================================================================== */
-        #center-action-progress-container {
-            position: absolute;
-            left: 50%;
-            bottom: 132px;
-            width: 230px;
-            transform: translateX(-50%);
-            text-align: center;
-            opacity: 0;
-            transition: opacity 0.12s ease;
-        }
-
-        #center-action-progress-label {
-            margin-bottom: 6px;
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            color: #eef6fc;
-            text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-        }
-
-        .center-action-progress-track {
-            width: 100%;
-            height: 7px;
-            border-radius: 4px;
-            background-color: rgba(255, 255, 255, 0.18);
-            overflow: hidden;
-        }
-
-        #center-action-progress-fill {
-            width: 0%;
-            height: 100%;
-            background-color: #5ce1ff;
-        }
-
-        #tactical-banner-message {
-            position: absolute;
-            top: 23%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 26px;
-            font-weight: 800;
-            letter-spacing: 0.14em;
-            color: #ffe28c;
-            text-align: center;
-            text-shadow: 0 3px 16px rgba(0, 0, 0, 0.95);
-            opacity: 0;
-            transition: opacity 0.25s ease;
-        }
-
-        /* ====================================================================
-           左下角生命值與三片陶瓷防彈護甲面板
-           ==================================================================== */
-        #player-vitals-panel {
-            position: absolute;
-            bottom: 22px;
-            left: 22px;
-            width: 296px;
-            padding: 13px 15px;
-            background-color: rgba(10, 16, 23, 0.76);
-            border-left: 3px solid #4bd8ff;
-            border-radius: 6px;
-            backdrop-filter: blur(5px);
-        }
-
-        .armor-plates-row {
-            display: flex;
-            gap: 6px;
-            margin-bottom: 9px;
-        }
-
-        .armor-plate-slot {
-            flex: 1;
-            height: 9px;
-            border-radius: 2px;
-            background-color: rgba(255, 255, 255, 0.14);
-            overflow: hidden;
-        }
-
-        .armor-plate-fill {
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, #1ea7ff, #6ceaff);
-            transition: width 0.1s linear;
-        }
-
-        .health-bar-track {
-            position: relative;
-            width: 100%;
-            height: 13px;
-            margin-bottom: 9px;
-            border-radius: 2px;
-            background-color: rgba(255, 255, 255, 0.14);
-            overflow: hidden;
-        }
-
-        #health-bar-trail {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(255, 255, 255, 0.55);
-        }
-
-        #health-bar-fill {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, #e53935, #ff7043);
-            transition: width 0.08s linear;
-        }
-
-        .vitals-footer-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 12px;
-            color: #c8daea;
-        }
-
-        /* ====================================================================
-           右下角武器與彈藥面板
-           ==================================================================== */
-        #weapon-status-panel {
-            position: absolute;
-            bottom: 22px;
-            right: 22px;
-            width: 304px;
-            padding: 13px 15px;
-            text-align: right;
-            background-color: rgba(10, 16, 23, 0.76);
-            border-right: 3px solid #ffaa2b;
-            border-radius: 6px;
-            backdrop-filter: blur(5px);
-        }
-
-        .weapon-header-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 4px;
-        }
-
-        #weapon-firemode-label {
-            font-size: 11px;
-            padding: 2px 6px;
-            border-radius: 3px;
-            background-color: rgba(255, 255, 255, 0.1);
-            color: #b7ccdf;
-            letter-spacing: 0.08em;
-        }
-
-        #weapon-name-label {
-            font-size: 13px;
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            color: #ffc86e;
-        }
-
-        .ammo-readout-row {
-            font-size: 38px;
-            font-weight: 800;
-            line-height: 1.05;
-            margin: 4px 0 8px 0;
-            font-variant-numeric: tabular-nums;
-        }
-
-        .ammo-reserve-wrapper {
-            font-size: 18px;
-            font-weight: 600;
-            color: #93acc2;
-        }
-
-        #weapon-slots-row {
-            display: flex;
-            justify-content: flex-end;
-            gap: 6px;
-        }
-
-        .weapon-slot-chip {
-            padding: 3px 7px;
-            font-size: 11px;
-            border-radius: 3px;
-            background-color: rgba(255, 255, 255, 0.08);
-            color: #9bb1c5;
-            border: 1px solid transparent;
-        }
-
-        .weapon-slot-chip.active {
-            background-color: rgba(255, 174, 43, 0.24);
-            color: #ffd685;
-            border-color: rgba(255, 174, 43, 0.68);
-        }
-
-        /* ====================================================================
-           開始 / 暫停 / 陣亡全螢幕選單覆蓋層
+           開始 / 暫停 / 陣亡覆蓋選單
            ==================================================================== */
         #game-menu-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 50;
+            inset: 0;
+            z-index: 800;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -522,7 +109,7 @@
             gap: 16px;
             padding: 24px;
             text-align: center;
-            background-color: rgba(6, 10, 15, 0.82);
+            background-color: rgba(6, 10, 15, 0.84);
             backdrop-filter: blur(7px);
             pointer-events: auto;
         }
@@ -534,9 +121,9 @@
 
         #menu-overlay-title {
             margin: 0;
-            font-size: 38px;
+            font-size: 36px;
             font-weight: 800;
-            letter-spacing: 0.16em;
+            letter-spacing: 0.14em;
             color: #f4f9fd;
         }
 
@@ -550,11 +137,11 @@
 
         .controls-guide-grid {
             display: grid;
-            grid-template-columns: repeat(2, minmax(220px, 1fr));
+            grid-template-columns: repeat(2, minmax(210px, 1fr));
             gap: 10px 24px;
             padding: 16px 22px;
             border-radius: 8px;
-            background-color: rgba(16, 25, 36, 0.72);
+            background-color: rgba(16, 25, 36, 0.78);
             border: 1px solid rgba(110, 200, 255, 0.24);
             font-size: 13px;
             text-align: left;
@@ -576,7 +163,7 @@
         }
 
         #start-game-button {
-            margin-top: 8px;
+            margin-top: 6px;
             padding: 13px 38px;
             font-size: 16px;
             font-weight: 700;
@@ -608,7 +195,7 @@
             width: 100%;
             padding: 10px 14px;
             border-radius: 6px;
-            background-color: rgba(14, 22, 31, 0.88);
+            background-color: rgba(14, 22, 31, 0.9);
             border: 1px solid rgba(255, 255, 255, 0.16);
             font-size: 12px;
             line-height: 1.6;
@@ -621,100 +208,31 @@
             border-color: rgba(255, 86, 86, 0.72);
             color: #ff9c9c;
         }
+
+        @media (max-width: 600px) {
+            #menu-overlay-title {
+                font-size: 26px;
+            }
+            .controls-guide-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+                padding: 12px 16px;
+            }
+        }
     </style>
 </head>
 <body>
     <!-- 3D 遊戲畫面容器 -->
     <div id="game-canvas-container"></div>
 
-    <!-- 戰術抬頭顯示器 -->
-    <div id="tactical-hud-container">
-        <div id="damage-vignette-overlay"></div>
-
-        <div id="sniper-scope-overlay">
-            <div class="sniper-scope-horizontal-line"></div>
-            <div class="sniper-scope-vertical-line"></div>
-            <div class="sniper-scope-center-dot"></div>
-        </div>
-
-        <div id="dynamic-crosshair-group">
-            <div class="crosshair-center-dot"></div>
-            <div class="crosshair-tick" id="crosshair-tick-top"></div>
-            <div class="crosshair-tick" id="crosshair-tick-bottom"></div>
-            <div class="crosshair-tick" id="crosshair-tick-left"></div>
-            <div class="crosshair-tick" id="crosshair-tick-right"></div>
-        </div>
-
-        <div id="hitmarker-indicator">
-            <span class="hitmarker-segment hitmarker-segment-top-left"></span>
-            <span class="hitmarker-segment hitmarker-segment-top-right"></span>
-            <span class="hitmarker-segment hitmarker-segment-bottom-left"></span>
-            <span class="hitmarker-segment hitmarker-segment-bottom-right"></span>
-        </div>
-
-        <div id="damage-direction-ring"></div>
-
-        <div id="tactical-radar-panel">
-            <canvas id="tactical-radar-canvas" width="156" height="156"></canvas>
-            <div class="tactical-radar-footer">
-                <span>TACTICAL RADAR</span>
-                <span>45M</span>
-            </div>
-        </div>
-
-        <div id="top-status-bar">
-            <div>波次<span class="status-metric-value" id="status-wave-value">1</span></div>
-            <div>剩餘敵軍<span class="status-metric-value" id="status-enemies-value">0</span></div>
-            <div>擊殺<span class="status-metric-value" id="status-kills-value">0</span></div>
-            <div>戰術分數<span class="status-metric-value" id="status-score-value">0</span></div>
-        </div>
-
-        <div id="killfeed-container"></div>
-
-        <div id="center-action-progress-container">
-            <div id="center-action-progress-label">動作執行中...</div>
-            <div class="center-action-progress-track">
-                <div id="center-action-progress-fill"></div>
-            </div>
-        </div>
-
-        <div id="tactical-banner-message"></div>
-
-        <div id="player-vitals-panel">
-            <div class="armor-plates-row">
-                <div class="armor-plate-slot"><div class="armor-plate-fill" id="armor-plate-fill-0"></div></div>
-                <div class="armor-plate-slot"><div class="armor-plate-fill" id="armor-plate-fill-1"></div></div>
-                <div class="armor-plate-slot"><div class="armor-plate-fill" id="armor-plate-fill-2"></div></div>
-            </div>
-            <div class="health-bar-track">
-                <div id="health-bar-trail"></div>
-                <div id="health-bar-fill"></div>
-            </div>
-            <div class="vitals-footer-row">
-                <span>生命 <strong id="health-value-text">100</strong> ｜ 護甲 <strong id="armor-value-text">150</strong></span>
-                <span>[V] 護甲插板 x<strong id="spare-plates-text">4</strong></span>
-            </div>
-        </div>
-
-        <div id="weapon-status-panel">
-            <div class="weapon-header-row">
-                <span id="weapon-firemode-label">全自動</span>
-                <span id="weapon-name-label">M4A1 突擊步槍</span>
-            </div>
-            <div class="ammo-readout-row">
-                <span id="ammo-magazine-text">30</span>
-                <span class="ammo-reserve-wrapper"> / <span id="ammo-reserve-text">150</span></span>
-            </div>
-            <div id="weapon-slots-row">
-                <span class="weapon-slot-chip active" data-weapon-slot="M4A1">1 步槍</span>
-                <span class="weapon-slot-chip" data-weapon-slot="MP5SD">2 衝鋒</span>
-                <span class="weapon-slot-chip" data-weapon-slot="AX50">3 狙擊</span>
-                <span class="weapon-slot-chip" data-weapon-slot="X16">4 手槍</span>
-            </div>
-        </div>
+    <!-- 狙擊鏡高倍率瞄準覆蓋層 -->
+    <div id="sniper-scope-overlay">
+        <div class="sniper-scope-horizontal-line"></div>
+        <div class="sniper-scope-vertical-line"></div>
+        <div class="sniper-scope-center-dot"></div>
     </div>
 
-    <!-- 開始 / 暫停 / 陣亡覆蓋選單 -->
+    <!-- 戰術部署覆蓋選單 -->
     <div id="game-menu-overlay">
         <h1 id="menu-overlay-title">TACTICAL WARFARE // 戰術部署</h1>
         <p id="menu-overlay-subtitle">
@@ -775,6 +293,16 @@
                 refreshDiagnostic();
             });
 
+            function adjustQuickBarPosition() {
+                const quickBar = document.getElementById('tw-combat-quickbar');
+                if (quickBar) {
+                    quickBar.style.top = '16px';
+                    quickBar.style.left = 'auto';
+                    quickBar.style.right = '185px';
+                    quickBar.style.transform = 'none';
+                }
+            }
+
             function refreshDiagnostic() {
                 const panel = document.getElementById('module-diagnostic-panel');
                 const btn = document.getElementById('start-game-button');
@@ -831,6 +359,7 @@
                     if (menu) {
                         menu.classList.add('hidden');
                     }
+                    adjustQuickBarPosition();
                 });
 
                 const bus = window.TacticalWarfare && window.TacticalWarfare.EventBus;
@@ -838,6 +367,7 @@
                 if (bus && evts && evts.GAME_START) {
                     bus.on(evts.GAME_START, function () {
                         if (menu) menu.classList.add('hidden');
+                        adjustQuickBarPosition();
                     });
                 }
                 if (bus && evts && evts.GAME_RESET) {
@@ -851,6 +381,7 @@
 
             window.addEventListener('load', function () {
                 bindStartAction();
+                adjustQuickBarPosition();
                 refreshDiagnostic();
             });
         })();
