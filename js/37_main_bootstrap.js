@@ -120,6 +120,7 @@
                 });
             }
 
+            // [37] 傳入 camera 與 inputSystem 讓 BallisticsRecoil 支援觸控與視角射擊
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.init === 'function') {
                 TacticalWarfare.BallisticsRecoil.init({
                     scene: scene,
