@@ -29,9 +29,21 @@
       this.lookPointer = null;
       this.fireHeld = false;
       this._loop = this._loop.bind(this);
+      
       if (!THREE || !this.canvas) { this.error('Three.js 或 #game-canvas 未就緒。'); return; }
-      try { this._initThree(); this._initWorld(); this._bindInput(); this._bindUI(); this._updateHud(); this._render(); }
-      catch (error) { console.error('[WZ Runtime] 初始化失敗', error); this.error(`3D 初始化失敗：${error.message}`); }
+      
+      try { 
+        this._initThree(); 
+        this._bindInput(); 
+        this._bindUI(); 
+        this._initWorld(); 
+        this._updateHud(); 
+        this._render(); 
+      }
+      catch (error) { 
+        console.error('[WZ Runtime] 初始化失敗', error); 
+        this.error(`3D 初始化失敗：${error.message}`); 
+      }
     }
 
     _initThree() {
@@ -87,7 +99,11 @@
       const headMat = new THREE.MeshStandardMaterial({ color: 0x9a745d, roughness: .8 });
       for (let i = 0; i < 6; i++) {
         const root = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(.38,.75,4,8), bodyMat); body.position.y = 1.02; body.castShadow = true; root.add(body);
+        // 修复：如果 Three.js 版本過低沒有膠囊體，則降級使用圓柱體
+        const bodyGeo = THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(.38, .75, 4, 8) : new THREE.CylinderGeometry(.38, .38, .75, 8);
+        const body = new THREE.Mesh(bodyGeo, bodyMat); 
+        body.position.y = 1.02; body.castShadow = true; root.add(body);
+        
         const head = new THREE.Mesh(new THREE.SphereGeometry(.24,12,10),headMat); head.position.y=1.7; head.castShadow=true; root.add(head);
         const x = [-12,9,-18,18,-6,14][i], z = [-16,-22,-32,-38,-48,-52][i];
         root.position.set(x,0,z); this.scene.add(root);
@@ -132,12 +148,26 @@
       global.addEventListener('keydown', e => { this.keys.add(e.code); if(e.code==='Space'){e.preventDefault();this.jump()} if(e.code==='KeyR')this.reload(); if(e.code==='Escape'&&this.state==='combat')this.pause() });
       global.addEventListener('keyup', e => this.keys.delete(e.code));
       this.canvas.addEventListener('pointerdown', e => { if(this.state!=='combat'||e.pointerType!=='mouse')return; this.lookPointer={id:e.pointerId,x:e.clientX,y:e.clientY}; if(this.canvas.requestPointerLock&&!global.matchMedia('(pointer: coarse)').matches)this.canvas.requestPointerLock() });
+      
       global.addEventListener('pointermove',e=>{
         if(this.state!=='combat')return;
         if(global.document.pointerLockElement===this.canvas){this._look(e.movementX||0,e.movementY||0);return}
-        if(e.pointerType==='touch'&&e.clientX>global.innerWidth*.45)this._look(e.movementX||0,e.movementY||0);
-        else if(this.lookPointer&&e.pointerId===this.lookPointer.id){this._look(e.clientX-this.lookPointer.x,e.clientY-this.lookPointer.y);this.lookPointer.x=e.clientX;this.lookPointer.y=e.clientY}
+        
+        // 修复：触摸屏没有 movementX，改为用差值计算
+        if(e.pointerType==='touch' && e.clientX > global.innerWidth*.45) {
+            if(this.lookPointer && e.pointerId === this.lookPointer.id) {
+                this._look(e.clientX - this.lookPointer.x, e.clientY - this.lookPointer.y);
+                this.lookPointer.x = e.clientX; this.lookPointer.y = e.clientY;
+            } else {
+                this.lookPointer = {id:e.pointerId, x:e.clientX, y:e.clientY};
+            }
+        }
+        else if(this.lookPointer&&e.pointerId===this.lookPointer.id){
+            this._look(e.clientX-this.lookPointer.x,e.clientY-this.lookPointer.y);
+            this.lookPointer.x=e.clientX;this.lookPointer.y=e.clientY;
+        }
       });
+      
       const clearLook=()=>{this.lookPointer=null};global.addEventListener('pointerup',clearLook);global.addEventListener('pointercancel',clearLook);
       global.addEventListener('contextmenu',e=>{if(this.state==='combat')e.preventDefault()});
     }
