@@ -1,573 +1,313 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/29_ragdoll_physics.js
- * 檔案說明：輕量化 3D 剛體布娃娃物理系統 (Ragdoll System)。
- *           使用 Verlet 積分與距離約束 (Distance Constraints)。
- *           包含 11 個物理節點、骨骼無縫接管、衝擊動量與地面碰撞。
- *           掛載於 window.WZ.Ragdoll。
- * 目標行數：1300 - 1800 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 29_ragdoll_physics.js
+ * 陣亡敵軍布娃娃物理衝量、倒地旋轉、地面滑行與消散系統（Ragdoll Physics）
+ * ============================================================================
+ * 職責：
+ * 1. 監聽 ENEMY_KILL 與 EXPLOSION_TRIGGERED，為陣亡或受爆衝擊的士兵建立物理倒地狀態
+ * 2. 依射擊方向、爆炸中心或自訂衝量向量計算倒地傾倒角度、角速度與水平滑行速度
+ * 3. 每幀推演重力、地形高度貼地與地面摩擦力，讓屍體自然倒臥滑行並於逾時後隱藏
+ * 4. 支援戰局重置清空與 GPU／事件資源安全釋放
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('29_ragdoll_physics.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
+    // ------------------------------------------------------------------------
+    // 1. 布娃娃物理常數表
+    // ------------------------------------------------------------------------
+    const RAGDOLL_CONFIG = Object.freeze({
+        gravity: 19.5,
+        groundFriction: 7.5,
+        maxFallAngle: Math.PI * 0.48,
+        lingerDuration: 5.5,
+        fadeDuration: 1.0,
+        defaultImpulseSpeed: 4.2,
+        explosionImpulseSpeed: 9.8
+    });
 
-    /* =========================================================================
-     * 第一部分：環境檢測與配置常數
-     * ========================================================================= */
-
-    Logger.system('開始載入布娃娃物理系統 (js/29_ragdoll_physics.js)...');
-
-    const THREE = global.THREE;
-    if (!THREE) {
-        Logger.error('找不到 Three.js，無法初始化布娃娃系統！');
-        return;
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) {
+            return minVal;
+        }
+        if (val > maxVal) {
+            return maxVal;
+        }
+        return val;
     }
 
-    const CONFIG = {
-        // 物理核心參數
-        GRAVITY: 9.8,               // 重力加速度 (m/s^2)
-        ITERATIONS: 8,              // 約束求解迭代次數 (越高越硬，越耗效能)
-        DAMPING: 0.98,              // 速度阻尼 (0.0 到 1.0，模擬空氣阻力)
-        GROUND_Y: 0.05,             // 地面高度
-        GROUND_FRICTION: 0.6,       // 地面摩擦力
-        
-        // 碰撞參數
-        COLLISION_RADIUS: {
-            HEAD: 0.15,
-            CHEST: 0.2,
-            PELVIS: 0.2,
-            LIMB: 0.1
-        },
-
-        // 布娃娃存活時間 (秒) - 超過後隱藏或移除
-        RAGDOLL_LIFETIME: 10.0,
-        
-        // 衝擊力參數
-        IMPULSE_HEAD_MULTIPLIER: 2.5,   // 爆頭擊飛倍率
-        IMPULSE_CHEST_MULTIPLIER: 2.0,  // 胸口擊飛倍率
-        IMPULSE_SLIDE_MULTIPLIER: 1.5,  // 滑鏟慣性倍率
-    };
-
-    /* =========================================================================
-     * 第二部分：數學與物理工具 (Math & Physics Utilities)
-     * ========================================================================= */
-
-    /**
-     * 三維向量暫存器 (減少 GC)
-     */
-    const _tempVec1 = new THREE.Vector3();
-    const _tempVec2 = new THREE.Vector3();
-    const _tempVec3 = new THREE.Vector3();
-    const _tempQuat1 = new THREE.Quaternion();
-    const _tempMat4 = new THREE.Matrix4();
-
-    /**
-     * Verlet 積分粒子類別
-     * 代表布娃娃中的一個物理節點
-     */
-    class VerletParticle {
-        constructor(position, radius = 0.1, mass = 1.0) {
-            // 當前位置
-            this.position = position.clone();
-            // 上一幀位置 (用於 Verlet 積分計算速度)
-            this.oldPosition = position.clone();
-            // 加速度
-            this.acceleration = new THREE.Vector3(0, 0, 0);
-            
-            this.radius = radius;
-            this.mass = mass;
-            this.isPinned = false; // 是否固定 (例如腳被卡住)
-            this.isCollidingGround = false;
-        }
-
-        /**
-         * 更新粒子狀態
-         * @param {number} dt 時間步長
-         */
-        update(dt) {
-            if (this.isPinned) return;
-
-            // Verlet 積分核心公式
-            // newPos = currentPos + (currentPos - oldPos) * damping + accel * dt^2
-            const velocityX = (this.position.x - this.oldPosition.x) * CONFIG.DAMPING;
-            const velocityY = (this.position.y - this.oldPosition.y) * CONFIG.DAMPING;
-            const velocityZ = (this.position.z - this.oldPosition.z) * CONFIG.DAMPING;
-
-            // 儲存舊位置
-            this.oldPosition.copy(this.position);
-
-            // 應用速度
-            this.position.x += velocityX;
-            this.position.y += velocityY;
-            this.position.z += velocityZ;
-
-            // 應用加速度 (重力)
-            this.position.x += this.acceleration.x * dt * dt;
-            this.position.y += this.acceleration.y * dt * dt;
-            this.position.z += this.acceleration.z * dt * dt;
-
-            // 清空加速度 (每幀重置)
-            this.acceleration.set(0, 0, 0);
-
-            // 地面碰撞檢測
-            this.isCollidingGround = false;
-            if (this.position.y < CONFIG.GROUND_Y + this.radius) {
-                this.position.y = CONFIG.GROUND_Y + this.radius;
-                this.isCollidingGround = true;
-                
-                // 應用地面摩擦力 (降低水平速度)
-                const vX = this.position.x - this.oldPosition.x;
-                const vZ = this.position.z - this.oldPosition.z;
-                this.oldPosition.x += vX * CONFIG.GROUND_FRICTION;
-                this.oldPosition.z += vZ * CONFIG.GROUND_FRICTION;
-            }
-        }
-
-        /**
-         * 添加衝量 (瞬間改變位置，模擬受力)
-         */
-        addImpulse(impulseVec) {
-            // 在 Verlet 中，衝量通過改變舊位置來實現
-            // 舊位置向後移動 = 當前位置向前移動
-            this.oldPosition.sub(impulseVec);
-        }
-
-        /**
-         * 添加速度 (用於更平滑的力)
-         */
-        addVelocity(velVec) {
-            // 直接將速度加到當前位置 (因為 Verlet 下一幀會計算差值)
-            this.position.add(velVec);
-        }
-    }
-
-    /**
-     * 距離約束類別
-     * 用於保持兩個粒子之間的距離 (模擬骨骼)
-     */
-    class DistanceConstraint {
-        constructor(p1, p2, restLength, stiffness = 1.0) {
-            this.p1 = p1;
-            this.p2 = p2;
-            this.restLength = restLength;
-            this.stiffness = stiffness;
-        }
-
-        /**
-         * 解算約束
-         */
-        solve() {
-            if (this.p1.isPinned && this.p2.isPinned) return;
-
-            // 計算當前距離
-            const dx = this.p2.position.x - this.p1.position.x;
-            const dy = this.p2.position.y - this.p1.position.y;
-            const dz = this.p2.position.z - this.p1.position.z;
-            
-            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (dist === 0) return;
-
-            // 計算差異
-            const difference = (dist - this.restLength) / dist;
-            
-            // 根據質量分配修正量
-            const totalMass = this.p1.mass + this.p2.mass;
-            const p1Multiplier = this.p2.mass / totalMass;
-            const p2Multiplier = this.p1.mass / totalMass;
-
-            // 應用修正
-            if (!this.p1.isPinned) {
-                this.p1.position.x += dx * difference * p1Multiplier * this.stiffness;
-                this.p1.position.y += dy * difference * p1Multiplier * this.stiffness;
-                this.p1.position.z += dz * difference * p1Multiplier * this.stiffness;
-            }
-
-            if (!this.p2.isPinned) {
-                this.p2.position.x -= dx * difference * p2Multiplier * this.stiffness;
-                this.p2.position.y -= dy * difference * p2Multiplier * this.stiffness;
-                this.p2.position.z -= dz * difference * p2Multiplier * this.stiffness;
-            }
-        }
-    }
-
-    /* =========================================================================
-     * 第三部分：布娃娃實例 (RagdollInstance)
-     * 管理單個敵人的物理節點、約束與骨骼映射
-     * ========================================================================= */
-
-    class RagdollInstance {
-        constructor(id, soldierData, hitData) {
-            this.id = id;
-            this.soldierData = soldierData;
-            this.bones = soldierData.bones;
-            this.root = soldierData.root;
-
-            // 11 個物理節點
-            this.particles = {
-                head: null,
-                chest: null,
-                pelvis: null,
-                leftUpperArm: null, leftLowerArm: null,
-                rightUpperArm: null, rightLowerArm: null,
-                leftThigh: null, leftShin: null,
-                rightThigh: null, rightShin: null
-            };
-
-            // 約束 (骨骼)
-            this.constraints = [];
-
-            // 生命週期
-            this.lifetime = CONFIG.RAGDOLL_LIFETIME;
-            this.isActive = true;
-
-            // 初始化
-            this._initParticles();
-            this._initConstraints();
-            this._applyHitImpulse(hitData);
-        }
-
-        /**
-         * 根據骨骼的世界座標初始化物理粒子
-         */
-        _initParticles() {
-            const getBoneWorldPos = (bone) => {
-                const pos = new THREE.Vector3();
-                if (bone) bone.getWorldPosition(pos);
-                return pos;
-            };
-
-            // 取得各個骨骼的世界座標
-            const headPos = getBoneWorldPos(this.bones.head);
-            const chestPos = getBoneWorldPos(this.bones.spine);
-            const pelvisPos = getBoneWorldPos(this.bones.pelvis);
-            
-            const luArmPos = getBoneWorldPos(this.bones.leftUpperArm);
-            const llArmPos = getBoneWorldPos(this.bones.leftForearm);
-            const ruArmPos = getBoneWorldPos(this.bones.rightUpperArm);
-            const rlArmPos = getBoneWorldPos(this.bones.rightForearm);
-            
-            const lThighPos = getBoneWorldPos(this.bones.leftThigh);
-            const lShinPos = getBoneWorldPos(this.bones.leftShin);
-            const rThighPos = getBoneWorldPos(this.bones.rightThigh);
-            const rShinPos = getBoneWorldPos(this.bones.rightShin);
-
-            // 建立粒子
-            // 質量分配：軀幹最重，四肢較輕
-            this.particles.head = new VerletParticle(headPos, CONFIG.COLLISION_RADIUS.HEAD, 2.0);
-            this.particles.chest = new VerletParticle(chestPos, CONFIG.COLLISION_RADIUS.CHEST, 5.0);
-            this.particles.pelvis = new VerletParticle(pelvisPos, CONFIG.COLLISION_RADIUS.PELVIS, 6.0);
-            
-            this.particles.leftUpperArm = new VerletParticle(luArmPos, CONFIG.COLLISION_RADIUS.LIMB, 1.5);
-            this.particles.leftLowerArm = new VerletParticle(llArmPos, CONFIG.COLLISION_RADIUS.LIMB, 1.0);
-            
-            this.particles.rightUpperArm = new VerletParticle(ruArmPos, CONFIG.COLLISION_RADIUS.LIMB, 1.5);
-            this.particles.rightLowerArm = new VerletParticle(rlArmPos, CONFIG.COLLISION_RADIUS.LIMB, 1.0);
-            
-            this.particles.leftThigh = new VerletParticle(lThighPos, CONFIG.COLLISION_RADIUS.LIMB, 2.5);
-            this.particles.leftShin = new VerletParticle(lShinPos, CONFIG.COLLISION_RADIUS.LIMB, 2.0);
-            
-            this.particles.rightThigh = new VerletParticle(rThighPos, CONFIG.COLLISION_RADIUS.LIMB, 2.5);
-            this.particles.rightShin = new VerletParticle(rShinPos, CONFIG.COLLISION_RADIUS.LIMB, 2.0);
-        }
-
-        /**
-         * 建立骨骼長度約束
-         */
-        _initConstraints() {
-            const p = this.particles;
-            
-            // 計算原始骨骼長度
-            const getDist = (a, b) => a.position.distanceTo(b.position);
-
-            // 軀幹約束
-            this.constraints.push(new DistanceConstraint(p.head, p.chest, getDist(p.head, p.chest), 0.9));
-            this.constraints.push(new DistanceConstraint(p.chest, p.pelvis, getDist(p.chest, p.pelvis), 0.9));
-
-            // 左臂約束
-            this.constraints.push(new DistanceConstraint(p.chest, p.leftUpperArm, getDist(p.chest, p.leftUpperArm), 0.8));
-            this.constraints.push(new DistanceConstraint(p.leftUpperArm, p.leftLowerArm, getDist(p.leftUpperArm, p.leftLowerArm), 0.8));
-
-            // 右臂約束
-            this.constraints.push(new DistanceConstraint(p.chest, p.rightUpperArm, getDist(p.chest, p.rightUpperArm), 0.8));
-            this.constraints.push(new DistanceConstraint(p.rightUpperArm, p.rightLowerArm, getDist(p.rightUpperArm, p.rightLowerArm), 0.8));
-
-            // 左腿約束
-            this.constraints.push(new DistanceConstraint(p.pelvis, p.leftThigh, getDist(p.pelvis, p.leftThigh), 0.9));
-            this.constraints.push(new DistanceConstraint(p.leftThigh, p.leftShin, getDist(p.leftThigh, p.leftShin), 0.9));
-
-            // 右腿約束
-            this.constraints.push(new DistanceConstraint(p.pelvis, p.rightThigh, getDist(p.pelvis, p.rightThigh), 0.9));
-            this.constraints.push(new DistanceConstraint(p.rightThigh, p.rightShin, getDist(p.rightThigh, p.rightShin), 0.9));
-
-            // 額外的約束：保持身體的剛性，防止四肢反折
-            // 例如：頭部到骨盆的距離不能太遠
-            this.constraints.push(new DistanceConstraint(p.head, p.pelvis, getDist(p.head, p.pelvis), 0.5));
-        }
-
-        /**
-         * 根據受擊資料施加衝擊力
-         */
-        _applyHitImpulse(hitData) {
-            if (!hitData) return;
-
-            const direction = hitData.direction ? hitData.direction.clone().normalize() : new THREE.Vector3(0, 0, 1);
-            const speed = hitData.speed || 10.0;
-            const part = hitData.hitPart || 'CHEST';
-
-            // 計算基礎衝量向量
-            const baseImpulse = direction.multiplyScalar(speed * 0.05);
-
-            // 1. 爆頭 (頭部向後猛仰)
-            if (part === 'HEAD') {
-                const headImpulse = baseImpulse.clone().multiplyScalar(CONFIG.IMPULSE_HEAD_MULTIPLIER);
-                // 給頭部一個巨大的向上向後的力
-                headImpulse.y += 2.0;
-                this.particles.head.addImpulse(headImpulse);
-                
-                // 帶動胸口輕微後仰
-                this.particles.chest.addImpulse(baseImpulse.clone().multiplyScalar(0.5));
-
-            } 
-            // 2. 胸口 (整個人向後飛出)
-            else if (part === 'CHEST' || part === 'STOMACH') {
-                const chestImpulse = baseImpulse.clone().multiplyScalar(CONFIG.IMPULSE_CHEST_MULTIPLIER);
-                // 給胸口與骨盆向後的力
-                this.particles.chest.addImpulse(chestImpulse);
-                this.particles.pelvis.addImpulse(chestImpulse.clone().multiplyScalar(0.8));
-                
-                // 四肢向外甩
-                this.particles.leftUpperArm.addImpulse(new THREE.Vector3(-1, 1, 0).multiplyScalar(speed * 0.02));
-                this.particles.rightUpperArm.addImpulse(new THREE.Vector3(1, 1, 0).multiplyScalar(speed * 0.02));
-
-            } 
-            // 3. 四肢 (局部拉扯)
-            else {
-                const limbImpulse = baseImpulse.clone().multiplyScalar(1.5);
-                if (part === 'LIMB') {
-                    // 隨機給一個肢體施加力
-                    const limbs = ['leftUpperArm', 'rightUpperArm', 'leftThigh', 'rightThigh'];
-                    const randomLimb = limbs[Math.floor(Math.random() * limbs.length)];
-                    this.particles[randomLimb].addImpulse(limbImpulse);
-                }
-            }
-
-            // 4. 特殊情況：滑鏟中被擊殺 (向前翻滾)
-            if (hitData.enemyState === 'SLIDE') {
-                // 根據敵人當前速度，給骨盆一個向前的力
-                const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.root.quaternion);
-                const slideImpulse = forwardDir.multiplyScalar(CONFIG.IMPULSE_SLIDE_MULTIPLIER * 2.0);
-                this.particles.pelvis.addImpulse(slideImpulse);
-                this.particles.chest.addImpulse(slideImpulse.clone().multiplyScalar(0.8));
-                // 讓頭部稍微後仰，產生翻滾感
-                this.particles.head.addImpulse(new THREE.Vector3(0, 1, 0));
-            }
-        }
-
-        /**
-         * 每幀更新物理
-         */
-        update(dt) {
-            if (!this.isActive) return;
-
-            this.lifetime -= dt;
-            if (this.lifetime <= 0) {
-                this.isActive = false;
-                this.root.visible = false; // 隱藏屍體
-                return;
-            }
-
-            // 1. Verlet 積分
-            for (const key in this.particles) {
-                const p = this.particles[key];
-                p.acceleration.y -= CONFIG.GRAVITY; // 施加重力
-                p.update(dt);
-            }
-
-            // 2. 約束求解 (迭代多次以增加剛性)
-            for (let i = 0; i < CONFIG.ITERATIONS; i++) {
-                for (let j = 0; j < this.constraints.length; j++) {
-                    this.constraints[j].solve();
-                }
-            }
-
-            // 3. 同步到 Three.js 骨骼
-            this._syncToBones();
-        }
-
-        /**
-         * 將物理狀態同步回骨骼
-         */
-        _syncToBones() {
-            // 由於骨骼是樹狀結構，我們不能直接設定世界座標。
-            // 我們需要計算出目標世界座標，然後轉換為局部座標。
-
-            const syncBone = (bone, targetWorldPos) => {
-                if (!bone || !bone.parent) return;
-                
-                // 將世界座標轉換為父節點的局部座標
-                bone.parent.worldToLocal(targetWorldPos);
-                bone.position.copy(targetWorldPos);
-                
-                // 由於位置變了，我們也需要重新計算旋轉
-                // 這裡簡化處理，讓骨骼指向子節點
-                // 實際應用中可能需要使用 lookAt 或更複雜的四元數運算
-            };
-
-            // 1. 骨盆 (根)
-            const pelvisPos = this.particles.pelvis.position.clone();
-            this.root.worldToLocal(pelvisPos);
-            this.bones.pelvis.position.copy(pelvisPos);
-
-            // 2. 脊椎 (連接到骨盆)
-            const chestPos = this.particles.chest.position.clone();
-            this.root.worldToLocal(chestPos);
-            this.bones.spine.position.copy(chestPos);
-
-            // 3. 頭部 (連接到脊椎)
-            const headPos = this.particles.head.position.clone();
-            this.root.worldToLocal(headPos);
-            this.bones.head.position.copy(headPos);
-
-            // 4. 四肢 (這裡需要處理局部座標轉換)
-            // 注意：這裡的邏輯是簡化的，真實的布娃娃需要處理骨骼的旋轉與約束
-            // 我們這裡採用直接設定世界座標再轉局部的方式
-            
-            // 為了防止骨骼飛出，我們限制一下移動範圍
-            
-            const applyLimb = (boneName, particleName) => {
-                const p = this.particles[particleName];
-                if (p && this.bones[boneName] && this.bones[boneName].parent) {
-                    const worldPos = p.position.clone();
-                    this.bones[boneName].parent.worldToLocal(worldPos);
-                    this.bones[boneName].position.copy(worldPos);
-                }
-            };
-
-            applyLimb('leftUpperArm', 'leftUpperArm');
-            applyLimb('leftForearm', 'leftLowerArm');
-            applyLimb('rightUpperArm', 'rightUpperArm');
-            applyLimb('rightForearm', 'rightLowerArm');
-            
-            applyLimb('leftThigh', 'leftThigh');
-            applyLimb('leftShin', 'leftShin');
-            applyLimb('rightThigh', 'rightThigh');
-            applyLimb('rightShin', 'rightShin');
-            
-            // 強制更新矩陣
-            this.root.updateMatrixWorld(true);
-        }
-    }
-
-    /* =========================================================================
-     * 第四部分：布娃娃管理器 (RagdollManager)
-     * ========================================================================= */
-
-    class RagdollManager {
+    // ------------------------------------------------------------------------
+    // 2. RagdollPhysics 主類別
+    // ------------------------------------------------------------------------
+    class RagdollPhysics {
         constructor() {
-            this.activeRagdolls = new Map(); // 儲存活躍的布娃娃
+            this.initialized = false;
+            this.soldierManager = null;
+            this.terrain = null;
+            this.physics = null;
+
+            // soldierId -> 物理倒地狀態
+            this._bodies = new Map();
+            this._unsubscribers = [];
         }
 
-        init() {
-            Logger.info('布娃娃系統初始化...');
+        /**
+         * 初始化布娃娃物理系統與事件訂閱
+         */
+        init(options) {
+            const opts = options || {};
+            this.soldierManager = opts.soldierManager || TacticalWarfare.EnemySoldierMesh || null;
+            this.terrain = opts.terrain || TacticalWarfare.MapTerrainGround || null;
+            this.physics = opts.physics || TacticalWarfare.PhysicsCollision || null;
 
-            if (WZ.bus) {
-                // 監聽敵人死亡事件
-                WZ.bus.on('ENEMY_DIED', (data) => {
-                    this._handleEnemyDeath(data);
-                });
+            this.clearAll();
+
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
             }
+
+            return this;
         }
 
-        _handleEnemyDeath(data) {
-            const { enemyId, soldierData, hitData } = data;
-
-            if (!soldierData || !soldierData.bones) {
-                Logger.warn(`無法為 ${enemyId} 建立布娃娃：缺少骨骼資訊`);
+        _bindEvents() {
+            if (!EventBus || !Events) {
                 return;
             }
 
-            // 如果已經存在，先移除舊的
-            if (this.activeRagdolls.has(enemyId)) {
-                this.activeRagdolls.delete(enemyId);
+            if (Events.ENEMY_KILL) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.ENEMY_KILL, (payload) => {
+                        if (!payload) return;
+                        const id = payload.enemyId || (payload.enemy && payload.enemy.id);
+                        if (!id) return;
+
+                        let impX = 0;
+                        let impY = 1.4;
+                        let impZ = -1;
+
+                        if (payload.point && payload.enemy && payload.enemy.position) {
+                            const dx = payload.enemy.position.x - payload.point.x;
+                            const dz = payload.enemy.position.z - payload.point.z;
+                            const len = Math.sqrt(dx * dx + dz * dz) || 1;
+                            impX = (dx / len) * RAGDOLL_CONFIG.defaultImpulseSpeed;
+                            impZ = (dz / len) * RAGDOLL_CONFIG.defaultImpulseSpeed;
+                        }
+
+                        const mult = payload.isHeadshot ? 1.25 : 1.0;
+                        this.activateRagdoll(id, {
+                            vx: impX * mult,
+                            vy: impY * mult,
+                            vz: impZ * mult
+                        });
+                    })
+                );
             }
 
-            // 建立新的布娃娃實例
-            const ragdoll = new RagdollInstance(enemyId, soldierData, hitData);
-            this.activeRagdolls.set(enemyId, ragdoll);
+            if (Events.EXPLOSION_TRIGGERED) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.EXPLOSION_TRIGGERED, (payload) => {
+                        if (!payload || !payload.position) return;
+                        this.applyExplosionBlast(payload.position, payload.radius || 8.5);
+                    })
+                );
+            }
 
-            Logger.success(`敵人 ${enemyId} 死亡，已切換為布娃娃物理`);
+            if (Events.GAME_RESET) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_RESET, () => {
+                        this.clearAll();
+                    })
+                );
+            }
         }
 
-        update(dt) {
-            this.activeRagdolls.forEach((ragdoll, id) => {
-                ragdoll.update(dt);
-                
-                // 移除已失效的布娃娃
-                if (!ragdoll.isActive) {
-                    this.activeRagdolls.delete(id);
-                    Logger.info(`布娃娃 ${id} 已銷毀`);
-                }
+        _getGroundY(x, z, fallbackY) {
+            if (this.terrain && typeof this.terrain.getHeightAt === 'function') {
+                return this.terrain.getHeightAt(x, z);
+            }
+            if (this.physics && typeof this.physics.getGroundHeightAt === 'function') {
+                return this.physics.getGroundHeightAt(x, z, fallbackY || 0);
+            }
+            return typeof fallbackY === 'number' ? fallbackY : 0;
+        }
+
+        /**
+         * 為指定士兵啟用布娃娃倒地物理
+         * @param {string} soldierId
+         * @param {Object} impulse - { vx, vy, vz }
+         */
+        activateRagdoll(soldierId, impulse) {
+            if (!soldierId || !this.soldierManager || typeof this.soldierManager.getSoldier !== 'function') {
+                return null;
+            }
+            const soldier = this.soldierManager.getSoldier(soldierId);
+            if (!soldier || !soldier.rootGroup) {
+                return null;
+            }
+
+            if (typeof soldier.markDead === 'function') {
+                soldier.alive = false;
+            }
+
+            const imp = impulse || {};
+            const vx = typeof imp.vx === 'number' ? imp.vx : 0;
+            const vy = typeof imp.vy === 'number' ? imp.vy : 1.5;
+            const vz = typeof imp.vz === 'number' ? imp.vz : 0;
+            const speed = Math.sqrt(vx * vx + vz * vz);
+
+            // 依衝量方向決定向前或向後傾倒
+            const fallDir = speed > 0.2 ? -1 : -1;
+            const angularVelX = fallDir * clamp(5.5 + speed * 0.75, 4.5, 11.5);
+            const angularVelZ = ((Math.random() - 0.5) * 2) * 2.2;
+
+            const body = {
+                soldierId: soldier.id,
+                soldier: soldier,
+                x: soldier.position.x,
+                y: soldier.position.y,
+                z: soldier.position.z,
+                vx: vx,
+                vy: vy,
+                vz: vz,
+                tiltX: soldier.bodyPivot ? soldier.bodyPivot.rotation.x : 0,
+                tiltZ: 0,
+                angVelX: angularVelX,
+                angVelZ: angularVelZ,
+                age: 0,
+                settled: false
+            };
+
+            this._bodies.set(soldier.id, body);
+            return body;
+        }
+
+        /**
+         * 對爆炸範圍內的已倒地士兵施加額外震波衝量
+         */
+        applyExplosionBlast(origin, radius) {
+            const r = typeof radius === 'number' && radius > 0 ? radius : 8.5;
+            this._bodies.forEach((body) => {
+                if (!body || !body.soldier) return;
+                const dx = body.x - origin.x;
+                const dy = (body.y + 0.6) - origin.y;
+                const dz = body.z - origin.z;
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (dist >= r || dist < 0.001) return;
+
+                const falloff = 1 - dist / r;
+                const blastSpd = RAGDOLL_CONFIG.explosionImpulseSpeed * falloff;
+                body.vx += (dx / dist) * blastSpd;
+                body.vz += (dz / dist) * blastSpd;
+                body.vy = Math.max(body.vy, 4.8 * falloff);
+                body.angVelX -= 4.5 * falloff;
+                body.settled = false;
             });
         }
-    }
 
-    /* =========================================================================
-     * 第五部分：導出與初始化
-     * ========================================================================= */
+        /**
+         * 每幀更新所有布娃娃物理倒地、滑行與消散
+         */
+        update(deltaTime) {
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+            const toRemove = [];
 
-    // 1. 實例化
-    const ragdollManager = new RagdollManager();
+            this._bodies.forEach((body, id) => {
+                const soldier = body.soldier;
+                if (!soldier || !soldier.rootGroup) {
+                    toRemove.push(id);
+                    return;
+                }
 
-    // 2. 掛載到 WZ 命名空間
-    WZ.Ragdoll = ragdollManager;
+                body.age += dt;
 
-    // 3. 監聽 CORE_SYSTEM_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('CORE_SYSTEM_READY', () => {
-            Logger.system('接收到核心系統就緒事件，準備初始化布娃娃系統...');
-            ragdollManager.init();
-            WZ.bus.emit('RAGDOLL_READY');
-        });
-    }
+                // 重力與垂直貼地
+                body.vy -= RAGDOLL_CONFIG.gravity * dt;
+                body.x += body.vx * dt;
+                body.z += body.vz * dt;
+                body.y += body.vy * dt;
 
-    // 4. 將更新掛載到主渲染循環中
-    if (WZ.Renderer) {
-        const originalOnRender = WZ.Renderer.onRender;
-        WZ.Renderer.onRender = (alpha, dt) => {
-            ragdollManager.update(dt);
-            if (originalOnRender) {
-                originalOnRender(alpha, dt);
-            }
-        };
-        Logger.info('RagdollManager 已成功掛載至主渲染循環');
-    } else {
-        // 延遲掛載
-        const checkInterval = setInterval(() => {
-            if (WZ.Renderer) {
-                clearInterval(checkInterval);
-                const originalOnRender = WZ.Renderer.onRender;
-                WZ.Renderer.onRender = (alpha, dt) => {
-                    ragdollManager.update(dt);
-                    if (originalOnRender) {
-                        originalOnRender(alpha, dt);
+                const groundY = this._getGroundY(body.x, body.z, 0);
+                if (body.y <= groundY) {
+                    body.y = groundY;
+                    if (body.vy < -1.5) {
+                        body.vy = -body.vy * 0.22;
+                    } else {
+                        body.vy = 0;
                     }
-                };
-                Logger.info('RagdollManager 延遲掛載成功');
+
+                    // 地面摩擦衰減水平滑行速度
+                    const damp = Math.exp(-RAGDOLL_CONFIG.groundFriction * dt);
+                    body.vx *= damp;
+                    body.vz *= damp;
+                }
+
+                // 傾倒旋轉與限制最大倒地角度
+                body.tiltX += body.angVelX * dt;
+                body.tiltZ += body.angVelZ * dt;
+
+                const maxTilt = RAGDOLL_CONFIG.maxFallAngle;
+                if (Math.abs(body.tiltX) >= maxTilt) {
+                    body.tiltX = clamp(body.tiltX, -maxTilt, maxTilt);
+                    body.angVelX *= -0.15;
+                }
+                body.tiltZ = clamp(body.tiltZ, -0.45, 0.45);
+                body.angVelZ *= Math.exp(-6 * dt);
+
+                soldier.rootGroup.position.set(body.x, body.y, body.z);
+                if (soldier.bodyPivot) {
+                    soldier.bodyPivot.position.y = 0.22;
+                    soldier.bodyPivot.rotation.x = body.tiltX;
+                    soldier.bodyPivot.rotation.z = body.tiltZ;
+                }
+
+                // 逾時後隱藏並清理布娃娃實體
+                const totalLife = RAGDOLL_CONFIG.lingerDuration + RAGDOLL_CONFIG.fadeDuration;
+                if (body.age >= totalLife) {
+                    soldier.rootGroup.visible = false;
+                    toRemove.push(id);
+                }
+            });
+
+            for (let i = 0; i < toRemove.length; i = i + 1) {
+                this._bodies.delete(toRemove[i]);
             }
-        }, 100);
+        }
+
+        clearAll() {
+            this._bodies.clear();
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+            this.clearAll();
+            this.initialized = false;
+        }
     }
 
-    Logger.success('js/29_ragdoll_physics.js 已成功載入並掛載至 window.WZ.Ragdoll');
+    // ------------------------------------------------------------------------
+    // 3. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const ragdollPhysicsInstance = new RagdollPhysics();
 
-}); // 結束工廠函數
+    const moduleExport = {
+        RagdollPhysicsClass: RagdollPhysics,
+        instance: ragdollPhysicsInstance,
+        RAGDOLL_CONFIG: RAGDOLL_CONFIG
+    };
+
+    TacticalWarfare.RagdollPhysics = ragdollPhysicsInstance;
+    TacticalWarfare.registerModule('29_ragdoll_physics', moduleExport);
+})(window);
