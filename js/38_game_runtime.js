@@ -16,38 +16,56 @@
       this.raf = 0;
       this.keys = new Set();
       this.enemies = [];
-      this.health = 150;
-      this.armor = 150;
-      this.mag = 30;
-      this.reserve = 120;
-      this.reloadTimer = 0;
-      this.fireTimer = 0;
-      this.jumpVelocity = 0;
-      this.grounded = true;
+      
+      // 玩家數值
+      this.health = 150; this.armor = 150; this.mag = 30; this.reserve = 120;
+      this.reloadTimer = 0; this.fireTimer = 0; this.jumpVelocity = 0; this.grounded = true;
       this.player = { x: 0, y: 0, z: 15, yaw: 0, pitch: 0 };
+      
+      // 控制狀態
       this.stick = { active: false, pointerId: null, x: 0, y: 0, dx: 0, dy: 0 };
-      this.lookPointer = null;
-      this.fireHeld = false;
+      this.lookPointer = null; this.fireHeld = false;
+      
+      // 後座力變數
+      this.recoilPitch = 0;
+      this.recoilYaw = 0;
+      this.weaponRecoilZ = 0;
+      
       this._loop = this._loop.bind(this);
       
-      if (!THREE || !this.canvas) { this.error('Three.js 或 #game-canvas 未就緒。'); return; }
+      // 1. 先綁定 UI，保證按鈕一定能點！
+      try {
+        this._bindInput();
+        this._bindUI();
+      } catch (e) {
+        alert("UI按鈕綁定失敗：" + e.message);
+      }
+
+      // 2. 檢查環境
+      if (!THREE) {
+        alert("嚴重錯誤：Three.js 沒有成功加載！請檢查網路或 CDN 連結。");
+        return;
+      }
+      if (!this.canvas) {
+        alert("嚴重錯誤：找不到 <canvas id='game-canvas'>！");
+        return;
+      }
       
+      // 3. 初始化 3D 場景
       try { 
         this._initThree(); 
-        this._bindInput(); 
-        this._bindUI(); 
         this._initWorld(); 
         this._updateHud(); 
         this._render(); 
       }
       catch (error) { 
-        console.error('[WZ Runtime] 初始化失敗', error); 
-        this.error(`3D 初始化失敗：${error.message}`); 
+        console.error('[WZ Runtime] 3D 初始化失敗', error); 
+        alert(`3D 初始化失敗：${error.message}`);
       }
     }
 
     _initThree() {
-      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, powerPreference: 'high-performance' });
       this.renderer.setPixelRatio(Math.min(global.devicePixelRatio || 1, 1.5));
       this.renderer.setSize(global.innerWidth, global.innerHeight);
       this.renderer.shadowMap.enabled = true;
@@ -57,15 +75,26 @@
       this.scene.fog = new THREE.Fog(0x758594, 45, 170);
       this.camera = new THREE.PerspectiveCamera(72, global.innerWidth / Math.max(1, global.innerHeight), 0.05, 300);
       this.scene.add(this.camera);
-      global.addEventListener('resize', () => { this.camera.aspect = global.innerWidth / Math.max(1, global.innerHeight); this.camera.updateProjectionMatrix(); this.renderer.setSize(global.innerWidth, global.innerHeight); });
+      global.addEventListener('resize', () => { 
+        this.camera.aspect = global.innerWidth / Math.max(1, global.innerHeight); 
+        this.camera.updateProjectionMatrix(); 
+        this.renderer.setSize(global.innerWidth, global.innerHeight); 
+      });
     }
 
     _initWorld() {
       this.scene.add(new THREE.HemisphereLight(0xc8d7e5, 0x34302a, 2));
-      const sun = new THREE.DirectionalLight(0xffe0b0, 2.2); sun.position.set(-25, 50, 20); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024); this.scene.add(sun);
+      const sun = new THREE.DirectionalLight(0xffe0b0, 2.2); 
+      sun.position.set(-25, 50, 20); 
+      sun.castShadow = true; 
+      sun.shadow.mapSize.set(1024, 1024); 
+      this.scene.add(sun);
+      
       const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshStandardMaterial({ color: 0x505751, roughness: 0.95 }));
       ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; this.scene.add(ground);
+      
       const grid = new THREE.GridHelper(120, 60, 0x887b56, 0x62645c); grid.position.y = 0.012; this.scene.add(grid);
+      
       const crateMaterial = new THREE.MeshStandardMaterial({ color: 0x69543a, roughness: 0.86 });
       for (let i = 0; i < 16; i++) {
         const box = new THREE.Mesh(new THREE.BoxGeometry(2 + (i % 3), 1.4 + (i % 2), 1.8), crateMaterial);
@@ -73,10 +102,12 @@
         box.position.set(Math.sin(angle) * radius, box.geometry.parameters.height / 2, -8 + Math.cos(angle) * radius);
         box.castShadow = true; box.receiveShadow = true; this.scene.add(box);
       }
+      
       const wallMat = new THREE.MeshStandardMaterial({ color: 0x62645f, roughness: 0.9 });
       for (const [x, z, w, d] of [[0,-60,120,1],[0,60,120,1],[-60,0,1,120],[60,0,1,120]]) {
         const wall = new THREE.Mesh(new THREE.BoxGeometry(w, 4, d), wallMat); wall.position.set(x, 2, z); wall.castShadow = true; this.scene.add(wall);
       }
+      
       this._createWeaponView();
       this._spawnEnemies();
     }
@@ -85,13 +116,37 @@
       const group = new THREE.Group(); group.name = 'FirstPersonM4';
       const black = new THREE.MeshStandardMaterial({ color: 0x17191b, metalness: 0.65, roughness: 0.36 });
       const tan = new THREE.MeshStandardMaterial({ color: 0xb89f7d, metalness: 0.25, roughness: 0.62 });
-      const part = (geo, mat, pos) => { const m = new THREE.Mesh(geo, mat); m.position.set(...pos); m.castShadow = true; group.add(m); return m; };
+      
+      const part = (geo, mat, pos) => { 
+        const m = new THREE.Mesh(geo, mat); 
+        m.position.set(...pos); 
+        m.castShadow = true; 
+        group.add(m); 
+        return m; 
+      };
+      
       part(new THREE.BoxGeometry(.12,.12,.48), black, [0,-.12,-.47]);
       part(new THREE.BoxGeometry(.105,.1,.3), tan, [0,-.115,-.72]);
       part(new THREE.CylinderGeometry(.025,.025,.42,10), black, [0,-.1,-1.05]).rotation.x = Math.PI/2;
       part(new THREE.BoxGeometry(.075,.21,.11), black, [0,-.27,-.42]);
       part(new THREE.BoxGeometry(.08,.27,.12), black, [0,-.12,-.22]);
-      group.position.set(.3,-.25,-.25); this.camera.add(group); this.weaponView = group;
+      
+      // 新增：槍口火焰 (Muzzle Flash)
+      const flashMat = new THREE.MeshBasicMaterial({ color: 0xffdd44, transparent: true, opacity: 0.8 });
+      this.muzzleFlash = new THREE.Mesh(new THREE.SphereGeometry(0.08, 4, 4), flashMat);
+      this.muzzleFlash.position.set(0, -0.1, -1.3); // 對準槍管最前方
+      this.muzzleFlash.visible = false;
+      group.add(this.muzzleFlash);
+
+      // 初始化音效
+      this.gunSound = new Audio('https://actions.google.com/sounds/v1/weapons/machine_gun_fire.ogg');
+      this.gunSound.volume = 0.4;
+
+      // 設定初始位置
+      this.weaponBasePos = new THREE.Vector3(.3, -.25, -.25);
+      group.position.copy(this.weaponBasePos); 
+      this.camera.add(group); 
+      this.weaponView = group;
     }
 
     _spawnEnemies() {
@@ -99,11 +154,8 @@
       const headMat = new THREE.MeshStandardMaterial({ color: 0x9a745d, roughness: .8 });
       for (let i = 0; i < 6; i++) {
         const root = new THREE.Group();
-        // 修复：如果 Three.js 版本過低沒有膠囊體，則降級使用圓柱體
         const bodyGeo = THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(.38, .75, 4, 8) : new THREE.CylinderGeometry(.38, .38, .75, 8);
-        const body = new THREE.Mesh(bodyGeo, bodyMat); 
-        body.position.y = 1.02; body.castShadow = true; root.add(body);
-        
+        const body = new THREE.Mesh(bodyGeo, bodyMat); body.position.y = 1.02; body.castShadow = true; root.add(body);
         const head = new THREE.Mesh(new THREE.SphereGeometry(.24,12,10),headMat); head.position.y=1.7; head.castShadow=true; root.add(head);
         const x = [-12,9,-18,18,-6,14][i], z = [-16,-22,-32,-38,-48,-52][i];
         root.position.set(x,0,z); this.scene.add(root);
@@ -112,13 +164,19 @@
     }
 
     _bindUI() {
-      const deploy = $('btn-deploy'); if (deploy) deploy.addEventListener('click', () => this.start());
-      const fire = $('btn-fire'); this._button(fire, () => { this.fireHeld = true; this.fire(); }, () => { this.fireHeld = false; });
+      const deploy = $('btn-deploy'); 
+      if (deploy) deploy.addEventListener('click', () => this.start());
+      
+      const fire = $('btn-fire'); 
+      this._button(fire, () => { this.fireHeld = true; this.fire(); }, () => { this.fireHeld = false; });
+      
       this._button($('btn-jump'), () => this.jump());
       this._button($('btn-crouch'), () => { this.crouched = true; }, () => { this.crouched = false; });
       this._button($('btn-reload'), () => this.reload());
+      
       const settings = $('btn-settings'); if (settings) settings.addEventListener('click', () => this.toast('系統設置：WASD／搖桿移動，滑鼠／拖曳轉向，FIRE 開火。'));
       const loadout = $('btn-loadout'); if (loadout) loadout.addEventListener('click', () => this.toast('目前裝備：M4A1／30 發彈匣。'));
+      
       this._bindJoystick();
     }
 
@@ -153,7 +211,6 @@
         if(this.state!=='combat')return;
         if(global.document.pointerLockElement===this.canvas){this._look(e.movementX||0,e.movementY||0);return}
         
-        // 修复：触摸屏没有 movementX，改为用差值计算
         if(e.pointerType==='touch' && e.clientX > global.innerWidth*.45) {
             if(this.lookPointer && e.pointerId === this.lookPointer.id) {
                 this._look(e.clientX - this.lookPointer.x, e.clientY - this.lookPointer.y);
@@ -172,20 +229,225 @@
       global.addEventListener('contextmenu',e=>{if(this.state==='combat')e.preventDefault()});
     }
 
-    _look(dx,dy){this.player.yaw-=dx*.0025;this.player.pitch=clamp(this.player.pitch-dy*.0025,-1.35,1.35)}
-    start(){if(this.state==='combat')return;this.state='combat';this.health=150;this.armor=150;this.mag=30;this.reserve=120;this.player={x:0,y:0,z:15,yaw:0,pitch:0};this.enemies.forEach(e=>{e.alive=true;e.health=100;e.root.visible=true});document.body.dataset.state='combat';this._updateHud();if(!this.running){this.running=true;this.lastTime=performance.now();this.raf=requestAnimationFrame(this._loop)}}
-    pause(){this.state='paused';document.body.dataset.state='lobby';if(global.document.exitPointerLock)global.document.exitPointerLock()}
+    _look(dx,dy){
+      this.player.yaw -= dx * .0025;
+      this.player.pitch = clamp(this.player.pitch - dy * .0025, -1.35, 1.35);
+    }
+    
+    start(){
+      if(this.state==='combat')return;
+      this.state='combat';
+      this.health=150; this.armor=150; this.mag=30; this.reserve=120;
+      this.player={x:0,y:0,z:15,yaw:0,pitch:0};
+      this.recoilPitch = 0; this.recoilYaw = 0;
+      this.enemies.forEach(e=>{e.alive=true;e.health=100;e.root.visible=true});
+      document.body.dataset.state='combat';
+      this._updateHud();
+      if(!this.running){
+        this.running=true;
+        this.lastTime=performance.now();
+        this.raf=requestAnimationFrame(this._loop);
+      }
+    }
+
+    pause(){
+      this.state='paused';
+      document.body.dataset.state='lobby';
+      if(global.document.exitPointerLock)global.document.exitPointerLock();
+    }
+
     jump(){if(this.state==='combat'&&this.grounded){this.jumpVelocity=6.5;this.grounded=false}}
     reload(){if(this.state!=='combat'||this.reloadTimer>0||this.mag>=30||this.reserve<=0)return;this.reloadTimer=1.1}
-    fire(){if(this.state!=='combat'||this.reloadTimer>0||this.fireTimer>0||this.mag<=0)return;this.mag--;this.fireTimer=.12;this._updateHud();this.camera.updateMatrixWorld(true);const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2(0,0),this.camera);const targets=this.enemies.filter(e=>e.alive).flatMap(e=>e.root.children);const hit=ray.intersectObjects(targets,false)[0];if(hit){const enemy=this.enemies.find(e=>e.alive&&e.root===hit.object.parent);if(enemy){enemy.health-=34;if(enemy.health<=0){enemy.alive=false;enemy.root.visible=false;const score=$('score-blue');if(score)score.textContent=String((Number(score.textContent)||0)+1);this.toast('TARGET ELIMINATED')}}}}
-    _move(dt){let x=0,y=0;if(this.keys.has('KeyA')||this.keys.has('ArrowLeft'))x-=1;if(this.keys.has('KeyD')||this.keys.has('ArrowRight'))x+=1;if(this.keys.has('KeyW')||this.keys.has('ArrowUp'))y+=1;if(this.keys.has('KeyS')||this.keys.has('ArrowDown'))y-=1;x+=this.stick.dx;y-=this.stick.dy;const len=Math.hypot(x,y);if(len>1){x/=len;y/=len}const speed=this.keys.has('ShiftLeft')?9:5;const forwardX=-Math.sin(this.player.yaw),forwardZ=-Math.cos(this.player.yaw),rightX=Math.cos(this.player.yaw),rightZ=-Math.sin(this.player.yaw);this.player.x+=(forwardX*y+rightX*x)*speed*dt;this.player.z+=(forwardZ*y+rightZ*x)*speed*dt;this.player.x=clamp(this.player.x,-56,56);this.player.z=clamp(this.player.z,-56,56);this.jumpVelocity-=18*dt;this.player.y+=this.jumpVelocity*dt;if(this.player.y<=0){this.player.y=0;this.jumpVelocity=0;this.grounded=true}this.camera.position.set(this.player.x,1.65+this.player.y-(this.crouched?.55:0),this.player.z);this.camera.rotation.order='YXZ';this.camera.rotation.set(this.player.pitch,this.player.yaw,0)}
-    _updateEnemies(dt){for(const enemy of this.enemies){if(!enemy.alive)continue;const dx=this.player.x-enemy.root.position.x,dz=this.player.z-enemy.root.position.z,dist=Math.hypot(dx,dz);if(dist>7){enemy.root.position.x+=dx/dist*dt*.65;enemy.root.position.z+=dz/dist*dt*.65}enemy.root.lookAt(this.player.x,0,this.player.z);enemy.fireCooldown-=dt;if(enemy.fireCooldown<=0&&dist<36){enemy.fireCooldown=2.2+Math.random()*1.5;if(Math.random()<.28){const absorbed=Math.min(this.armor,12);this.armor-=absorbed;this.health=Math.max(0,this.health-(12-absorbed));this._updateHud();if(this.health<=0)this._respawn()}}}}
-    _respawn(){this.health=150;this.armor=150;this.player={x:0,y:0,z:15,yaw:0,pitch:0};this.toast('重新部署')}
-    _updateHud(){const h=$('health-value'),a=$('armor-value'),m=$('ammo-mag'),r=$('ammo-reserve'),f=$('health-fill');if(h)h.textContent=String(this.health);if(a)a.textContent=String(this.armor);if(m)m.textContent=String(this.mag);if(r)r.textContent=String(this.reserve);if(f)f.style.width=`${this.health/150*100}%`}
-    toast(text){const status=$('status');if(!status)return;status.textContent=text;status.classList.add('show');global.clearTimeout(this.toastTimer);this.toastTimer=global.setTimeout(()=>status.classList.remove('show'),1800)}
-    error(text){this.toast(text)}
-    _loop(now){if(!this.running)return;const dt=Math.min(.05,Math.max(0,(now-this.lastTime)/1000));this.lastTime=now;if(this.state==='combat'){this.fireTimer=Math.max(0,this.fireTimer-dt);if(this.fireHeld)this.fire();if(this.reloadTimer>0){this.reloadTimer-=dt;if(this.reloadTimer<=0){const count=Math.min(30-this.mag,this.reserve);this.mag+=count;this.reserve-=count;this._updateHud()}}this._move(dt);this._updateEnemies(dt);const time=$('match-time');if(time){this.elapsed=(this.elapsed||0)+dt;const remaining=Math.max(0,600-Math.floor(this.elapsed));time.textContent=`${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`}}this._render();this.raf=requestAnimationFrame(this._loop)}
-    _render(){if(this.renderer&&this.scene&&this.camera)this.renderer.render(this.scene,this.camera)}
+    
+    fire(){
+      if(this.state!=='combat'||this.reloadTimer>0||this.fireTimer>0||this.mag<=0)return;
+      
+      this.mag--; 
+      this.fireTimer = .1; // 射速控制 (0.1秒一發，即 600 RPM)
+      this._updateHud();
+
+      // 1. 播放音效
+      if(this.gunSound) {
+        this.gunSound.currentTime = 0;
+        this.gunSound.play().catch(e=>{});
+      }
+
+      // 2. 顯示槍口火焰
+      if(this.muzzleFlash) {
+        this.muzzleFlash.visible = true;
+        setTimeout(() => { this.muzzleFlash.visible = false; }, 40);
+      }
+
+      // 3. 觸發後座力 (Recoil)
+      // 實體後座力：讓玩家視角強制往上抬，並隨機左右偏
+      this.recoilPitch += 0.025 + Math.random() * 0.015;
+      this.recoilYaw += (Math.random() - 0.5) * 0.015;
+      
+      // 視覺後座力：槍枝往後退
+      this.weaponRecoilZ += 0.08;
+
+      // 4. 射線檢測
+      this.camera.updateMatrixWorld(true);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(new THREE.Vector2(0,0), this.camera);
+      const targets = this.enemies.filter(e=>e.alive).flatMap(e=>e.root.children);
+      const hit = ray.intersectObjects(targets, false)[0];
+      
+      if(hit){
+        const enemy = this.enemies.find(e=>e.alive && e.root === hit.object.parent);
+        if(enemy){
+          enemy.health -= 34;
+          if(enemy.health <= 0){
+            enemy.alive = false;
+            enemy.root.visible = false;
+            const score = $('score-blue');
+            if(score) score.textContent = String((Number(score.textContent)||0) + 1);
+            this.toast('TARGET ELIMINATED');
+          }
+        }
+      }
+    }
+
+    _move(dt){
+      let x=0, y=0;
+      if(this.keys.has('KeyA')||this.keys.has('ArrowLeft'))x-=1;
+      if(this.keys.has('KeyD')||this.keys.has('ArrowRight'))x+=1;
+      if(this.keys.has('KeyW')||this.keys.has('ArrowUp'))y+=1;
+      if(this.keys.has('KeyS')||this.keys.has('ArrowDown'))y-=1;
+      
+      x += this.stick.dx; y -= this.stick.dy;
+      const len = Math.hypot(x,y);
+      if(len>1){x/=len;y/=len}
+      
+      const speed = this.keys.has('ShiftLeft')?9:5;
+      const forwardX = -Math.sin(this.player.yaw), forwardZ = -Math.cos(this.player.yaw);
+      const rightX = Math.cos(this.player.yaw), rightZ = -Math.sin(this.player.yaw);
+      
+      this.player.x += (forwardX*y + rightX*x) * speed * dt;
+      this.player.z += (forwardZ*y + rightZ*x) * speed * dt;
+      
+      this.player.x = clamp(this.player.x, -56, 56);
+      this.player.z = clamp(this.player.z, -56, 56);
+      
+      this.jumpVelocity -= 18 * dt;
+      this.player.y += this.jumpVelocity * dt;
+      if(this.player.y <= 0){
+        this.player.y = 0; this.jumpVelocity = 0; this.grounded = true;
+      }
+      
+      this.camera.position.set(this.player.x, 1.65 + this.player.y - (this.crouched?.55:0), this.player.z);
+      
+      // 將相機角度 = 玩家控制角度 + 後座力偏移
+      this.camera.rotation.order = 'YXZ';
+      this.camera.rotation.set(this.player.pitch + this.recoilPitch, this.player.yaw + this.recoilYaw, 0);
+    }
+
+    _updateEnemies(dt){
+      for(const enemy of this.enemies){
+        if(!enemy.alive)continue;
+        const dx = this.player.x - enemy.root.position.x, dz = this.player.z - enemy.root.position.z, dist = Math.hypot(dx,dz);
+        if(dist>7){
+          enemy.root.position.x += dx/dist * dt * .65;
+          enemy.root.position.z += dz/dist * dt * .65;
+        }
+        enemy.root.lookAt(this.player.x, 0, this.player.z);
+        enemy.fireCooldown -= dt;
+        if(enemy.fireCooldown <= 0 && dist < 36){
+          enemy.fireCooldown = 2.2 + Math.random() * 1.5;
+          if(Math.random() < .28){
+            const absorbed = Math.min(this.armor, 12);
+            this.armor -= absorbed;
+            this.health = Math.max(0, this.health - (12 - absorbed));
+            this._updateHud();
+            if(this.health <= 0) this._respawn();
+          }
+        }
+      }
+    }
+    
+    _respawn(){
+      this.health=150; this.armor=150;
+      this.player={x:0,y:0,z:15,yaw:0,pitch:0};
+      this.recoilPitch = 0; this.recoilYaw = 0;
+      this.toast('重新部署');
+    }
+
+    _updateHud(){
+      const h=$('health-value'),a=$('armor-value'),m=$('ammo-mag'),r=$('ammo-reserve'),f=$('health-fill');
+      if(h)h.textContent=String(this.health);
+      if(a)a.textContent=String(this.armor);
+      if(m)m.textContent=String(this.mag);
+      if(r)r.textContent=String(this.reserve);
+      if(f)f.style.width=`${this.health/150*100}%`;
+    }
+
+    toast(text){
+      const status=$('status');if(!status)return;
+      status.textContent=text; status.classList.add('show');
+      global.clearTimeout(this.toastTimer);
+      this.toastTimer=global.setTimeout(()=>status.classList.remove('show'),1800);
+    }
+
+    _loop(now){
+      if(!this.running)return;
+      const dt = Math.min(.05, Math.max(0, (now - this.lastTime) / 1000));
+      this.lastTime = now;
+      
+      if(this.state === 'combat'){
+        this.fireTimer = Math.max(0, this.fireTimer - dt);
+        
+        if(this.fireHeld) this.fire();
+        
+        if(this.reloadTimer > 0){
+          this.reloadTimer -= dt;
+          if(this.reloadTimer <= 0){
+            const count = Math.min(30 - this.mag, this.reserve);
+            this.mag += count; this.reserve -= count;
+            this._updateHud();
+          }
+        }
+        
+        this._move(dt);
+        this._updateEnemies(dt);
+        
+        // 後座力彈簧回正 (Spring Recovery)
+        if(!this.fireHeld) {
+          // 沒開火時，鏡頭慢慢往下壓回來
+          this.recoilPitch = THREE.MathUtils.lerp(this.recoilPitch, 0, 8 * dt);
+          this.recoilYaw = THREE.MathUtils.lerp(this.recoilYaw, 0, 8 * dt);
+        }
+        // 槍枝視覺後座力恢復
+        this.weaponRecoilZ = THREE.MathUtils.lerp(this.weaponRecoilZ, 0, 15 * dt);
+        
+        // 更新槍枝最終位置
+        if(this.weaponView) {
+          this.weaponView.position.z = this.weaponBasePos.z + this.weaponRecoilZ;
+          this.weaponView.position.x = this.weaponBasePos.x + (Math.random() - 0.5) * this.weaponRecoilZ * 0.2;
+          this.weaponView.position.y = this.weaponBasePos.y - this.weaponRecoilZ * 0.1;
+        }
+
+        // 更新計時器
+        const time = $('match-time');
+        if(time){
+          this.elapsed = (this.elapsed||0) + dt;
+          const remaining = Math.max(0, 600 - Math.floor(this.elapsed));
+          time.textContent = `${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}`;
+        }
+      }
+      
+      this._render();
+      this.raf = requestAnimationFrame(this._loop);
+    }
+
+    _render(){
+      if(this.renderer && this.scene && this.camera) {
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
   }
-  if(!global.__WZPlayableRuntime){global.__WZPlayableRuntime=new GameRuntime();WZ.Runtime=global.__WZPlayableRuntime}
-})(typeof window!=='undefined'?window:globalThis);
+  
+  if(!global.__WZPlayableRuntime){
+    global.__WZPlayableRuntime = new GameRuntime();
+    WZ.Runtime = global.__WZPlayableRuntime;
+  }
+})(typeof window !== 'undefined' ? window : globalThis);
