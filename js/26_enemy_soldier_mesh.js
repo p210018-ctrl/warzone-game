@@ -1,668 +1,419 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/26_enemy_soldier_mesh.js
- * 檔案說明：高精度 3D 戰術士兵模型建構系統。
- *           採用嚴格的父子骨骼原點對齊，確保四肢 100% 無縫連接。
- *           包含精細戰術裝備、迷彩貼圖與獨立受擊判定 (Hitboxes)。
- *           掛載於 window.WZ.EnemyMesh。
- * 目標行數：1300 - 1800 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 26_enemy_soldier_mesh.js
+ * 敵軍士兵多層級 3D 模型、命中節點與肢體步態動畫系統
+ * ============================================================================
+ * 職責：
+ * 1. 建構具備獨立頭部、軀幹、四肢與步槍的敵軍 3D 角色階層模型
+ * 2. 提供命中判定所需的位置與半徑資訊（頭部／軀幹高度區間與碰撞半徑）
+ * 3. 支援行走／衝刺擺動、蹲伏姿態、受擊短暫閃白與陣亡倒地／隱藏視覺回饋
+ * 4. 提供工廠／管理器介面，方便波次與 AI 模組建立、更新與回收敵軍模型
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('26_enemy_soldier_mesh.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
+    // ------------------------------------------------------------------------
+    // 1. 敵軍角色尺寸與外觀預設表
+    // ------------------------------------------------------------------------
+    const SOLDIER_SPECS = Object.freeze({
+        radius: 0.42,
+        totalHeight: 1.82,
+        headCenterY: 1.56,
+        headRadius: 0.17,
+        torsoCenterY: 1.12,
+        torsoHalfHeight: 0.34,
+        palette: Object.freeze({
+            armor: 0x3b2f2f,
+            uniform: 0x4a4339,
+            helmet: 0x2a2623,
+            visor: 0xff3b30,
+            limb: 0x36312b,
+            rifle: 0x1b1e23,
+            hitFlash: 0xff9e7d
+        })
+    });
 
-    /* =========================================================================
-     * 第一部分：環境檢測與配置常數
-     * ========================================================================= */
-
-    Logger.system('開始載入敵方士兵模型系統 (js/26_enemy_soldier_mesh.js)...');
-
-    const THREE = global.THREE;
-    if (!THREE) {
-        Logger.error('找不到 Three.js，無法初始化士兵模型！');
-        return;
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) {
+            return minVal;
+        }
+        if (val > maxVal) {
+            return maxVal;
+        }
+        return val;
     }
 
-    const CONFIG = {
-        // 士兵尺寸參數 (單位：公尺)
-        STAND_HEIGHT: 1.8,
-        PELVIS_HEIGHT: 0.95,
-        SPINE_LENGTH: 0.45,
-        HEAD_RADIUS: 0.12,
-        UPPER_ARM_LENGTH: 0.28,
-        FOREARM_LENGTH: 0.25,
-        THIGH_LENGTH: 0.42,
-        SHIN_LENGTH: 0.40,
-        FOOT_LENGTH: 0.25,
-        
-        // 顏色設定 (若無貼圖時的備用顏色)
-        COLOR_CAMO: 0x2a3024,       // 深綠色迷彩
-        COLOR_VEST: 0x1a1c1d,       // 黑色戰術背心
-        COLOR_HELMET: 0x222222,     // 頭盔
-        COLOR_SKIN: 0x8c6b5a,       // 皮膚
-        COLOR_GOGGLE: 0x112233,     // 護目鏡反光
-        COLOR_METAL: 0x444444,      // 金屬配件
-        COLOR_BOOT: 0x111111,       // 軍靴
+    function lerp(a, b, t) {
+        return a + (b - a) * t;
+    }
 
-        // 關節護具半徑
-        JOINT_RADIUS_SHOULDER: 0.08,
-        JOINT_RADIUS_ELBOW: 0.06,
-        JOINT_RADIUS_HIP: 0.09,
-        JOINT_RADIUS_KNEE: 0.07,
+    // ------------------------------------------------------------------------
+    // 2. 單一敵軍士兵 3D 實體類別
+    // ------------------------------------------------------------------------
+    class SoldierRigEntity {
+        constructor(id, scene, materials, spawnPos) {
+            const THREE = global.THREE;
+            this.id = id || ('enemy_' + Math.random().toString(36).slice(2, 8));
+            this.scene = scene;
+            this.materials = materials;
+
+            this.position = {
+                x: spawnPos && typeof spawnPos.x === 'number' ? spawnPos.x : 0,
+                y: spawnPos && typeof spawnPos.y === 'number' ? spawnPos.y : 0,
+                z: spawnPos && typeof spawnPos.z === 'number' ? spawnPos.z : -18
+            };
+            this.yaw = spawnPos && typeof spawnPos.yaw === 'number' ? spawnPos.yaw : 0;
+
+            this.alive = true;
+            this.isCrouching = false;
+            this._walkPhase = Math.random() * Math.PI * 2;
+            this._hitFlashTimer = 0;
+            this._deathTimer = 0;
+
+            this.rootGroup = new THREE.Group();
+            this.rootGroup.name = 'EnemySoldier_' + this.id;
+            this.rootGroup.position.set(this.position.x, this.position.y, this.position.z);
+            this.rootGroup.rotation.y = this.yaw;
+
+            this.bodyPivot = new THREE.Group();
+            this.rootGroup.add(this.bodyPivot);
+
+            this._buildParts();
+
+            if (this.scene) {
+                this.scene.add(this.rootGroup);
+            }
+        }
+
+        _buildParts() {
+            const THREE = global.THREE;
+            const m = this.materials;
+
+            // 軀幹與戰術背心
+            const torsoGeo = new THREE.BoxGeometry(0.48, 0.62, 0.26);
+            this.torsoMesh = new THREE.Mesh(torsoGeo, m.armor);
+            this.torsoMesh.position.set(0, 1.14, 0);
+            this.torsoMesh.castShadow = true;
+            this.torsoMesh.receiveShadow = true;
+            this.bodyPivot.add(this.torsoMesh);
+
+            // 頭部、頭盔與紅光護目鏡
+            this.headGroup = new THREE.Group();
+            this.headGroup.position.set(0, SOLDIER_SPECS.headCenterY, 0);
+            this.bodyPivot.add(this.headGroup);
+
+            const headGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+            this.headMesh = new THREE.Mesh(headGeo, m.helmet);
+            this.headMesh.castShadow = true;
+            this.headGroup.add(this.headMesh);
+
+            const visorGeo = new THREE.BoxGeometry(0.24, 0.065, 0.04);
+            const visorMesh = new THREE.Mesh(visorGeo, m.visor);
+            visorMesh.position.set(0, 0.01, -0.145);
+            this.headGroup.add(visorMesh);
+
+            // 左／右臂與步槍
+            const armGeo = new THREE.BoxGeometry(0.14, 0.52, 0.14);
+
+            this.leftArmPivot = new THREE.Group();
+            this.leftArmPivot.position.set(-0.32, 1.38, 0);
+            const lArm = new THREE.Mesh(armGeo, m.limb);
+            lArm.position.set(0, -0.22, -0.06);
+            lArm.rotation.x = -0.55;
+            this.leftArmPivot.add(lArm);
+            this.bodyPivot.add(this.leftArmPivot);
+
+            this.rightArmPivot = new THREE.Group();
+            this.rightArmPivot.position.set(0.32, 1.38, 0);
+            const rArm = new THREE.Mesh(armGeo, m.limb);
+            rArm.position.set(0, -0.22, -0.08);
+            rArm.rotation.x = -0.65;
+            this.rightArmPivot.add(rArm);
+
+            const rifleGeo = new THREE.BoxGeometry(0.06, 0.08, 0.68);
+            const rifleMesh = new THREE.Mesh(rifleGeo, m.rifle);
+            rifleMesh.position.set(-0.06, -0.34, -0.34);
+            this.rightArmPivot.add(rifleMesh);
+            this.bodyPivot.add(this.rightArmPivot);
+
+            // 左／右腿關節
+            const legGeo = new THREE.BoxGeometry(0.17, 0.78, 0.18);
+
+            this.leftLegPivot = new THREE.Group();
+            this.leftLegPivot.position.set(-0.13, 0.82, 0);
+            const lLeg = new THREE.Mesh(legGeo, m.uniform);
+            lLeg.position.set(0, -0.39, 0);
+            lLeg.castShadow = true;
+            this.leftLegPivot.add(lLeg);
+            this.bodyPivot.add(this.leftLegPivot);
+
+            this.rightLegPivot = new THREE.Group();
+            this.rightLegPivot.position.set(0.13, 0.82, 0);
+            const rLeg = new THREE.Mesh(legGeo, m.uniform);
+            rLeg.position.set(0, -0.39, 0);
+            rLeg.castShadow = true;
+            this.rightLegPivot.add(rLeg);
+            this.bodyPivot.add(this.rightLegPivot);
+        }
+
+        triggerHitFlash() {
+            this._hitFlashTimer = 0.09;
+            if (this.torsoMesh && this.materials.hitFlash) {
+                this.torsoMesh.material = this.materials.hitFlash;
+            }
+            if (this.headMesh && this.materials.hitFlash) {
+                this.headMesh.material = this.materials.hitFlash;
+            }
+        }
+
+        markDead() {
+            this.alive = false;
+            this._deathTimer = 0;
+        }
+
+        setPose(x, y, z, yaw, isCrouching) {
+            this.position.x = x;
+            this.position.y = y;
+            this.position.z = z;
+            this.yaw = yaw;
+            this.isCrouching = Boolean(isCrouching);
+        }
+
+        update(deltaTime, moveSpeed) {
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+
+            // 受擊閃光回復
+            if (this._hitFlashTimer > 0) {
+                this._hitFlashTimer = Math.max(0, this._hitFlashTimer - dt);
+                if (this._hitFlashTimer <= 0) {
+                    if (this.torsoMesh) this.torsoMesh.material = this.materials.armor;
+                    if (this.headMesh) this.headMesh.material = this.materials.helmet;
+                }
+            }
+
+            if (!this.alive) {
+                this._deathTimer += dt;
+                const fallAngle = Math.min(Math.PI * 0.5, this._deathTimer * 6.5);
+                this.bodyPivot.rotation.x = -fallAngle;
+                if (this._deathTimer > 1.4) {
+                    this.rootGroup.visible = false;
+                }
+                return;
+            }
+
+            this.rootGroup.visible = true;
+            this.rootGroup.position.set(this.position.x, this.position.y, this.position.z);
+            this.rootGroup.rotation.y = this.yaw;
+
+            const targetBodyY = this.isCrouching ? -0.35 : 0;
+            this.bodyPivot.position.y = lerp(this.bodyPivot.position.y, targetBodyY, 1 - Math.exp(-12 * dt));
+            this.bodyPivot.rotation.x = 0;
+
+            const spd = typeof moveSpeed === 'number' ? moveSpeed : 0;
+            if (spd > 0.25) {
+                this._walkPhase += (5.5 + spd * 1.4) * dt;
+                const swing = Math.sin(this._walkPhase) * clamp(spd * 0.12, 0.08, 0.55);
+                this.leftLegPivot.rotation.x = swing;
+                this.rightLegPivot.rotation.x = -swing;
+                this.leftArmPivot.rotation.x = -swing * 0.55;
+            } else {
+                const rest = Math.exp(-10 * dt);
+                this.leftLegPivot.rotation.x *= rest;
+                this.rightLegPivot.rotation.x *= rest;
+                this.leftArmPivot.rotation.x *= rest;
+            }
+        }
+
+        /**
+         * 取得射線命中判定資訊（供 PhysicsCollision 或戰鬥系統使用）
+         */
+        getHitVolumes() {
+            const crouchOffset = this.isCrouching ? -0.35 : 0;
+            return {
+                id: this.id,
+                alive: this.alive,
+                radius: SOLDIER_SPECS.radius,
+                position: { x: this.position.x, y: this.position.y, z: this.position.z },
+                head: {
+                    x: this.position.x,
+                    y: this.position.y + SOLDIER_SPECS.headCenterY + crouchOffset,
+                    z: this.position.z,
+                    radius: SOLDIER_SPECS.headRadius
+                },
+                torso: {
+                    minY: this.position.y + 0.15,
+                    maxY: this.position.y + 1.42 + crouchOffset,
+                    radius: SOLDIER_SPECS.radius
+                }
+            };
+        }
+
+        dispose() {
+            if (this.rootGroup && this.rootGroup.parent) {
+                this.rootGroup.parent.remove(this.rootGroup);
+            }
+            this.rootGroup = null;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. EnemySoldierMesh 管理器單例
+    // ------------------------------------------------------------------------
+    class EnemySoldierMesh {
+        constructor() {
+            this.initialized = false;
+            this.scene = null;
+            this.entities = new Map();
+            this._materials = null;
+            this._unsubscribers = [];
+        }
+
+        init(options) {
+            const THREE = global.THREE;
+            if (!THREE) {
+                throw new Error('26_enemy_soldier_mesh.js 需要 THREE 全域物件');
+            }
+
+            const opts = options || {};
+            this.scene = opts.scene || (TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getScene()) || null;
+
+            if (!this.scene) {
+                throw new Error('26_enemy_soldier_mesh.js 找不到有效的 Three.js Scene');
+            }
+
+            this.clearAll();
+
+            const p = SOLDIER_SPECS.palette;
+            this._materials = {
+                armor: new THREE.MeshStandardMaterial({ color: p.armor, roughness: 0.58, metalness: 0.35 }),
+                uniform: new THREE.MeshStandardMaterial({ color: p.uniform, roughness: 0.78, metalness: 0.12 }),
+                helmet: new THREE.MeshStandardMaterial({ color: p.helmet, roughness: 0.45, metalness: 0.55 }),
+                visor: new THREE.MeshBasicMaterial({ color: p.visor }),
+                limb: new THREE.MeshStandardMaterial({ color: p.limb, roughness: 0.72, metalness: 0.15 }),
+                rifle: new THREE.MeshStandardMaterial({ color: p.rifle, roughness: 0.35, metalness: 0.82 }),
+                hitFlash: new THREE.MeshBasicMaterial({ color: p.hitFlash })
+            };
+
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
+            }
+
+            return this;
+        }
+
+        _bindEvents() {
+            if (!EventBus || !Events) {
+                return;
+            }
+
+            if (Events.ENEMY_HIT) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.ENEMY_HIT, (payload) => {
+                        const id = payload && (payload.enemyId || (payload.enemy && payload.enemy.id));
+                        if (!id) return;
+                        const ent = this.entities.get(id);
+                        if (ent && ent.alive) {
+                            ent.triggerHitFlash();
+                        }
+                    })
+                );
+            }
+
+            if (Events.ENEMY_KILL) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.ENEMY_KILL, (payload) => {
+                        const id = payload && (payload.enemyId || (payload.enemy && payload.enemy.id));
+                        if (!id) return;
+                        const ent = this.entities.get(id);
+                        if (ent) {
+                            ent.markDead();
+                        }
+                    })
+                );
+            }
+
+            if (Events.GAME_RESET) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_RESET, () => {
+                        this.clearAll();
+                    })
+                );
+            }
+        }
+
+        createSoldier(id, spawnPos) {
+            const entity = new SoldierRigEntity(id, this.scene, this._materials, spawnPos);
+            this.entities.set(entity.id, entity);
+            return entity;
+        }
+
+        getSoldier(id) {
+            return this.entities.get(id) || null;
+        }
+
+        removeSoldier(id) {
+            const ent = this.entities.get(id);
+            if (ent) {
+                ent.dispose();
+                this.entities.delete(id);
+            }
+        }
+
+        getAllSoldiers() {
+            return Array.from(this.entities.values());
+        }
+
+        clearAll() {
+            this.entities.forEach((ent) => {
+                ent.dispose();
+            });
+            this.entities.clear();
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+            this.clearAll();
+
+            if (this._materials) {
+                const keys = Object.keys(this._materials);
+                for (let i = 0; i < keys.length; i = i + 1) {
+                    const mat = this._materials[keys[i]];
+                    if (mat && typeof mat.dispose === 'function') {
+                        mat.dispose();
+                    }
+                }
+                this._materials = null;
+            }
+            this.initialized = false;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 4. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const enemySoldierMeshInstance = new EnemySoldierMesh();
+
+    const moduleExport = {
+        EnemySoldierMeshClass: EnemySoldierMesh,
+        SoldierRigEntityClass: SoldierRigEntity,
+        instance: enemySoldierMeshInstance,
+        SOLDIER_SPECS: SOLDIER_SPECS
     };
 
-    /* =========================================================================
-     * 第二部分：材質管理器 (SoldierMaterialManager)
-     * 統一管理士兵的各項材質，並優先嘗試使用 WZ.Textures 的高解析度貼圖
-     * ========================================================================= */
-
-    class SoldierMaterialManager {
-        constructor() {
-            this.materials = {};
-            this._initMaterials();
-        }
-
-        _initMaterials() {
-            // 1. 迷彩作戰服
-            let camoMap = null;
-            if (WZ.Textures) {
-                const texData = WZ.Textures.getTexture('camo_fabric', 512);
-                if (texData) {
-                    camoMap = new THREE.CanvasTexture(texData.map);
-                    camoMap.wrapS = THREE.RepeatWrapping;
-                    camoMap.wrapT = THREE.RepeatWrapping;
-                    camoMap.repeat.set(1, 1);
-                }
-            }
-            this.materials.camo = new THREE.MeshStandardMaterial({
-                map: camoMap,
-                color: camoMap ? 0xffffff : CONFIG.COLOR_CAMO,
-                roughness: 0.9,
-                metalness: 0.1
-            });
-
-            // 2. 戰術背心 (JPC)
-            this.materials.vest = new THREE.MeshStandardMaterial({
-                color: CONFIG.COLOR_VEST,
-                roughness: 0.8,
-                metalness: 0.2
-            });
-
-            // 3. 頭盔
-            this.materials.helmet = new THREE.MeshStandardMaterial({
-                color: CONFIG.COLOR_HELMET,
-                roughness: 0.6,
-                metalness: 0.4
-            });
-
-            // 4. 皮膚
-            this.materials.skin = new THREE.MeshStandardMaterial({
-                color: CONFIG.COLOR_SKIN,
-                roughness: 0.8,
-                metalness: 0.0
-            });
-
-            // 5. 護目鏡 (反光)
-            this.materials.goggle = new THREE.MeshStandardMaterial({
-                color: CONFIG.COLOR_GOGGLE,
-                roughness: 0.1,
-                metalness: 0.9,
-                transparent: true,
-                opacity: 0.8
-            });
-
-            // 6. 金屬配件
-            this.materials.metal = new THREE.MeshStandardMaterial({
-                color: CONFIG.COLOR_METAL,
-                roughness: 0.4,
-                metalness: 0.8
-            });
-
-            // 7. 軍靴
-            this.materials.boot = new THREE.MeshStandardMaterial({
-                color: CONFIG.COLOR_BOOT,
-                roughness: 0.9,
-                metalness: 0.1
-            });
-
-            // 8. 受擊閃爍紅色 (用於命中反饋)
-            this.materials.hitFlash = new THREE.MeshBasicMaterial({
-                color: 0xff0000,
-                transparent: true,
-                opacity: 0.5
-            });
-
-            Logger.info('士兵模型材質初始化完畢');
-        }
-
-        get(name) {
-            return this.materials[name] || this.materials.camo;
-        }
-    }
-
-    /* =========================================================================
-     * 第三部分：士兵骨骼建構器 (SoldierSkeletonBuilder)
-     * 負責建立層級結構並強制對齊原點
-     * ========================================================================= */
-
-    class SoldierSkeletonBuilder {
-        constructor(materialManager) {
-            this.mats = materialManager;
-            
-            // 儲存所有骨骼節點供動畫系統調用
-            this.bones = {
-                root: null,
-                pelvis: null,
-                spine: null,
-                head: null,
-                leftUpperArm: null, leftForearm: null, leftHand: null,
-                rightUpperArm: null, rightForearm: null, rightHand: null,
-                leftThigh: null, leftShin: null, leftFoot: null,
-                rightThigh: null, rightShin: null, rightFoot: null
-            };
-
-            // 儲存受擊判定包圍盒
-            this.hitboxes = [];
-        }
-
-        /**
-         * 構建完整的士兵模型
-         * @returns {THREE.Group} 士兵的根節點
-         */
-        build() {
-            // 1. 建立根節點 (位於地面 y=0)
-            this.bones.root = new THREE.Group();
-            this.bones.root.name = 'SoldierRoot';
-
-            // 2. 建立骨盆 (Pelvis)
-            this._createPelvis();
-
-            // 3. 建立脊椎與上半身 (Spine)
-            this._createSpine();
-
-            // 4. 建立頭部 (Head)
-            this._createHead();
-
-            // 5. 建立雙臂 (Arms)
-            this._createArm('left');
-            this._createArm('right');
-
-            // 6. 建立雙腿 (Legs)
-            this._createLeg('left');
-            this._createLeg('right');
-
-            // 7. 設置受擊判定
-            this._setupHitboxes();
-
-            Logger.success('士兵骨骼與網格建構完畢');
-            return this.bones.root;
-        }
-
-        /* =====================================================================
-         * 部位建構：骨盆 (Pelvis)
-         * ===================================================================== */
-        _createPelvis() {
-            const pelvisGroup = new THREE.Group();
-            pelvisGroup.name = 'Pelvis';
-            pelvisGroup.position.set(0, CONFIG.PELVIS_HEIGHT, 0);
-            this.bones.root.add(pelvisGroup);
-            this.bones.pelvis = pelvisGroup;
-
-            // 1. 骨盆主體幾何 (圓潤的倒梯形)
-            const pelvisGeo = new THREE.SphereGeometry(0.15, 16, 16);
-            pelvisGeo.scale(1.0, 0.8, 0.9); // 壓扁
-            const pelvisMesh = new THREE.Mesh(pelvisGeo, this.mats.get('camo'));
-            pelvisMesh.castShadow = true;
-            pelvisMesh.receiveShadow = true;
-            // 標記為軀幹受擊區域
-            pelvisMesh.userData.hitbox = 'isTorso';
-            pelvisGroup.add(pelvisMesh);
-
-            // 2. 戰術腰帶
-            const beltGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.06, 16);
-            const beltMesh = new THREE.Mesh(beltGeo, this.mats.get('vest'));
-            beltMesh.position.y = 0.05;
-            beltMesh.castShadow = true;
-            pelvisGroup.add(beltMesh);
-
-            // 3. 腰帶上的小配件
-            for (let i = 0; i < 4; i++) {
-                const pouchGeo = new THREE.BoxGeometry(0.04, 0.05, 0.03);
-                const pouchMesh = new THREE.Mesh(pouchGeo, this.mats.get('vest'));
-                const angle = (i / 4) * Math.PI * 2;
-                pouchMesh.position.set(Math.cos(angle) * 0.15, 0.02, Math.sin(angle) * 0.15);
-                pouchMesh.rotation.y = -angle;
-                pelvisGroup.add(pouchMesh);
-            }
-        }
-
-        /* =====================================================================
-         * 部位建構：脊椎與軀幹 (Spine)
-         * ===================================================================== */
-        _createSpine() {
-            const spineGroup = new THREE.Group();
-            spineGroup.name = 'Spine';
-            // 關鍵對齊：連接在骨盆正上方
-            spineGroup.position.set(0, 0.1, 0);
-            this.bones.pelvis.add(spineGroup);
-            this.bones.spine = spineGroup;
-
-            // 1. 腹部與胸部 (迷彩服)
-            const torsoGeo = new THREE.CylinderGeometry(0.15, 0.14, 0.45, 16);
-            const torsoMesh = new THREE.Mesh(torsoGeo, this.mats.get('camo'));
-            torsoMesh.position.y = 0.225; // 中心點在高度的一半
-            torsoMesh.castShadow = true;
-            torsoMesh.receiveShadow = true;
-            torsoMesh.userData.hitbox = 'isTorso';
-            spineGroup.add(torsoMesh);
-
-            // 2. JPC 戰術背心
-            const vestGeo = new THREE.CylinderGeometry(0.165, 0.155, 0.3, 16);
-            const vestMesh = new THREE.Mesh(vestGeo, this.mats.get('vest'));
-            vestMesh.position.y = 0.25;
-            vestMesh.castShadow = true;
-            vestMesh.userData.hitbox = 'isTorso'; // 背心也屬於軀幹
-            spineGroup.add(vestMesh);
-
-            // 3. 背心上的三個彈匣袋
-            for (let i = -1; i <= 1; i++) {
-                const magGeo = new THREE.BoxGeometry(0.05, 0.1, 0.04);
-                const magMesh = new THREE.Mesh(magGeo, this.mats.get('vest'));
-                magMesh.position.set(i * 0.06, 0.22, 0.15); // 在前方
-                magMesh.castShadow = true;
-                spineGroup.add(magMesh);
-            }
-
-            // 4. 無線電與天線 (位於左肩後方)
-            const radioGeo = new THREE.BoxGeometry(0.04, 0.08, 0.03);
-            const radioMesh = new THREE.Mesh(radioGeo, this.mats.get('metal'));
-            radioMesh.position.set(-0.12, 0.3, -0.1);
-            spineGroup.add(radioMesh);
-
-            const antennaGeo = new THREE.CylinderGeometry(0.003, 0.003, 0.3, 6);
-            const antennaMesh = new THREE.Mesh(antennaGeo, this.mats.get('metal'));
-            antennaMesh.position.set(-0.12, 0.45, -0.1);
-            spineGroup.add(antennaMesh);
-
-            // 5. 肩膀護具 (球形)
-            this._createShoulderJoint(spineGroup, 0.18, 0.4, 0, 'right');
-            this._createShoulderJoint(spineGroup, -0.18, 0.4, 0, 'left');
-            
-            // 6. 頸部
-            const neckGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.08, 8);
-            const neckMesh = new THREE.Mesh(neckGeo, this.mats.get('skin'));
-            neckMesh.position.y = 0.48;
-            spineGroup.add(neckMesh);
-        }
-
-        /**
-         * 建立肩關節球體
-         */
-        _createShoulderJoint(parent, x, y, z, side) {
-            const jointGeo = new THREE.SphereGeometry(CONFIG.JOINT_RADIUS_SHOULDER, 12, 12);
-            const jointMesh = new THREE.Mesh(jointGeo, this.mats.get('camo'));
-            jointMesh.position.set(x, y, z);
-            jointMesh.castShadow = true;
-            jointMesh.userData.hitbox = 'isTorso';
-            parent.add(jointMesh);
-        }
-
-        /* =====================================================================
-         * 部位建構：頭部 (Head)
-         * ===================================================================== */
-        _createHead() {
-            const headGroup = new THREE.Group();
-            headGroup.name = 'Head';
-            // 關鍵對齊：連接在脊椎頂部 (頸部上方)
-            headGroup.position.set(0, 0.5, 0);
-            this.bones.spine.add(headGroup);
-            this.bones.head = headGroup;
-
-            // 1. 頭部基礎 (皮膚)
-            const headGeo = new THREE.SphereGeometry(CONFIG.HEAD_RADIUS, 16, 16);
-            const headMesh = new THREE.Mesh(headGeo, this.mats.get('skin'));
-            headMesh.position.y = 0.1;
-            headMesh.castShadow = true;
-            headMesh.userData.hitbox = 'isHead';
-            headGroup.add(headMesh);
-
-            // 2. 流線型戰術頭盔
-            const helmetGeo = new THREE.SphereGeometry(CONFIG.HEAD_RADIUS * 1.15, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.6);
-            const helmetMesh = new THREE.Mesh(helmetGeo, this.mats.get('helmet'));
-            helmetMesh.position.y = 0.12;
-            helmetMesh.castShadow = true;
-            helmetMesh.userData.hitbox = 'isHead';
-            headGroup.add(helmetMesh);
-
-            // 頭盔邊緣
-            const rimGeo = new THREE.TorusGeometry(CONFIG.HEAD_RADIUS * 1.12, 0.015, 8, 16);
-            const rimMesh = new THREE.Mesh(rimGeo, this.mats.get('helmet'));
-            rimMesh.position.y = 0.1;
-            rimMesh.rotation.x = Math.PI / 2;
-            headGroup.add(rimMesh);
-
-            // 3. 護目鏡 (帶反光)
-            const goggleGeo = new THREE.BoxGeometry(0.16, 0.05, 0.04);
-            const goggleMesh = new THREE.Mesh(goggleGeo, this.mats.get('goggle'));
-            goggleMesh.position.set(0, 0.08, 0.1); // 在臉部前方
-            headGroup.add(goggleMesh);
-
-            // 4. 戰術耳機
-            const earGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.02, 8);
-            earGeo.rotateZ(Math.PI / 2);
-            
-            const earLeft = new THREE.Mesh(earGeo, this.mats.get('metal'));
-            earLeft.position.set(-0.13, 0.1, 0);
-            headGroup.add(earLeft);
-
-            const earRight = new THREE.Mesh(earGeo, this.mats.get('metal'));
-            earRight.position.set(0.13, 0.1, 0);
-            headGroup.add(earRight);
-
-            // 5. 戰術面罩 (遮住下半臉)
-            const maskGeo = new THREE.SphereGeometry(CONFIG.HEAD_RADIUS * 0.9, 12, 12, 0, Math.PI, Math.PI * 0.3, Math.PI * 0.7);
-            const maskMesh = new THREE.Mesh(maskGeo, this.mats.get('vest'));
-            maskMesh.position.set(0, 0.08, 0.04);
-            maskMesh.userData.hitbox = 'isHead';
-            headGroup.add(maskMesh);
-        }
-
-        /* =====================================================================
-         * 部位建構：手臂 (Arms)
-         * ===================================================================== */
-        _createArm(side) {
-            const isLeft = side === 'left';
-            const sign = isLeft ? -1 : 1;
-
-            // 1. 上臂 (Upper Arm)
-            const upperArmGroup = new THREE.Group();
-            upperArmGroup.name = `${side}UpperArm`;
-            // 關鍵對齊：從肩膀球體的位置開始
-            upperArmGroup.position.set(sign * 0.18, 0.4, 0);
-            this.bones.spine.add(upperArmGroup);
-            
-            if (isLeft) this.bones.leftUpperArm = upperArmGroup;
-            else this.bones.rightUpperArm = upperArmGroup;
-
-            // 上臂幾何 (迷彩圓柱)
-            const upperArmGeo = new THREE.CylinderGeometry(0.055, 0.05, CONFIG.UPPER_ARM_LENGTH, 12);
-            const upperArmMesh = new THREE.Mesh(upperArmGeo, this.mats.get('camo'));
-            // 關鍵對齊：幾何中心點向下偏移一半長度
-            upperArmMesh.position.y = -CONFIG.UPPER_ARM_LENGTH / 2;
-            upperArmMesh.castShadow = true;
-            upperArmMesh.userData.hitbox = 'isLimb';
-            upperArmGroup.add(upperArmMesh);
-
-            // 2. 手肘關節 (Elbow Joint)
-            const elbowGroup = new THREE.Group();
-            elbowGroup.name = `${side}Elbow`;
-            // 關鍵對齊：連接在上臂的末端
-            elbowGroup.position.set(0, -CONFIG.UPPER_ARM_LENGTH, 0);
-            upperArmGroup.add(elbowGroup);
-
-            // 手肘護具球體
-            const elbowJointGeo = new THREE.SphereGeometry(CONFIG.JOINT_RADIUS_ELBOW, 12, 12);
-            const elbowJointMesh = new THREE.Mesh(elbowJointGeo, this.mats.get('vest'));
-            elbowJointMesh.castShadow = true;
-            elbowJointMesh.userData.hitbox = 'isLimb';
-            elbowGroup.add(elbowJointMesh);
-
-            // 3. 前臂 (Forearm)
-            const forearmGeo = new THREE.CylinderGeometry(0.05, 0.045, CONFIG.FOREARM_LENGTH, 12);
-            const forearmMesh = new THREE.Mesh(forearmGeo, this.mats.get('camo'));
-            // 關鍵對齊：從手肘往下延伸
-            forearmMesh.position.y = -CONFIG.FOREARM_LENGTH / 2;
-            forearmMesh.castShadow = true;
-            forearmMesh.userData.hitbox = 'isLimb';
-            elbowGroup.add(forearmMesh);
-
-            // 4. 手掌 (Hand)
-            const handGroup = new THREE.Group();
-            handGroup.name = `${side}Hand`;
-            // 關鍵對齊：連接在前臂末端
-            handGroup.position.set(0, -CONFIG.FOREARM_LENGTH, 0);
-            elbowGroup.add(handGroup);
-
-            // 手掌幾何 (方塊)
-            const handGeo = new THREE.BoxGeometry(0.06, 0.08, 0.04);
-            const handMesh = new THREE.Mesh(handGeo, this.mats.get('skin'));
-            handMesh.position.y = -0.04;
-            handMesh.castShadow = true;
-            handMesh.userData.hitbox = 'isLimb';
-            handGroup.add(handMesh);
-
-            if (isLeft) this.bones.leftForearm = elbowGroup;
-            else this.bones.rightForearm = elbowGroup;
-            
-            if (isLeft) this.bones.leftHand = handGroup;
-            else this.bones.rightHand = handGroup;
-        }
-
-        /* =====================================================================
-         * 部位建構：腿部 (Legs)
-         * ===================================================================== */
-        _createLeg(side) {
-            const isLeft = side === 'left';
-            const sign = isLeft ? -1 : 1;
-
-            // 1. 大腿 (Thigh)
-            const thighGroup = new THREE.Group();
-            thighGroup.name = `${side}Thigh`;
-            // 關鍵對齊：從骨盆的髖關節位置開始
-            thighGroup.position.set(sign * 0.09, -0.1, 0);
-            this.bones.pelvis.add(thighGroup);
-            
-            if (isLeft) this.bones.leftThigh = thighGroup;
-            else this.bones.rightThigh = thighGroup;
-
-            // 髖關節護具球體
-            const hipJointGeo = new THREE.SphereGeometry(CONFIG.JOINT_RADIUS_HIP, 12, 12);
-            const hipJointMesh = new THREE.Mesh(hipJointGeo, this.mats.get('camo'));
-            hipJointMesh.castShadow = true;
-            hipJointMesh.userData.hitbox = 'isTorso';
-            thighGroup.add(hipJointMesh);
-
-            // 大腿幾何
-            const thighGeo = new THREE.CylinderGeometry(0.075, 0.07, CONFIG.THIGH_LENGTH, 12);
-            const thighMesh = new THREE.Mesh(thighGeo, this.mats.get('camo'));
-            // 關鍵對齊：向下偏移
-            thighMesh.position.y = -CONFIG.THIGH_LENGTH / 2;
-            thighMesh.castShadow = true;
-            thighMesh.userData.hitbox = 'isLimb';
-            thighGroup.add(thighMesh);
-
-            // 2. 膝蓋關節 (Knee Joint)
-            const kneeGroup = new THREE.Group();
-            kneeGroup.name = `${side}Knee`;
-            // 關鍵對齊：連接在大腿末端
-            kneeGroup.position.set(0, -CONFIG.THIGH_LENGTH, 0);
-            thighGroup.add(kneeGroup);
-
-            // 膝蓋護具 (護膝)
-            const kneeJointGeo = new THREE.SphereGeometry(CONFIG.JOINT_RADIUS_KNEE, 12, 12);
-            const kneeJointMesh = new THREE.Mesh(kneeJointGeo, this.mats.get('vest'));
-            kneeJointMesh.castShadow = true;
-            kneeJointMesh.userData.hitbox = 'isLimb';
-            kneeGroup.add(kneeJointMesh);
-
-            // 3. 小腿 (Shin)
-            const shinGeo = new THREE.CylinderGeometry(0.065, 0.05, CONFIG.SHIN_LENGTH, 12);
-            const shinMesh = new THREE.Mesh(shinGeo, this.mats.get('camo'));
-            // 關鍵對齊：向下偏移
-            shinMesh.position.y = -CONFIG.SHIN_LENGTH / 2;
-            shinMesh.castShadow = true;
-            shinMesh.userData.hitbox = 'isLimb';
-            kneeGroup.add(shinMesh);
-
-            // 4. 腳踝與軍靴 (Foot)
-            const footGroup = new THREE.Group();
-            footGroup.name = `${side}Foot`;
-            // 關鍵對齊：連接在小腿末端
-            footGroup.position.set(0, -CONFIG.SHIN_LENGTH, 0);
-            kneeGroup.add(footGroup);
-
-            // 腳踝球體
-            const ankleJointGeo = new THREE.SphereGeometry(0.05, 8, 8);
-            const ankleJointMesh = new THREE.Mesh(ankleJointGeo, this.mats.get('boot'));
-            footGroup.add(ankleJointMesh);
-
-            // 軍靴幾何 (往前延伸)
-            const bootGeo = new THREE.BoxGeometry(0.09, 0.08, CONFIG.FOOT_LENGTH);
-            const bootMesh = new THREE.Mesh(bootGeo, this.mats.get('boot'));
-            // 關鍵對齊：讓腳跟對齊腳踝，向前延伸
-            bootMesh.position.set(0, -0.04, CONFIG.FOOT_LENGTH / 2 - 0.05);
-            bootMesh.castShadow = true;
-            bootMesh.userData.hitbox = 'isLimb';
-            footGroup.add(bootMesh);
-
-            if (isLeft) this.bones.leftShin = kneeGroup;
-            else this.bones.rightShin = kneeGroup;
-            
-            if (isLeft) this.bones.leftFoot = footGroup;
-            else this.bones.rightFoot = footGroup;
-        }
-
-        /* =====================================================================
-         * 受擊判定 (Hitboxes)
-         * 遍歷整棵樹，收集所有帶有 userData.hitbox 標記的網格
-         * ===================================================================== */
-        _setupHitboxes() {
-            this.hitboxes = [];
-            
-            this.bones.root.traverse((child) => {
-                if (child.isMesh && child.userData.hitbox) {
-                    // 為了提高射線檢測效能，我們可以為每個網格生成一個包圍盒
-                    // 這裡我們將網格直接加入 hitboxes 陣列，交由物理系統處理
-                    this.hitboxes.push({
-                        mesh: child,
-                        type: child.userData.hitbox
-                    });
-                }
-            });
-
-            Logger.info(`已建立 ${this.hitboxes.length} 個受擊判定網格`);
-        }
-    }
-
-    /* =========================================================================
-     * 第四部分：士兵模型管理器 (EnemyMeshManager)
-     * ========================================================================= */
-
-    class EnemyMeshManager {
-        constructor() {
-            this.materialManager = new SoldierMaterialManager();
-            this.soldiers = []; // 儲存所有生成的士兵
-        }
-
-        init() {
-            Logger.info('士兵模型管理器初始化...');
-        }
-
-        /**
-         * 生成一個新的士兵模型
-         * @param {string} id 唯一識別碼 (用於追蹤)
-         * @returns {Object} 包含根節點、骨骼與受擊判定的物件
-         */
-        createSoldier(id) {
-            const builder = new SoldierSkeletonBuilder(this.materialManager);
-            const rootGroup = builder.build();
-
-            // 綁定 ID 到根節點
-            rootGroup.userData.soldierId = id;
-
-            // 儲存實例資料
-            const soldierData = {
-                id: id,
-                root: rootGroup,
-                bones: builder.bones,
-                hitboxes: builder.hitboxes
-            };
-
-            this.soldiers.push(soldierData);
-
-            Logger.success(`生成士兵模型: ${id}`);
-            return soldierData;
-        }
-
-        /**
-         * 移除士兵模型
-         */
-        removeSoldier(id) {
-            const index = this.soldiers.findIndex(s => s.id === id);
-            if (index !== -1) {
-                const soldier = this.soldiers[index];
-                if (soldier.root.parent) {
-                    soldier.root.parent.remove(soldier.root);
-                }
-                // 清理幾何體與材質 (這裡簡化處理，未完全釋放)
-                this.soldiers.splice(index, 1);
-                Logger.info(`移除士兵模型: ${id}`);
-            }
-        }
-
-        /**
-         * 取得所有士兵的受擊判定網格 (用於物理引擎或射線檢測)
-         */
-        getAllHitboxes() {
-            let allHitboxes = [];
-            this.soldiers.forEach(soldier => {
-                allHitboxes = allHitboxes.concat(soldier.hitboxes);
-            });
-            return allHitboxes;
-        }
-    }
-
-    /* =========================================================================
-     * 第五部分：導出與初始化
-     * ========================================================================= */
-
-    // 1. 實例化
-    const enemyMeshManager = new EnemyMeshManager();
-
-    // 2. 掛載到 WZ 命名空間
-    WZ.EnemyMesh = enemyMeshManager;
-
-    // 3. 監聽 CORE_SYSTEM_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('CORE_SYSTEM_READY', () => {
-            Logger.system('接收到核心系統就緒事件，準備初始化士兵模型系統...');
-            enemyMeshManager.init();
-            WZ.bus.emit('ENEMY_MESH_READY');
-        });
-
-        // 測試：生成一個士兵 (實際應由 AI 系統呼叫)
-        WZ.bus.on('GAME_START', () => {
-            // 這裡只是為了展示，我們生成一個測試士兵
-            const testSoldier = enemyMeshManager.createSoldier('test_enemy_01');
-            
-            // 將士兵加入場景
-            if (WZ.Renderer && WZ.Renderer.scene) {
-                testSoldier.root.position.set(0, 0, 5); // 放在玩家前方
-                WZ.Renderer.scene.add(testSoldier.root);
-                
-                // 註冊受擊判定到物理引擎
-                if (WZ.Physics) {
-                    testSoldier.hitboxes.forEach(hb => {
-                        // 這裡需要配合物理引擎的註冊方式
-                        // 假設物理引擎接受 { mesh, type, entityRef }
-                        // WZ.Physics.addHitbox(hb.mesh, hb.type, testSoldier);
-                    });
-                }
-            }
-        });
-    }
-
-    Logger.success('js/26_enemy_soldier_mesh.js 已成功載入並掛載至 window.WZ.EnemyMesh');
-
-}); // 結束工廠函數
+    TacticalWarfare.EnemySoldierMesh = enemySoldierMeshInstance;
+    TacticalWarfare.registerModule('26_enemy_soldier_mesh', moduleExport);
+})(window);
