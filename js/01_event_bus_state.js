@@ -3,18 +3,10 @@
  * 01_event_bus_state.js
  * 核心事件匯流排（EventBus）與集中式遊戲狀態管理中心（GameState）
  * ============================================================================
- * 職責：
- * 1. 建立全域命名空間 window.TacticalWarfare（若尚未存在）
- * 2. 提供解耦的發布／訂閱事件系統（支援 on / once / off / emit / 萬用監聽）
- * 3. 定義全專案統一事件常數，避免跨模組字串拼寫錯誤
- * 4. 管理玩家狀態、武器彈藥、戰局數據、設定與系統階段，並支援路徑讀寫與重置
  */
 (function (global) {
     'use strict';
 
-    // ------------------------------------------------------------------------
-    // 1. 初始化全域命名空間
-    // ------------------------------------------------------------------------
     const TacticalWarfare = global.TacticalWarfare || {
         expectedModules: [],
         loadedModules: {},
@@ -29,11 +21,7 @@
         };
     }
 
-    // ------------------------------------------------------------------------
-    // 2. 統一事件常數表（供所有後續模組共用）
-    // ------------------------------------------------------------------------
     const Events = Object.freeze({
-        // 系統與戰局生命週期
         SYSTEM_READY: 'system:ready',
         GAME_START: 'game:start',
         GAME_PAUSE: 'game:pause',
@@ -43,11 +31,9 @@
         POINTER_LOCK_CHANGE: 'input:pointerLockChange',
         SETTINGS_CHANGED: 'settings:changed',
 
-        // 狀態變更通知
         STATE_CHANGED: 'state:changed',
         STATE_RESET: 'state:reset',
 
-        // 玩家移動與生理狀態
         PLAYER_SPAWN: 'player:spawn',
         PLAYER_MOVE: 'player:move',
         PLAYER_STANCE_CHANGE: 'player:stanceChange',
@@ -66,7 +52,6 @@
         PLAYER_PLATE_CANCEL: 'player:plateCancel',
         PLAYER_DEATH: 'player:death',
 
-        // 武器與射擊戰鬥
         WEAPON_EQUIP: 'weapon:equip',
         WEAPON_SWITCH_START: 'weapon:switchStart',
         WEAPON_SWITCH_FINISH: 'weapon:switchFinish',
@@ -81,7 +66,6 @@
         WEAPON_AMMO_CHANGE: 'weapon:ammoChange',
         WEAPON_RECOIL: 'weapon:recoil',
 
-        // 彈道、命中與場景互動
         PROJECTILE_FIRED: 'combat:projectileFired',
         BULLET_IMPACT: 'combat:bulletImpact',
         EXPLOSION_TRIGGERED: 'combat:explosionTriggered',
@@ -89,7 +73,6 @@
         PICKUP_SPAWNED: 'world:pickupSpawned',
         PICKUP_COLLECTED: 'world:pickupCollected',
 
-        // 敵軍與波次管理
         WAVE_START: 'wave:start',
         WAVE_CLEAR: 'wave:clear',
         ENEMY_SPAWN: 'enemy:spawn',
@@ -98,7 +81,6 @@
         ENEMY_HIT: 'enemy:hit',
         ENEMY_KILL: 'enemy:kill',
 
-        // 抬頭顯示器與音效回饋
         HUD_HITMARKER: 'hud:hitmarker',
         HUD_DAMAGE_DIRECTION: 'hud:damageDirection',
         HUD_KILLFEED: 'hud:killfeed',
@@ -108,9 +90,6 @@
         AUDIO_PLAY_3D: 'audio:play3d'
     });
 
-    // ------------------------------------------------------------------------
-    // 3. 工具函式：深層拷貝與數值限制
-    // ------------------------------------------------------------------------
     function deepClone(source) {
         if (source === null || typeof source !== 'object') {
             return source;
@@ -132,18 +111,21 @@
     }
 
     function clampNumber(value, minValue, maxValue) {
-        if (value < minValue) {
-            return minValue;
-        }
-        if (value > maxValue) {
-            return maxValue;
-        }
+        if (value < minValue) return minValue;
+        if (value > maxValue) return maxValue;
         return value;
     }
 
-    // ------------------------------------------------------------------------
-    // 4. EventBus 事件匯流排類別
-    // ------------------------------------------------------------------------
+    function normalizePhaseName(rawPhase) {
+        if (typeof rawPhase !== 'string') return 'lobby';
+        const lower = rawPhase.toLowerCase();
+        if (lower === 'playing' || lower === 'combat') return 'combat';
+        if (lower === 'menu' || lower === 'lobby' || lower === 'boot') return 'lobby';
+        if (lower === 'paused' || lower === 'pause') return 'paused';
+        if (lower === 'gameover' || lower === 'game_over') return 'gameover';
+        return lower;
+    }
+
     class EventBus {
         constructor(options) {
             const config = options || {};
@@ -154,66 +136,40 @@
             this._eventHistory = [];
         }
 
-        /**
-         * 訂閱事件，回傳解除訂閱函式
-         */
         on(eventName, callback, context) {
             if (typeof callback !== 'function') {
                 throw new TypeError('EventBus.on 需要傳入函式作為 callback');
             }
-
-            const entry = {
-                callback: callback,
-                context: context || null,
-                once: false
-            };
-
+            const entry = { callback: callback, context: context || null, once: false };
             if (eventName === '*') {
                 this._wildcardListeners.push(entry);
                 return () => this.off('*', callback, context);
             }
-
             if (!this._listeners.has(eventName)) {
                 this._listeners.set(eventName, []);
             }
             this._listeners.get(eventName).push(entry);
-
             return () => this.off(eventName, callback, context);
         }
 
-        /**
-         * 訂閱單次事件，觸發一次後自動移除
-         */
         once(eventName, callback, context) {
             if (typeof callback !== 'function') {
                 throw new TypeError('EventBus.once 需要傳入函式作為 callback');
             }
-
-            const entry = {
-                callback: callback,
-                context: context || null,
-                once: true
-            };
-
+            const entry = { callback: callback, context: context || null, once: true };
             if (eventName === '*') {
                 this._wildcardListeners.push(entry);
                 return () => this.off('*', callback, context);
             }
-
             if (!this._listeners.has(eventName)) {
                 this._listeners.set(eventName, []);
             }
             this._listeners.get(eventName).push(entry);
-
             return () => this.off(eventName, callback, context);
         }
 
-        /**
-         * 取消訂閱指定事件
-         */
         off(eventName, callback, context) {
             const targetContext = context || null;
-
             if (eventName === '*') {
                 if (!callback) {
                     this._wildcardListeners = [];
@@ -226,23 +182,17 @@
                 });
                 return;
             }
-
             const list = this._listeners.get(eventName);
-            if (!list) {
-                return;
-            }
-
+            if (!list) return;
             if (!callback) {
                 this._listeners.delete(eventName);
                 return;
             }
-
             const remaining = list.filter(function (entry) {
                 const sameCallback = entry.callback === callback;
                 const sameContext = !context || entry.context === targetContext;
                 return !(sameCallback && sameContext);
             });
-
             if (remaining.length === 0) {
                 this._listeners.delete(eventName);
             } else {
@@ -250,14 +200,8 @@
             }
         }
 
-        /**
-         * 發布事件並通知所有監聽器（單一監聽器異常不中斷其餘流程）
-         */
         emit(eventName, payload) {
-            if (typeof eventName !== 'string' || eventName.length === 0) {
-                return 0;
-            }
-
+            if (typeof eventName !== 'string' || eventName.length === 0) return 0;
             const timestamp = performance.now();
             if (this._historyLimit > 0) {
                 this._eventHistory.push({
@@ -269,24 +213,17 @@
                     this._eventHistory.shift();
                 }
             }
-
             if (this._debugMode) {
                 console.debug('[EventBus]', eventName, payload);
             }
-
             let invokedCount = 0;
-
-            // 執行特定事件監聽器
             const list = this._listeners.get(eventName);
             if (list && list.length > 0) {
                 const snapshotList = list.slice();
                 const survivors = [];
-
                 for (let i = 0; i < snapshotList.length; i = i + 1) {
                     const entry = snapshotList[i];
-                    if (!entry.once) {
-                        survivors.push(entry);
-                    }
+                    if (!entry.once) survivors.push(entry);
                     try {
                         entry.callback.call(entry.context, payload, eventName);
                         invokedCount = invokedCount + 1;
@@ -294,11 +231,9 @@
                         console.error('[EventBus] 監聽器執行失敗 (' + eventName + '):', error);
                     }
                 }
-
                 if (survivors.length === 0) {
                     this._listeners.delete(eventName);
                 } else {
-                    // 保留執行期間新加入的監聽器
                     const currentList = this._listeners.get(eventName) || [];
                     const merged = survivors.slice();
                     for (let j = 0; j < currentList.length; j = j + 1) {
@@ -309,14 +244,11 @@
                     this._listeners.set(eventName, merged);
                 }
             }
-
-            // 執行萬用字元 '*' 監聽器
             if (this._wildcardListeners.length > 0) {
                 const wildcardSnapshot = this._wildcardListeners.slice();
                 this._wildcardListeners = this._wildcardListeners.filter(function (entry) {
                     return !entry.once;
                 });
-
                 for (let k = 0; k < wildcardSnapshot.length; k = k + 1) {
                     const wildcardEntry = wildcardSnapshot[k];
                     try {
@@ -331,20 +263,13 @@
                     }
                 }
             }
-
             return invokedCount;
         }
 
-        /**
-         * 清除單一或全部事件監聽器
-         */
         clear(eventName) {
             if (typeof eventName === 'string') {
-                if (eventName === '*') {
-                    this._wildcardListeners = [];
-                } else {
-                    this._listeners.delete(eventName);
-                }
+                if (eventName === '*') this._wildcardListeners = [];
+                else this._listeners.delete(eventName);
                 return;
             }
             this._listeners.clear();
@@ -353,13 +278,10 @@
 
         getListenerCount(eventName) {
             if (typeof eventName === 'string') {
-                if (eventName === '*') {
-                    return this._wildcardListeners.length;
-                }
+                if (eventName === '*') return this._wildcardListeners.length;
                 const list = this._listeners.get(eventName);
                 return list ? list.length : 0;
             }
-
             let total = this._wildcardListeners.length;
             this._listeners.forEach(function (list) {
                 total = total + list.length;
@@ -376,9 +298,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 5. 預設遊戲狀態工廠函式
-    // ------------------------------------------------------------------------
     function createDefaultSettings() {
         return {
             mouseSensitivity: 0.0022,
@@ -405,12 +324,10 @@
 
     function createInitialGameState(existingSettings) {
         return {
-            // 系統狀態：BOOT | MENU | PLAYING | PAUSED | GAMEOVER
-            phase: 'MENU',
+            phase: 'lobby',
             isPointerLocked: false,
             isInitialized: false,
 
-            // 時間控制
             time: {
                 elapsed: 0,
                 delta: 0,
@@ -419,7 +336,6 @@
                 fps: 60
             },
 
-            // 戰局與波次統計
             match: {
                 wave: 1,
                 waveInProgress: false,
@@ -439,7 +355,6 @@
                 damageTaken: 0
             },
 
-            // 玩家本體狀態
             player: {
                 alive: true,
                 health: 100,
@@ -452,7 +367,7 @@
                 maxSparePlates: 8,
                 isPlating: false,
                 plateProgress: 0,
-                stance: 'stand', // 'stand' | 'crouch' | 'slide'
+                stance: 'stand',
                 isSprinting: false,
                 isGrounded: true,
                 isAiming: false,
@@ -466,7 +381,6 @@
                 lastDamageTime: 0
             },
 
-            // 武器與彈藥狀態
             weapon: {
                 slots: ['M4A1', 'MP5SD', 'AX50', 'X16'],
                 currentSlotIndex: 0,
@@ -483,7 +397,6 @@
                 lastFireTime: 0
             },
 
-            // 戰場實體計數
             world: {
                 mapId: 'tactical_depot',
                 activeBarrels: 0,
@@ -491,30 +404,20 @@
                 activeDecals: 0
             },
 
-            // 使用者偏好設定（跨局保留）
             settings: existingSettings ? deepClone(existingSettings) : createDefaultSettings()
         };
     }
 
-    // ------------------------------------------------------------------------
-    // 6. GameStateStore 集中式狀態管理類別
-    // ------------------------------------------------------------------------
     class GameStateStore {
         constructor(eventBus) {
             this._bus = eventBus;
             this._state = createInitialGameState(null);
         }
 
-        /**
-         * 取得完整狀態物件參考（高效能循環讀取用）
-         */
         get raw() {
             return this._state;
         }
 
-        /**
-         * 透過點路徑讀取狀態，例如 get('player.health')
-         */
         get(path, fallbackValue) {
             if (typeof path !== 'string' || path.length === 0) {
                 return this._state;
@@ -532,13 +435,11 @@
             return cursor === undefined ? fallbackValue : cursor;
         }
 
-        /**
-         * 透過點路徑寫入狀態，並於數值變化時發送 STATE_CHANGED
-         */
         set(path, value, silent) {
             if (typeof path !== 'string' || path.length === 0) {
                 return false;
             }
+            const resolvedValue = path === 'phase' ? normalizePhaseName(value) : value;
             const segments = path.split('.');
             let cursor = this._state;
 
@@ -553,16 +454,16 @@
             const finalKey = segments[segments.length - 1];
             const previousValue = cursor[finalKey];
 
-            if (previousValue === value) {
+            if (previousValue === resolvedValue) {
                 return false;
             }
 
-            cursor[finalKey] = value;
+            cursor[finalKey] = resolvedValue;
 
             if (!silent && this._bus) {
                 this._bus.emit(Events.STATE_CHANGED, {
                     path: path,
-                    value: value,
+                    value: resolvedValue,
                     previousValue: previousValue
                 });
             }
@@ -570,9 +471,6 @@
             return true;
         }
 
-        /**
-         * 批次更新指定區段欄位，例如 patch('player', { health: 80, armor: 100 })
-         */
         patch(sectionPath, partialData, silent) {
             if (!partialData || typeof partialData !== 'object') {
                 return;
@@ -585,30 +483,28 @@
             }
         }
 
-        /**
-         * 設定遊戲主階段並廣播對應生命週期事件
-         */
         setPhase(nextPhase) {
+            const normalized = normalizePhaseName(nextPhase);
             const previousPhase = this._state.phase;
-            if (previousPhase === nextPhase) {
+            if (previousPhase === normalized) {
                 return;
             }
-            this._state.phase = nextPhase;
+            this._state.phase = normalized;
 
             if (this._bus) {
                 this._bus.emit(Events.STATE_CHANGED, {
                     path: 'phase',
-                    value: nextPhase,
+                    value: normalized,
                     previousValue: previousPhase
                 });
 
-                if (nextPhase === 'PLAYING' && previousPhase === 'PAUSED') {
+                if (normalized === 'combat' && previousPhase === 'paused') {
                     this._bus.emit(Events.GAME_RESUME, { previousPhase: previousPhase });
-                } else if (nextPhase === 'PLAYING') {
+                } else if (normalized === 'combat') {
                     this._bus.emit(Events.GAME_START, { previousPhase: previousPhase });
-                } else if (nextPhase === 'PAUSED') {
+                } else if (normalized === 'paused') {
                     this._bus.emit(Events.GAME_PAUSE, { previousPhase: previousPhase });
-                } else if (nextPhase === 'GAMEOVER') {
+                } else if (normalized === 'gameover') {
                     this._bus.emit(Events.GAME_OVER, {
                         match: deepClone(this._state.match)
                     });
@@ -616,9 +512,6 @@
             }
         }
 
-        /**
-         * 重置單局戰鬥數據（保留設定與系統初始化狀態）
-         */
         resetMatch(nextPhase) {
             const preservedSettings = deepClone(this._state.settings);
             const wasInitialized = this._state.isInitialized;
@@ -628,7 +521,7 @@
             this._state.isInitialized = wasInitialized;
             this._state.isPointerLocked = wasLocked;
             if (nextPhase) {
-                this._state.phase = nextPhase;
+                this._state.phase = normalizePhaseName(nextPhase);
             }
 
             if (this._bus) {
@@ -637,9 +530,6 @@
             }
         }
 
-        /**
-         * 套用玩家受擊扣甲／扣血規則（護甲優先吸收，破甲時發出事件）
-         */
         applyPlayerDamage(rawAmount, sourceInfo) {
             const player = this._state.player;
             if (!player.alive || rawAmount <= 0) {
@@ -653,7 +543,6 @@
             const previousArmor = player.armor;
 
             if (player.armor > 0) {
-                // 護甲吸收 80% 傷害，剩餘穿透至血量，破甲後全額扣血
                 const armorAbsorb = Math.min(player.armor, remainingDamage * 0.85);
                 player.armor = clampNumber(player.armor - armorAbsorb, 0, player.maxArmor);
                 armorLost = previousArmor - player.armor;
@@ -703,7 +592,7 @@
 
                 if (killed) {
                     this._bus.emit(Events.PLAYER_DEATH, { source: sourceInfo || null });
-                    this.setPhase('GAMEOVER');
+                    this.setPhase('gameover');
                 }
             }
 
@@ -715,9 +604,6 @@
             };
         }
 
-        /**
-         * 記錄玩家擊殺與連殺加分
-         */
         recordKill(details) {
             const info = details || {};
             const match = this._state.match;
@@ -753,17 +639,11 @@
             }
         }
 
-        /**
-         * 取得目前武器彈藥物件
-         */
         getCurrentWeaponAmmo() {
             const currentId = this._state.weapon.currentId;
             return this._state.weapon.ammo[currentId] || null;
         }
 
-        /**
-         * 計算目前命中率（百分比 0~100）
-         */
         getAccuracyPercent() {
             const fired = this._state.match.shotsFired;
             if (fired <= 0) {
@@ -772,17 +652,11 @@
             return Math.round((this._state.match.shotsHit / fired) * 100);
         }
 
-        /**
-         * 產生完整深層快照（除錯或結算報表用）
-         */
         snapshot() {
             return deepClone(this._state);
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 7. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const eventBusInstance = new EventBus({
         debug: false,
         historyLimit: 80
@@ -800,7 +674,6 @@
         createDefaultSettings: createDefaultSettings
     };
 
-    // 同時掛載便捷別名，方便後續所有模組直接呼叫
     TacticalWarfare.Events = Events;
     TacticalWarfare.EventBus = eventBusInstance;
     TacticalWarfare.GameState = gameStateInstance;
