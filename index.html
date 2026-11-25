@@ -81,11 +81,48 @@
       throw lastError || new Error('Three.js 載入失敗');
     }
 
+    function installInputBridges() {
+      const WZ = window.WZ;
+      if (!WZ || !WZ.bus || typeof WZ.bus.on !== 'function' || WZ.__indexInputBridgesInstalled) return;
+      WZ.__indexInputBridgesInstalled = true;
+
+      // TouchController already translates touch targets into these button events.
+      // Bridge them to the shared gameplay event contract; do not implement gameplay here.
+      WZ.bus.on('FIRE_BUTTON_DOWN', () => {
+        WZ.bus.emit('WEAPON_FIRED', { weaponId: 'M4A1' });
+      });
+      WZ.bus.on('JUMP_BUTTON_DOWN', () => {
+        WZ.bus.emit('PLAYER_JUMP');
+      });
+
+      // TouchController consumes touch input. Add mouse-only support without
+      // duplicating the touch path or the bootstrap-owned reload handler.
+      const fireButton = document.getElementById('btn-fire');
+      const jumpButton = document.getElementById('btn-jump');
+      if (fireButton && fireButton.dataset.wzMouseFireBound !== 'true') {
+        fireButton.dataset.wzMouseFireBound = 'true';
+        fireButton.addEventListener('pointerdown', event => {
+          if (event.pointerType !== 'mouse') return;
+          event.preventDefault();
+          WZ.bus.emit('WEAPON_FIRED', { weaponId: 'M4A1' });
+        });
+      }
+      if (jumpButton && jumpButton.dataset.wzMouseJumpBound !== 'true') {
+        jumpButton.dataset.wzMouseJumpBound = 'true';
+        jumpButton.addEventListener('pointerdown', event => {
+          if (event.pointerType !== 'mouse') return;
+          event.preventDefault();
+          WZ.bus.emit('PLAYER_JUMP');
+        });
+      }
+    }
+
     async function loadModules() {
       await loadThree();
       for (const file of moduleFiles) {
         await loadScript(`./js/${file}`);
       }
+      installInputBridges();
     }
 
     loadModules().catch(error => {
