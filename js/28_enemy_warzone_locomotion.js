@@ -3,11 +3,6 @@
  * 28_enemy_warzone_locomotion.js
  * 敵軍戰區戰術移動、側翼包抄、碰撞滑行與防重疊分離系統
  * ============================================================================
- * 職責：
- * 1. 計算敵軍在戰場中的巡邏、追擊與側翼包抄期望移動方向與速度
- * 2. 呼叫 PhysicsCollision 進行障礙物圓形滑行與地形高度查詢，確保敵軍不穿牆、不懸空
- * 3. 實作敵軍個體間的軟性推擠分離，避免多個敵軍重疊在同一座標
- * 4. 同步士兵網格位置／偏航角並輸出移動狀態，供 AI 狀態機與 EnemyUpperLowerIK 使用
  */
 (function (global) {
     'use strict';
@@ -20,9 +15,6 @@
     const Events = TacticalWarfare.Events || {};
     const EventBus = TacticalWarfare.EventBus;
 
-    // ------------------------------------------------------------------------
-    // 1. 敵軍戰區移動與碰撞常數
-    // ------------------------------------------------------------------------
     const ENEMY_LOCOMOTION_CONFIG = Object.freeze({
         patrolSpeed: 2.6,
         advanceSpeed: 4.5,
@@ -35,12 +27,8 @@
     });
 
     function clamp(val, minVal, maxVal) {
-        if (val < minVal) {
-            return minVal;
-        }
-        if (val > maxVal) {
-            return maxVal;
-        }
+        if (val < minVal) return minVal;
+        if (val > maxVal) return maxVal;
         return val;
     }
 
@@ -59,9 +47,6 @@
         return a;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. EnemyWarzoneLocomotion 主類別
-    // ------------------------------------------------------------------------
     class EnemyWarzoneLocomotion {
         constructor() {
             this.initialized = false;
@@ -69,14 +54,11 @@
             this.terrain = null;
             this.soldierManager = null;
 
-            // 以 soldierId 儲存移動狀態與巡邏／側翼參數
             this._moveStates = new Map();
+            this._lastBatchResults = new Map();
             this._unsubscribers = [];
         }
 
-        /**
-         * 初始化敵軍移動系統
-         */
         init(options) {
             const opts = options || {};
             this.physics = opts.physics || TacticalWarfare.PhysicsCollision || null;
@@ -92,9 +74,7 @@
         }
 
         _bindEvents() {
-            if (!EventBus || !Events) {
-                return;
-            }
+            if (!EventBus || !Events) return;
 
             if (Events.ENEMY_KILL) {
                 this._unsubscribers.push(
@@ -102,6 +82,7 @@
                         const id = payload && (payload.enemyId || (payload.enemy && payload.enemy.id));
                         if (id) {
                             this._moveStates.delete(id);
+                            this._lastBatchResults.delete(id);
                         }
                     })
                 );
@@ -111,9 +92,15 @@
                 this._unsubscribers.push(
                     EventBus.on(Events.GAME_RESET, () => {
                         this._moveStates.clear();
+                        this._lastBatchResults.clear();
                     })
                 );
             }
+        }
+
+        getEnemyState(soldierId) {
+            if (!soldierId) return null;
+            return this._lastBatchResults.get(soldierId) || this._moveStates.get(soldierId) || null;
         }
 
         _getOrCreateState(soldier) {
@@ -146,12 +133,47 @@
             return typeof fallbackY === 'number' ? fallbackY : 0;
         }
 
-        /**
-         * 更新單一敵軍的戰術移動與碰撞滑行
-         * @param {Object} soldier - SoldierRigEntity 實例
-         * @param {number} deltaTime - 幀間隔（秒）
-         * @param {Object} moveCtx - { mode: 'idle'|'patrol'|'advance'|'flank'|'hold', targetPos: {x,z}, desiredSpeed?: number, isCrouching?: boolean }
-         */
+        _resolveDefaultTargetPos(playerCtx) {
+            if (playerCtx && playerCtx.position && typeof playerCtx.position.x === 'number') {
+                return playerCtx.position;
+            }
+            if (TacticalWarfare.PlayerMovement && TacticalWarfare.PlayerMovement.position) {
+                return TacticalWarfare.PlayerMovement.position;
+            }
+            return { x: 0, y: 0, z: 24 };
+        }
+
+        _resolveMoveContextForSoldier(soldier, ai, defaultTargetPos) {
+            if (ai) {
+                if (typeof ai.getMoveContext === 'function') {
+                    const ctx = ai.getMoveContext(soldier.id);
+                    if (ctx) return ctx;
+                }
+                if (ai.moveContexts && typeof ai.moveContexts.get === 'function') {
+                    const ctx = ai.moveContexts.get(soldier.id);
+                    if (ctx) return ctx;
+                }
+                if (ai.states && typeof ai.states.get === 'function') {
+                    const aiSt = ai.states.get(soldier.id);
+                    if (aiSt) {
+                        return {
+                            mode: aiSt.moveMode || aiSt.mode || 'advance',
+                            targetPos: aiSt.targetPos || defaultTargetPos,
+                            desiredSpeed: aiSt.desiredSpeed,
+                            isCrouching: Boolean(aiSt.isCrouching)
+                        };
+                    }
+                }
+            }
+
+            return {
+                mode: 'advance',
+                targetPos: defaultTargetPos,
+                desiredSpeed: ENEMY_LOCOMOTION_CONFIG.advanceSpeed,
+                isCrouching: false
+            };
+        }
+
         updateSoldier(soldier, deltaTime, moveCtx) {
             if (!soldier || !soldier.alive || !soldier.position) {
                 return null;
@@ -200,7 +222,6 @@
                 if (dist > 0.1) {
                     const toTargetX = dx / dist;
                     const toTargetZ = dz / dist;
-                    // 垂直切向側翼方向 + 適度推進
                     const perpX = -toTargetZ * st.flankSign;
                     const perpZ = toTargetX * st.flankSign;
                     const advanceWeight = dist > 12 ? 0.55 : 0.25;
@@ -219,7 +240,6 @@
             st.vx = lerp(st.vx, targetVx, blend);
             st.vz = lerp(st.vz, targetVz, blend);
 
-            // 敵軍個體間軟性推擠分離
             let sepX = 0;
             let sepZ = 0;
             if (this.soldierManager && typeof this.soldierManager.getAllSoldiers === 'function') {
@@ -262,7 +282,6 @@
 
             const nextY = this._getGroundY(nextX, nextZ, soldier.position.y);
 
-            // 決定偏航角：若有目標則朝向目標，否則朝向移動方向
             let desiredYaw = st.yaw;
             if (targetPos && (mode === 'advance' || mode === 'flank' || mode === 'hold')) {
                 const aimDx = targetPos.x - nextX;
@@ -287,7 +306,7 @@
                 soldier.yaw = st.yaw;
             }
 
-            return {
+            const result = {
                 id: soldier.id,
                 position: { x: nextX, y: nextY, z: nextZ },
                 yaw: st.yaw,
@@ -295,11 +314,10 @@
                 vx: st.vx,
                 vz: st.vz
             };
+            this._lastBatchResults.set(soldier.id, result);
+            return result;
         }
 
-        /**
-         * 批次更新所有存活敵軍移動
-         */
         updateBatch(deltaTime, moveContextsById) {
             if (!this.soldierManager || typeof this.soldierManager.getAllSoldiers !== 'function') {
                 return new Map();
@@ -321,6 +339,28 @@
             return results;
         }
 
+        update(deltaTime, playerCtx) {
+            if (!this.soldierManager) {
+                this.soldierManager = TacticalWarfare.EnemySoldierMesh || null;
+            }
+            if (!this.soldierManager || typeof this.soldierManager.getAllSoldiers !== 'function') {
+                return new Map();
+            }
+
+            const defaultTargetPos = this._resolveDefaultTargetPos(playerCtx);
+            const ai = TacticalWarfare.EnemyTacticalAI || null;
+            const soldiers = this.soldierManager.getAllSoldiers();
+            const ctxMap = new Map();
+
+            for (let i = 0; i < soldiers.length; i = i + 1) {
+                const s = soldiers[i];
+                if (!s || !s.alive) continue;
+                ctxMap.set(s.id, this._resolveMoveContextForSoldier(s, ai, defaultTargetPos));
+            }
+
+            return this.updateBatch(deltaTime, ctxMap);
+        }
+
         dispose() {
             for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
                 if (typeof this._unsubscribers[i] === 'function') {
@@ -329,13 +369,11 @@
             }
             this._unsubscribers = [];
             this._moveStates.clear();
+            this._lastBatchResults.clear();
             this.initialized = false;
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const enemyWarzoneLocomotionInstance = new EnemyWarzoneLocomotion();
 
     const moduleExport = {
