@@ -120,7 +120,6 @@
                 });
             }
 
-            // [37] 傳入 camera 與 inputSystem 讓 BallisticsRecoil 支援觸控與視角射擊
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.init === 'function') {
                 TacticalWarfare.BallisticsRecoil.init({
                     scene: scene,
@@ -329,6 +328,11 @@
         startCombat(waveNumber) {
             this._setGamePhase('combat');
             this.paused = false;
+
+            // [37] 每次進入或重新開始戰局時重設彈道與觸控開火旗標，避免 reload 殘留狀態
+            if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil._resetRuntimeFlags === 'function') {
+                TacticalWarfare.BallisticsRecoil._resetRuntimeFlags();
+            }
 
             const inputCtrl = this._getInputController();
             if (inputCtrl) {
