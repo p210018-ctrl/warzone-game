@@ -328,6 +328,9 @@
             if (GameState && typeof GameState.patch === 'function') {
                 GameState.patch({ phase: 'combat' }, true);
             }
+            if (GameState && typeof GameState.setPhase === 'function') {
+                GameState.setPhase('combat');
+            }
 
             if (this.bootstrap && typeof this.bootstrap.setPaused === 'function') {
                 this.bootstrap.setPaused(false);
@@ -427,6 +430,14 @@
         if (!gameRuntimeInstance.initialized && global.document && global.document.body) {
             try {
                 gameRuntimeInstance.init();
+                global.setTimeout(() => {
+                    const currentPhase = GameState && typeof GameState.get === 'function'
+                        ? GameState.get('phase', 'lobby')
+                        : 'lobby';
+                    if (currentPhase === 'lobby') {
+                        gameRuntimeInstance.startCombat(1);
+                    }
+                }, 0);
             } catch (err) {
                 if (global.console && typeof global.console.error === 'function') {
                     global.console.error('[38_game_runtime] 自動啟動失敗：', err);
