@@ -3,11 +3,6 @@
  * 26_enemy_soldier_mesh.js
  * 敵軍士兵多層級 3D 模型、命中節點與肢體步態動畫系統
  * ============================================================================
- * 職責：
- * 1. 建構具備獨立頭部、軀幹、四肢與步槍的敵軍 3D 角色階層模型
- * 2. 提供命中判定所需的位置與半徑資訊（頭部／軀幹高度區間與碰撞半徑）
- * 3. 支援行走／衝刺擺動、蹲伏姿態、受擊短暫閃白與陣亡倒地／隱藏視覺回饋
- * 4. 提供工廠／管理器介面，方便波次與 AI 模組建立、更新與回收敵軍模型
  */
 (function (global) {
     'use strict';
@@ -19,10 +14,8 @@
 
     const Events = TacticalWarfare.Events || {};
     const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
 
-    // ------------------------------------------------------------------------
-    // 1. 敵軍角色尺寸與外觀預設表
-    // ------------------------------------------------------------------------
     const SOLDIER_SPECS = Object.freeze({
         radius: 0.42,
         totalHeight: 1.82,
@@ -42,12 +35,8 @@
     });
 
     function clamp(val, minVal, maxVal) {
-        if (val < minVal) {
-            return minVal;
-        }
-        if (val > maxVal) {
-            return maxVal;
-        }
+        if (val < minVal) return minVal;
+        if (val > maxVal) return maxVal;
         return val;
     }
 
@@ -55,9 +44,6 @@
         return a + (b - a) * t;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. 單一敵軍士兵 3D 實體類別
-    // ------------------------------------------------------------------------
     class SoldierRigEntity {
         constructor(id, scene, materials, spawnPos) {
             const THREE = global.THREE;
@@ -97,7 +83,6 @@
             const THREE = global.THREE;
             const m = this.materials;
 
-            // 軀幹與戰術背心
             const torsoGeo = new THREE.BoxGeometry(0.48, 0.62, 0.26);
             this.torsoMesh = new THREE.Mesh(torsoGeo, m.armor);
             this.torsoMesh.position.set(0, 1.14, 0);
@@ -105,7 +90,6 @@
             this.torsoMesh.receiveShadow = true;
             this.bodyPivot.add(this.torsoMesh);
 
-            // 頭部、頭盔與紅光護目鏡
             this.headGroup = new THREE.Group();
             this.headGroup.position.set(0, SOLDIER_SPECS.headCenterY, 0);
             this.bodyPivot.add(this.headGroup);
@@ -120,7 +104,6 @@
             visorMesh.position.set(0, 0.01, -0.145);
             this.headGroup.add(visorMesh);
 
-            // 左／右臂與步槍
             const armGeo = new THREE.BoxGeometry(0.14, 0.52, 0.14);
 
             this.leftArmPivot = new THREE.Group();
@@ -144,7 +127,6 @@
             this.rightArmPivot.add(rifleMesh);
             this.bodyPivot.add(this.rightArmPivot);
 
-            // 左／右腿關節
             const legGeo = new THREE.BoxGeometry(0.17, 0.78, 0.18);
 
             this.leftLegPivot = new THREE.Group();
@@ -183,14 +165,17 @@
             this.position.x = x;
             this.position.y = y;
             this.position.z = z;
-            this.yaw = yaw;
-            this.isCrouching = Boolean(isCrouching);
+            if (typeof yaw === 'number') {
+                this.yaw = yaw;
+            }
+            if (typeof isCrouching === 'boolean') {
+                this.isCrouching = isCrouching;
+            }
         }
 
         update(deltaTime, moveSpeed) {
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
 
-            // 受擊閃光回復
             if (this._hitFlashTimer > 0) {
                 this._hitFlashTimer = Math.max(0, this._hitFlashTimer - dt);
                 if (this._hitFlashTimer <= 0) {
@@ -232,9 +217,6 @@
             }
         }
 
-        /**
-         * 取得射線命中判定資訊（供 PhysicsCollision 或戰鬥系統使用）
-         */
         getHitVolumes() {
             const crouchOffset = this.isCrouching ? -0.35 : 0;
             return {
@@ -264,9 +246,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. EnemySoldierMesh 管理器單例
-    // ------------------------------------------------------------------------
     class EnemySoldierMesh {
         constructor() {
             this.initialized = false;
@@ -311,9 +290,7 @@
         }
 
         _bindEvents() {
-            if (!EventBus || !Events) {
-                return;
-            }
+            if (!EventBus || !Events) return;
 
             if (Events.ENEMY_HIT) {
                 this._unsubscribers.push(
@@ -348,6 +325,80 @@
                     })
                 );
             }
+        }
+
+        _syncEntityFromExternalSources(ent) {
+            const loco = TacticalWarfare.EnemyWarzoneLocomotion;
+            const ai = TacticalWarfare.EnemyTacticalAI;
+            const sources = [loco, ai];
+
+            for (let i = 0; i < sources.length; i = i + 1) {
+                const src = sources[i];
+                if (!src) continue;
+
+                let rec = null;
+                if (typeof src.getEnemyState === 'function') {
+                    rec = src.getEnemyState(ent.id);
+                } else if (src.states && typeof src.states.get === 'function') {
+                    rec = src.states.get(ent.id);
+                } else if (src.enemies && typeof src.enemies.get === 'function') {
+                    rec = src.enemies.get(ent.id);
+                } else if (Array.isArray(src.enemies)) {
+                    rec = src.enemies.find((item) => item && item.id === ent.id) || null;
+                }
+
+                if (rec) {
+                    const pos = rec.position || rec.pos || rec;
+                    if (pos && typeof pos.x === 'number' && typeof pos.z === 'number') {
+                        ent.position.x = pos.x;
+                        ent.position.y = typeof pos.y === 'number' ? pos.y : ent.position.y;
+                        ent.position.z = pos.z;
+                    }
+                    if (typeof rec.yaw === 'number') {
+                        ent.yaw = rec.yaw;
+                    }
+                    if (typeof rec.isCrouching === 'boolean') {
+                        ent.isCrouching = rec.isCrouching;
+                    }
+                    if (typeof rec.alive === 'boolean' && !rec.alive && ent.alive) {
+                        ent.markDead();
+                    }
+                    return typeof rec.speed === 'number' ? rec.speed : null;
+                }
+            }
+
+            if (GameState && typeof GameState.get === 'function') {
+                const list = GameState.get('enemies.list', null);
+                if (Array.isArray(list)) {
+                    const item = list.find((e) => e && e.id === ent.id);
+                    if (item && item.position) {
+                        ent.position.x = typeof item.position.x === 'number' ? item.position.x : ent.position.x;
+                        ent.position.y = typeof item.position.y === 'number' ? item.position.y : ent.position.y;
+                        ent.position.z = typeof item.position.z === 'number' ? item.position.z : ent.position.z;
+                        if (typeof item.yaw === 'number') ent.yaw = item.yaw;
+                        return typeof item.speed === 'number' ? item.speed : null;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        update(deltaTime) {
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+            this.entities.forEach((ent) => {
+                if (!ent) return;
+                const prevX = ent.position.x;
+                const prevZ = ent.position.z;
+
+                const reportedSpeed = this._syncEntityFromExternalSources(ent);
+                const dx = ent.position.x - prevX;
+                const dz = ent.position.z - prevZ;
+                const derivedSpeed = Math.hypot(dx, dz) / dt;
+                const moveSpeed = typeof reportedSpeed === 'number' ? reportedSpeed : derivedSpeed;
+
+                ent.update(dt, moveSpeed);
+            });
         }
 
         createSoldier(id, spawnPos) {
@@ -402,9 +453,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 4. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const enemySoldierMeshInstance = new EnemySoldierMesh();
 
     const moduleExport = {
