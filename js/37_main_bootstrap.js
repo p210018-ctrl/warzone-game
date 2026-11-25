@@ -120,8 +120,12 @@
                 });
             }
 
+            // [37] 傳入 camera 與 inputSystem 讓 BallisticsRecoil 能取得射擊視角與輸入狀態
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.init === 'function') {
                 TacticalWarfare.BallisticsRecoil.init({
+                    scene: scene,
+                    camera: camera,
+                    inputSystem: inputCtrl,
                     physics: TacticalWarfare.PhysicsCollision,
                     propsCovers: TacticalWarfare.MapExplosivesPickups || TacticalWarfare.MapPropsCovers
                 });
@@ -135,7 +139,6 @@
                 });
             }
 
-            // [37] 初始化 M4A1 URGI 槍械模型
             if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.init === 'function') {
                 TacticalWarfare.WeaponM4Urgi.init({
                     parentGroup: weaponCamera || camera,
@@ -274,7 +277,6 @@
             if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.setVisible === 'function') {
                 TacticalWarfare.FpHandsAnatomy.setVisible(true);
             }
-            // [37] 進入戰鬥時確保 M4A1 URGI 槍械模型顯示
             if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.setVisible === 'function') {
                 TacticalWarfare.WeaponM4Urgi.setVisible(true);
             }
@@ -380,7 +382,6 @@
                     TacticalWarfare.WeaponController.update(dt, moveRes);
                 }
 
-                // [37] 戰鬥迴圈中每幀更新 M4A1 URGI 模型與後座力動畫
                 if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.update === 'function') {
                     TacticalWarfare.WeaponM4Urgi.update(dt, moveRes && moveRes.bobOffset ? moveRes.bobOffset : null);
                 }
