@@ -17,14 +17,14 @@
     const GameState = TacticalWarfare.GameState;
 
     const INPUT_DEFAULTS = Object.freeze({
-        mouseSensitivity: 0.0022,
-        touchSensitivity: 0.0048,
-        adsSensitivityMultiplier: 0.55,
+        mouseSensitivity: 0.0062,
+        touchSensitivity: 0.0065,
+        adsSensitivityMultiplier: 0.58,
         invertY: false,
         joystickMaxRadius: 56,
         joystickDeadzone: 0.12,
         autoSprintThreshold: 0.86,
-        mouseSpikeLimit: 180,
+        mouseSpikeLimit: 220,
         touchControlsMode: 'auto' // 'auto' | 'always' | 'off'
     });
 
@@ -357,12 +357,14 @@
 
             const mouseSens = GameState.get('settings.mouseSensitivity');
             if (typeof mouseSens === 'number' && mouseSens > 0) {
-                this.config.mouseSensitivity = mouseSens > 0.05 ? mouseSens * 0.0022 : mouseSens;
+                const mapped = mouseSens > 0.05 ? mouseSens * INPUT_DEFAULTS.mouseSensitivity : mouseSens;
+                this.config.mouseSensitivity = Math.max(mapped, INPUT_DEFAULTS.mouseSensitivity);
             }
 
             const touchSens = GameState.get('settings.touchSensitivity');
             if (typeof touchSens === 'number' && touchSens > 0) {
-                this.config.touchSensitivity = touchSens > 0.05 ? touchSens * 0.0048 : touchSens;
+                const mappedTouch = touchSens > 0.05 ? touchSens * INPUT_DEFAULTS.touchSensitivity : touchSens;
+                this.config.touchSensitivity = Math.max(mappedTouch, INPUT_DEFAULTS.touchSensitivity);
             }
 
             const adsMult = GameState.get('settings.adsSensitivityMultiplier');
@@ -379,6 +381,13 @@
             if (touchMode === 'auto' || touchMode === 'always' || touchMode === 'off') {
                 this.touchControlsMode = touchMode;
             }
+        }
+
+        setMouseSensitivity(value) {
+            if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+                this.config.mouseSensitivity = value;
+            }
+            return this.config.mouseSensitivity;
         }
 
         _buildTouchUI() {
@@ -864,22 +873,26 @@
             if (!this.enabled || !this.pointerLocked) return;
             if (event.button === 0) {
                 this._mouseButtons.left = true;
+                this._recomputeCombinedState();
+                this._emitInputAction('fire', true);
             } else if (event.button === 2) {
                 this._mouseButtons.right = true;
+                this._recomputeCombinedState();
                 this._emitInputAction('ads', true);
             }
-            this._recomputeCombinedState();
         }
 
         _onMouseUp(event) {
             if (!this.enabled) return;
             if (event.button === 0) {
                 this._mouseButtons.left = false;
+                this._recomputeCombinedState();
+                this._emitInputAction('fire', this.actions.fire);
             } else if (event.button === 2) {
                 this._mouseButtons.right = false;
-                this._emitInputAction('ads', false);
+                this._recomputeCombinedState();
+                this._emitInputAction('ads', this.actions.ads);
             }
-            this._recomputeCombinedState();
         }
 
         _onWheel(event) {
