@@ -1,15 +1,18 @@
 (function (global, factory) {
   'use strict';
   global.WZ = global.WZ || {};
-  factory(global, global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+  factory(global, global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : global.console);
 })(typeof window !== 'undefined' ? window : this, function (global, WZ, Logger) {
+  'use strict';
   const log = (method, ...args) => {
     if (Logger && typeof Logger[method] === 'function') Logger[method](...args);
     else if (global.console && typeof global.console[method] === 'function') global.console[method](...args);
   };
+
   let booted = false;
   let started = false;
   let starting = false;
+  let reloadInputBound = false;
 
   function setState(state) {
     if (!global.document || !global.document.body) return;
@@ -20,28 +23,45 @@
     if (hud) hud.hidden = state !== 'combat';
   }
 
+  function getReadyRenderer() {
+    const renderer = WZ.Renderer;
+    if (!renderer || typeof renderer.start !== 'function' || !renderer.renderer || !renderer.scene || !renderer.camera) {
+      return null;
+    }
+    return renderer;
+  }
+
   function startGame() {
     if (started || starting) return false;
     starting = true;
     try {
-      const state = WZ.State;
-      if (state && typeof state.transitionTo === 'function') {
-        // State.transitionTo('PLAYING') itself emits GAME_START. Do not emit it again.
-        if (state.currentState !== 'PLAYING' && state.transitionTo('PLAYING') === false) {
-          starting = false;
-          return false;
-        }
-      } else if (WZ.bus && typeof WZ.bus.emit === 'function') {
-        // Fallback only when the state machine is not present at all.
-        WZ.bus.emit('GAME_START');
-      } else {
-        log('warn', '[Bootstrap] State 和事件匯流排尚未就緒，稍後可再次啟動。');
+      // CORE_SYSTEM_READY initializes the existing renderer before this UI handler is used.
+      // Never create a fallback renderer here.
+      const renderer = getReadyRenderer();
+      if (!renderer) {
+        log('error', '[Bootstrap] Renderer 尚未就緒；請確認 Three.js 與模組已成功載入。');
         starting = false;
         return false;
       }
 
-      const renderer = WZ.Renderer;
-      if (renderer && typeof renderer.start === 'function' && renderer.renderer) renderer.start();
+      const state = WZ.State;
+      if (state && typeof state.transitionTo === 'function') {
+        if (state.currentState !== 'PLAYING' && state.transitionTo('PLAYING') === false) {
+          starting = false;
+          return false;
+        }
+        // transitionTo('PLAYING') emits GAME_START. Do not emit it a second time.
+      } else if (WZ.bus && typeof WZ.bus.emit === 'function') {
+        // Compatibility fallback only when the state machine is unavailable.
+        WZ.bus.emit('GAME_START');
+      } else {
+        log('error', '[Bootstrap] State 和事件匯流排尚未就緒。');
+        starting = false;
+        return false;
+      }
+
+      // Uses the single RendererCore instance; its start() method is idempotent.
+      if (!renderer.isRunning) renderer.start();
       setState('combat');
       started = true;
       starting = false;
@@ -69,13 +89,25 @@
     const player = WZ.GlobalStore && WZ.GlobalStore.player;
     const slot = player && player.activeWeapon || 'primary';
     const weaponId = player && player.loadout && player.loadout[slot];
-    // Bootstrap is loaded after the reload/weapon modules. Still guard the
-    // optional systems so a partial module load cannot break the UI.
-    if (!WZ.ReloadInspect) log('warn', '[Bootstrap] ReloadInspect 尚未就緒，已透過事件匯流排送出換彈請求。');
-    if (weaponId && WZ.Weapons && !WZ.Weapons[weaponId] && slot === 'primary') {
-      log('warn', `[Bootstrap] 武器模組 ${weaponId} 尚未就緒；換彈請求仍會安全送出。`);
-    }
+    if (!WZ.ReloadInspect) log('warn', '[Bootstrap] ReloadInspect 尚未就緒；送出換彈事件供已載入模組處理。');
     WZ.bus.emit('WEAPON_RELOAD_STARTED', { slot, weaponId: weaponId || undefined });
+  }
+
+  function bindReloadInput() {
+    if (reloadInputBound) return;
+    reloadInputBound = true;
+
+    // TouchController owns touch button input and emits this legacy event.
+    if (WZ.bus && typeof WZ.bus.on === 'function') {
+      WZ.bus.on('RELOAD_BUTTON_DOWN', startReload);
+    }
+
+    // Bootstrap owns the mouse path only, avoiding a duplicate request for touch pointers.
+    bind('btn-reload', 'pointerdown', event => {
+      if (event.pointerType !== 'mouse') return;
+      event.preventDefault();
+      startReload();
+    });
   }
 
   function boot() {
@@ -84,10 +116,7 @@
     setState('lobby');
     bind('btn-start-match', 'click', startGame);
     bind('btn-deploy', 'click', startGame);
-    bind('btn-reload', 'pointerdown', event => {
-      event.preventDefault();
-      startReload();
-    });
+    bindReloadInput();
     bind('btn-settings', 'click', () => {
       const modal = global.document.getElementById('settings-modal') || global.document.getElementById('modal-settings');
       if (modal) { modal.hidden = false; modal.style.display = 'flex'; }
@@ -96,8 +125,10 @@
       const modal = global.document.getElementById('customizer-layer') || global.document.getElementById('modal-customizer');
       if (modal) { modal.hidden = false; modal.style.display = 'flex'; }
     });
+
+    // Initialize modules once; renderer core listens and creates the sole renderer.
     if (WZ.bus && typeof WZ.bus.emit === 'function') WZ.bus.emit('CORE_SYSTEM_READY');
-    log('info', '[Bootstrap] UI 綁定完成；不建立第二個 WebGL renderer，也不移除其他模組的 DOM。');
+    log('info', '[Bootstrap] UI 綁定完成；使用唯一的 WZ.Renderer，不建立第二個 WebGL renderer。');
   }
 
   if (global.document) {
