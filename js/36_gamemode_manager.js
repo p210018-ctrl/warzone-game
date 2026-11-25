@@ -1,372 +1,358 @@
-/* Game mode manager and pickup system. Public API remains window.WZ.GameMode. */
-(function (global, factory) {
+/**
+ * ============================================================================
+ * 36_gamemode_manager.js
+ * 戰術波次排程、敵軍生成、玩家生命護甲與遊戲模式流程管理器
+ * ============================================================================
+ * 職責：
+ * 1. 管理戰局階段（lobby / combat / gameover）與多波次敵軍生成排程
+ * 2. 監聽 PLAYER_DAMAGE 處理玩家護甲吸收與生命值扣減，歸零時廣播 GAME_OVER
+ * 3. 監聽 PICKUP_COLLECTED 回復生命、護甲或彈藥，並偵測波次清空後推進至下一波
+ * 4. 同步更新 GameState 玩家生命護甲與波次狀態，支援戰局開始與重置
+ */
+(function (global) {
     'use strict';
-    global.WZ = global.WZ || {};
-    factory(global.WZ, global.THREE, global.WZ.Utils ? global.WZ.Utils.Logger : global.console);
-})(typeof window !== 'undefined' ? window : this, function (WZ, THREE, Logger) {
-    'use strict';
 
-    const log = (method, ...args) => {
-        if (Logger && typeof Logger[method] === 'function') Logger[method](...args);
-        else if (typeof console !== 'undefined' && typeof console[method] === 'function') console[method](...args);
-    };
-
-    log('system', '開始載入遊戲模式管理器 (js/36_gamemode_manager.js)...');
-    if (!THREE) {
-        log('error', '找不到 Three.js，無法初始化遊戲模式管理器！');
-        return;
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('36_gamemode_manager.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    const GameModeID = {
-        MOVEMENT_RANGE: 'movement_range',
-        ENDLESS_WAVES: 'endless_waves',
-        TACTICAL_1V3: 'tactical_1v3'
-    };
-    const PickupType = { ARMOR_PLATE: 'armor_plate', AMMO: 'ammo' };
-    const CONFIG = {
-        SPAWN_POINTS: [
-            { x: -20, z: -20 }, { x: 20, z: -20 }, { x: -20, z: 20 }, { x: 20, z: 20 },
-            { x: 0, z: -30 }, { x: 0, z: 30 }, { x: -30, z: 0 }, { x: 30, z: 0 }
-        ],
-        PLAYER_SPAWN: { x: 0, z: 15 },
-        RANGE: { MAX_ENEMIES: 5, RESPAWN_DELAY: 1.5 },
-        WAVES: {
-            BASE_ENEMIES: 3, ENEMIES_PER_WAVE: 2, WAVE_DELAY: 5,
-            ENEMY_HEALTH_MULTIPLIER: 0.1, ENEMY_SPEED_MULTIPLIER: 0.05, ARMOR_DROP_CHANCE: 0.6
-        },
-        ASSAULT: { ENEMY_COUNT: 3, ENEMY_HEALTH: 200, ENEMY_ACCURACY_BOOST: 0.2 },
-        PICKUP: { LIFETIME: 15, PICKUP_RADIUS: 1.5, FLOAT_SPEED: 2, ROTATE_SPEED: 2, ARMOR_RESTORE: 50 }
-    };
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
 
-    class PickupItem {
-        constructor(type, position, scene) {
-            this.type = type;
-            this.position = position.clone();
-            this.scene = scene;
-            this.isActive = true;
-            this.lifetime = CONFIG.PICKUP.LIFETIME;
-            this.animTime = Math.random() * Math.PI * 2;
-            this._createMesh();
-        }
-        _createMesh() {
-            this.group = new THREE.Group();
-            this.group.position.copy(this.position);
-            if (this.type === PickupType.ARMOR_PLATE) {
-                const plateGeo = new THREE.BoxGeometry(0.25, 0.05, 0.35);
-                const plateMat = new THREE.MeshStandardMaterial({
-                    color: 0x3498db, metalness: 0.8, roughness: 0.2,
-                    emissive: 0x2980b9, emissiveIntensity: 0.5
-                });
-                this.plateMesh = new THREE.Mesh(plateGeo, plateMat);
-                this.plateMesh.castShadow = true;
-                this.group.add(this.plateMesh);
-                const edges = new THREE.EdgesGeometry(plateGeo);
-                this.group.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x00f3ff, linewidth: 2 })));
-                const ringMat = new THREE.MeshBasicMaterial({
-                    color: 0x3498db, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending
-                });
-                this.ringMesh = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.02, 8, 24), ringMat);
-                this.ringMesh.rotation.x = Math.PI / 2;
-                this.ringMesh.position.y = -0.2;
-                this.group.add(this.ringMesh);
-                this.light = new THREE.PointLight(0x3498db, 1.5, 3);
-                this.light.position.y = 0.5;
-                this.group.add(this.light);
-            }
-            this.scene.add(this.group);
-        }
-        update(dt, playerPosition) {
-            if (!this.isActive) return;
-            this.lifetime -= dt;
-            if (this.lifetime <= 0) { this.destroy(); return; }
-            this.animTime += dt * CONFIG.PICKUP.FLOAT_SPEED;
-            if (this.plateMesh) {
-                this.plateMesh.position.y = Math.sin(this.animTime) * 0.1 + 0.3;
-                this.plateMesh.rotation.y += dt * CONFIG.PICKUP.ROTATE_SPEED;
-            }
-            if (this.ringMesh) {
-                this.ringMesh.scale.setScalar(1 + Math.sin(this.animTime * 2) * 0.1);
-                this.ringMesh.material.opacity = 0.4 + Math.sin(this.animTime * 2) * 0.2;
-            }
-            if (this.light) this.light.intensity = 1 + Math.sin(this.animTime * 3) * 0.5;
-            const dx = this.position.x - playerPosition.x;
-            const dz = this.position.z - playerPosition.z;
-            if (dx * dx + dz * dz < CONFIG.PICKUP.PICKUP_RADIUS ** 2) this._onPickup();
-        }
-        _onPickup() {
-            log('success', `玩家拾取了 ${this.type}`);
-            if (this.type === PickupType.ARMOR_PLATE && WZ.PlayerHealth) {
-                WZ.PlayerHealth.armor.current = Math.min(
-                    WZ.PlayerHealth.armor.max,
-                    WZ.PlayerHealth.armor.current + CONFIG.PICKUP.ARMOR_RESTORE
-                );
-                WZ.PlayerHealth._updateUI();
-            }
-            if (WZ.bus) WZ.bus.emit('PLAY_SOUND', { soundId: 'pickup_armor' });
-            this.destroy();
-        }
-        destroy() {
-            this.isActive = false;
-            if (this.group && this.group.parent) this.group.parent.remove(this.group);
-        }
+    // ------------------------------------------------------------------------
+    // 1. 遊戲模式與波次常數表
+    // ------------------------------------------------------------------------
+    const GAMEMODE_CONFIG = Object.freeze({
+        maxHp: 100,
+        maxArmor: 100,
+        baseEnemiesPerWave: 4,
+        enemiesPerWaveStep: 2,
+        enemyHpStep: 15,
+        nextWaveDelay: 2.6,
+        spawnPoints: Object.freeze([
+            Object.freeze({ x: -16, y: 0, z: -18, yaw: 0 }),
+            Object.freeze({ x: 0, y: 0, z: -22, yaw: 0 }),
+            Object.freeze({ x: 16, y: 0, z: -18, yaw: 0 }),
+            Object.freeze({ x: -20, y: 0, z: 2, yaw: Math.PI * 0.5 }),
+            Object.freeze({ x: 20, y: 0, z: 2, yaw: -Math.PI * 0.5 }),
+            Object.freeze({ x: -10, y: 0, z: -8, yaw: 0.2 }),
+            Object.freeze({ x: 10, y: 0, z: -8, yaw: -0.2 })
+        ])
+    });
+
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) return minVal;
+        if (val > maxVal) return maxVal;
+        return val;
     }
 
-    class PickupManager {
-        constructor() { this.items = []; this.scene = null; }
-        init(scene) { this.scene = scene; log('info', '掉落物管理器初始化完畢'); }
-        spawn(type, position) {
-            if (!this.scene || !position) return;
-            const item = new PickupItem(type, position, this.scene);
-            this.items.push(item);
-            log('event', `生成掉落物: ${type} 於 (${position.x.toFixed(1)}, ${position.z.toFixed(1)})`);
-        }
-        update(dt) {
-            if (!WZ.CameraRig || !WZ.CameraRig.base) return;
-            const playerPos = WZ.CameraRig.base.position;
-            for (let i = this.items.length - 1; i >= 0; i--) {
-                const item = this.items[i];
-                item.update(dt, playerPos);
-                if (!item.isActive) this.items.splice(i, 1);
-            }
-        }
-        clearAll() { this.items.forEach(item => item.destroy()); this.items = []; }
-    }
-
-    class BaseGameMode {
-        constructor(manager) {
-            this.manager = manager;
-            this.isActive = false;
-            this.activeEnemies = new Map();
-            this.enemyCount = 0;
-        }
-        start() { this.isActive = true; log('info', `啟動遊戲模式: ${this.constructor.name}`); }
-        stop() { this.isActive = false; this.cleanupEnemies(); log('info', `結束遊戲模式: ${this.constructor.name}`); }
-        update() {}
-        spawnEnemy(spawnPos, isElite = false) {
-            if (!WZ.EnemyMesh || !WZ.Renderer || !WZ.Renderer.scene) return null;
-            const id = `enemy_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-            const soldierData = WZ.EnemyMesh.createSoldier(id);
-            soldierData.root.position.set(spawnPos.x, 0, spawnPos.z);
-            WZ.Renderer.scene.add(soldierData.root);
-            if (WZ.EnemyAI) {
-                WZ.EnemyAI.registerAgent(id, soldierData);
-                const agent = WZ.EnemyAI.agents.get(id);
-                if (agent) {
-                    if (isElite) {
-                        agent.maxHealth = CONFIG.ASSAULT.ENEMY_HEALTH;
-                        agent.health = CONFIG.ASSAULT.ENEMY_HEALTH;
-                        agent.ddaAccuracy += CONFIG.ASSAULT.ENEMY_ACCURACY_BOOST;
-                    }
-                    if (this.constructor.name === 'MovementRangeMode') agent.shootAtPlayer = () => {};
-                }
-            }
-            this.activeEnemies.set(id, soldierData);
-            this.enemyCount++;
-            log('event', `生成敵人 ${id} 於 (${spawnPos.x}, ${spawnPos.z})`);
-            return { id, soldierData };
-        }
-        onEnemyKilled(enemyId) {
-            if (!this.activeEnemies.has(enemyId)) return null;
-            const soldierData = this.activeEnemies.get(enemyId);
-            if (soldierData.root && soldierData.root.parent) soldierData.root.parent.remove(soldierData.root);
-            this.activeEnemies.delete(enemyId);
-            this.enemyCount = Math.max(0, this.enemyCount - 1);
-            return soldierData;
-        }
-        cleanupEnemies() {
-            this.activeEnemies.forEach((soldierData, id) => {
-                if (soldierData.root && soldierData.root.parent) soldierData.root.parent.remove(soldierData.root);
-                if (WZ.EnemyAI && WZ.EnemyAI.agents) WZ.EnemyAI.agents.delete(id);
-            });
-            this.activeEnemies.clear();
-            this.enemyCount = 0;
-        }
-    }
-
-    class MovementRangeMode extends BaseGameMode {
-        constructor(manager) { super(manager); this.respawnTimers = new Map(); }
-        start() {
-            super.start();
-            this.respawnTimers.clear();
-            for (let i = 0; i < CONFIG.RANGE.MAX_ENEMIES; i++) this._spawnRandomEnemy();
-        }
-        _spawnRandomEnemy() {
-            const point = CONFIG.SPAWN_POINTS[Math.floor(Math.random() * CONFIG.SPAWN_POINTS.length)];
-            this.spawnEnemy(point);
-        }
-        onEnemyKilled(enemyId) {
-            super.onEnemyKilled(enemyId);
-            this.respawnTimers.set(enemyId, CONFIG.RANGE.RESPAWN_DELAY);
-            log('info', `靶場敵人 ${enemyId} 陣亡，${CONFIG.RANGE.RESPAWN_DELAY} 秒後重生`);
-        }
-        update(dt) {
-            if (!this.isActive) return;
-            for (const [oldId, timer] of this.respawnTimers) {
-                const nextTimer = timer - dt;
-                if (nextTimer <= 0) { this.respawnTimers.delete(oldId); this._spawnRandomEnemy(); }
-                else this.respawnTimers.set(oldId, nextTimer);
-            }
-        }
-    }
-
-    class EndlessWavesMode extends BaseGameMode {
-        constructor(manager) { super(manager); this.currentWave = 0; this.state = 'WAITING'; this.waveTimer = 0; }
-        start() {
-            super.start(); this.currentWave = 0; this.state = 'WAITING';
-            this.waveTimer = CONFIG.WAVES.WAVE_DELAY;
-            log('success', '無盡波次模式啟動，準備第一波...');
-        }
-        update(dt) {
-            if (!this.isActive) return;
-            if (this.state === 'WAITING') {
-                this.waveTimer -= dt;
-                if (this.waveTimer <= 0) this._startNextWave();
-            } else if (this.state === 'FIGHTING' && this.activeEnemies.size === 0) {
-                this.state = 'WAITING'; this.waveTimer = CONFIG.WAVES.WAVE_DELAY;
-                log('success', `第 ${this.currentWave} 波清空！準備下一波...`);
-            }
-        }
-        _startNextWave() {
-            this.currentWave++;
-            this.state = 'SPAWNING';
-            const count = CONFIG.WAVES.BASE_ENEMIES + (this.currentWave - 1) * CONFIG.WAVES.ENEMIES_PER_WAVE;
-            log('warn', `開始第 ${this.currentWave} 波，敵人數量: ${count}`);
-            for (let i = 0; i < count; i++) {
-                const point = CONFIG.SPAWN_POINTS[Math.floor(Math.random() * CONFIG.SPAWN_POINTS.length)];
-                const spawned = this.spawnEnemy(point);
-                if (spawned && WZ.EnemyAI) {
-                    const agent = WZ.EnemyAI.agents.get(spawned.id);
-                    if (agent) {
-                        agent.maxHealth += this.currentWave * CONFIG.WAVES.ENEMY_HEALTH_MULTIPLIER * 100;
-                        agent.health = agent.maxHealth;
-                    }
-                }
-            }
-            this.state = 'FIGHTING';
-        }
-        // Armor drops are handled once by the ENEMY_DIED listener, using the
-        // enemy's cloned world position captured before its model is removed.
-        onEnemyKilled(enemyId) { return super.onEnemyKilled(enemyId); }
-        stop() { super.stop(); this.state = 'WAITING'; }
-    }
-
-    class TacticalAssaultMode extends BaseGameMode {
-        constructor(manager) { super(manager); this.totalEnemies = CONFIG.ASSAULT.ENEMY_COUNT; this.enemiesKilled = 0; }
-        start() {
-            super.start(); this.enemiesKilled = 0;
-            log('success', '1v3 戰術突襲啟動！擊殺 3 名精英敵人即可獲勝。');
-            [{ x: -15, z: -15 }, { x: 15, z: -15 }, { x: 0, z: -25 }].forEach(point => this.spawnEnemy(point, true));
-        }
-        onEnemyKilled(enemyId) {
-            super.onEnemyKilled(enemyId);
-            this.enemiesKilled++;
-            log('info', `擊殺精英敵人 ${this.enemiesKilled} / ${this.totalEnemies}`);
-            if (this.enemiesKilled >= this.totalEnemies) this._onVictory();
-        }
-        _onVictory() {
-            log('success', '1v3 戰術突襲勝利！');
-            this.isActive = false;
-            if (WZ.bus) WZ.bus.emit('GAME_OVER', {
-                victory: true, mode: GameModeID.TACTICAL_1V3,
-                stats: { totalKills: this.enemiesKilled, headshots: 0, slideKills: 0, diveKills: 0, totalXP: this.enemiesKilled * 100 }
-            });
-        }
-    }
-
+    // ------------------------------------------------------------------------
+    // 2. GameModeManager 主類別
+    // ------------------------------------------------------------------------
     class GameModeManager {
         constructor() {
-            this.currentMode = null;
-            this.currentModeId = null;
-            this.pickupManager = new PickupManager();
-            this.modes = {
-                [GameModeID.MOVEMENT_RANGE]: new MovementRangeMode(this),
-                [GameModeID.ENDLESS_WAVES]: new EndlessWavesMode(this),
-                [GameModeID.TACTICAL_1V3]: new TacticalAssaultMode(this)
-            };
-            this._eventsBound = false;
+            this.initialized = false;
+            this.soldierManager = null;
+            this.enemyAI = null;
+            this.terrain = null;
+
+            this.mode = 'wave_survival';
+            this.phase = 'lobby';
+            this.currentWave = 1;
+            this.hp = GAMEMODE_CONFIG.maxHp;
+            this.armor = GAMEMODE_CONFIG.maxArmor;
+
+            this._waveClearPending = false;
+            this._nextWaveTimer = 0;
+            this._spawnCounter = 0;
+            this._unsubscribers = [];
         }
-        init(scene) {
-            log('info', '初始化遊戲模式管理器...');
-            if (scene) this.pickupManager.init(scene);
-            this._setupEvents();
-            log('success', '遊戲模式管理器初始化完畢');
-        }
-        _setupEvents() {
-            if (!WZ.bus || this._eventsBound) return;
-            this._eventsBound = true;
-            WZ.bus.on('GAME_START', () => this.startMode(GameModeID.ENDLESS_WAVES));
-            WZ.bus.on('ENEMY_DIED', data => {
-                if (!this.currentMode || !data) return;
-                const soldierData = this.currentMode.activeEnemies.get(data.enemyId);
-                // Clone before onEnemyKilled removes the model from the scene.
-                const deathPosition = soldierData && soldierData.root
-                    ? soldierData.root.position.clone()
-                    : (data.position && Number.isFinite(data.position.x) && Number.isFinite(data.position.y) && Number.isFinite(data.position.z)
-                        ? new THREE.Vector3(data.position.x, data.position.y, data.position.z)
-                        : null);
-                this.currentMode.onEnemyKilled(data.enemyId);
-                if (this.currentModeId === GameModeID.ENDLESS_WAVES && deathPosition && Math.random() < CONFIG.WAVES.ARMOR_DROP_CHANCE) {
-                    this.pickupManager.spawn(PickupType.ARMOR_PLATE, deathPosition);
-                }
-            });
-            WZ.bus.on('PLAYER_DIED', () => {
-                if (!this.currentMode) return;
-                this.currentMode.stop();
-                WZ.bus.emit('GAME_OVER', {
-                    victory: false,
-                    mode: this.currentModeId,
-                    stats: WZ.UIKillfeed ? WZ.UIKillfeed.stats : {}
-                });
-            });
-        }
-        startMode(modeId) {
-            log('system', `準備啟動遊戲模式: ${modeId}`);
-            if (this.currentMode) this.currentMode.stop();
-            this.pickupManager.clearAll();
-            if (WZ.PlayerMove) {
-                WZ.PlayerMove.position.set(CONFIG.PLAYER_SPAWN.x, 0, CONFIG.PLAYER_SPAWN.z);
-                if (WZ.PlayerMove.root) WZ.PlayerMove.root.position.copy(WZ.PlayerMove.position);
+
+        /**
+         * 初始化遊戲模式與波次管理器
+         */
+        init(options) {
+            const opts = options || {};
+            this.soldierManager = opts.soldierManager || TacticalWarfare.EnemySoldierMesh || null;
+            this.enemyAI = opts.enemyAI || TacticalWarfare.EnemyTacticalAI || null;
+            this.terrain = opts.terrain || TacticalWarfare.MapTerrainGround || null;
+            this.mode = opts.mode || 'wave_survival';
+
+            this.resetMatch('lobby', false);
+
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
             }
-            const mode = this.modes[modeId];
-            if (!mode) { log('error', `未知的遊戲模式: ${modeId}`); return; }
-            this.currentModeId = modeId;
-            this.currentMode = mode;
-            mode.start();
+
+            return this;
         }
-        update(dt) {
-            if (this.currentMode && this.currentMode.isActive) this.currentMode.update(dt);
-            this.pickupManager.update(dt);
+
+        _bindEvents() {
+            if (!EventBus || !Events) return;
+
+            if (Events.PLAYER_DAMAGE) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.PLAYER_DAMAGE, (payload) => {
+                        if (this.phase !== 'combat') return;
+                        const dmg = payload && typeof payload.damage === 'number' ? payload.damage : 10;
+                        this.applyPlayerDamage(dmg);
+                    })
+                );
+            }
+
+            if (Events.PICKUP_COLLECTED) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.PICKUP_COLLECTED, (payload) => {
+                        this.applyPickup(payload || {});
+                    })
+                );
+            }
+
+            if (Events.GAME_RESET) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_RESET, () => {
+                        this.resetMatch('lobby', false);
+                    })
+                );
+            }
+        }
+
+        /**
+         * 開始新一場戰局（第 1 波）
+         */
+        startMatch(startWave) {
+            const waveNum = typeof startWave === 'number' && startWave > 0 ? Math.floor(startWave) : 1;
+            this.phase = 'combat';
+            this.currentWave = waveNum;
+            this.hp = GAMEMODE_CONFIG.maxHp;
+            this.armor = GAMEMODE_CONFIG.maxArmor;
+            this._waveClearPending = false;
+            this._nextWaveTimer = 0;
+
+            if (this.soldierManager && typeof this.soldierManager.clearAll === 'function') {
+                this.soldierManager.clearAll();
+            }
+            if (this.enemyAI && typeof this.enemyAI.clearAgents === 'function') {
+                this.enemyAI.clearAgents();
+            }
+
+            this._syncState();
+
+            if (EventBus && Events.GAME_START) {
+                EventBus.emit(Events.GAME_START, {
+                    mode: this.mode,
+                    wave: this.currentWave
+                });
+            }
+
+            this.spawnWave(this.currentWave);
+        }
+
+        /**
+         * 重設戰局狀態
+         */
+        resetMatch(targetPhase, emitResetEvent) {
+            this.phase = targetPhase || 'lobby';
+            this.currentWave = 1;
+            this.hp = GAMEMODE_CONFIG.maxHp;
+            this.armor = GAMEMODE_CONFIG.maxArmor;
+            this._waveClearPending = false;
+            this._nextWaveTimer = 0;
+
+            if (this.soldierManager && typeof this.soldierManager.clearAll === 'function') {
+                this.soldierManager.clearAll();
+            }
+            if (this.enemyAI && typeof this.enemyAI.clearAgents === 'function') {
+                this.enemyAI.clearAgents();
+            }
+
+            this._syncState();
+
+            if (emitResetEvent && EventBus && Events.GAME_RESET) {
+                EventBus.emit(Events.GAME_RESET, { phase: this.phase });
+            }
+        }
+
+        /**
+         * 生成指定波次的敵軍群體
+         */
+        spawnWave(waveNumber) {
+            const wNum = Math.max(1, Math.floor(waveNumber || 1));
+            this.currentWave = wNum;
+            this._waveClearPending = false;
+            this._nextWaveTimer = 0;
+
+            const count = GAMEMODE_CONFIG.baseEnemiesPerWave + (wNum - 1) * GAMEMODE_CONFIG.enemiesPerWaveStep;
+            const hpPerEnemy = 100 + (wNum - 1) * GAMEMODE_CONFIG.enemyHpStep;
+            const pts = GAMEMODE_CONFIG.spawnPoints;
+
+            for (let i = 0; i < count; i = i + 1) {
+                const sp = pts[i % pts.length];
+                const jitterX = ((i % 3) - 1) * 1.3;
+                const jitterZ = (Math.floor(i / pts.length) * -2.2);
+                const x = sp.x + jitterX;
+                const z = sp.z + jitterZ;
+                const y = this.terrain && typeof this.terrain.getHeightAt === 'function'
+                    ? this.terrain.getHeightAt(x, z)
+                    : (sp.y || 0);
+
+                this._spawnCounter += 1;
+                const id = 'w' + wNum + '_s' + this._spawnCounter;
+
+                let soldier = null;
+                if (this.soldierManager && typeof this.soldierManager.createSoldier === 'function') {
+                    soldier = this.soldierManager.createSoldier(id, { x: x, y: y, z: z, yaw: sp.yaw || 0 });
+                }
+                if (soldier && this.enemyAI && typeof this.enemyAI.registerAgent === 'function') {
+                    this.enemyAI.registerAgent(soldier, hpPerEnemy);
+                }
+            }
+
+            this._syncState();
+
+            if (EventBus && Events.WAVE_START) {
+                EventBus.emit(Events.WAVE_START, {
+                    wave: wNum,
+                    enemyCount: count,
+                    enemyHp: hpPerEnemy
+                });
+            }
+
+            return count;
+        }
+
+        /**
+         * 套用玩家受擊傷害（護甲優先吸收 60% 傷害）
+         */
+        applyPlayerDamage(rawDamage) {
+            if (this.phase !== 'combat') return false;
+            const dmg = Math.max(0, Number(rawDamage) || 0);
+            if (dmg <= 0) return false;
+
+            let hpLoss = dmg;
+            if (this.armor > 0) {
+                const armorAbsorb = Math.min(this.armor, dmg * 0.6);
+                this.armor = Math.max(0, this.armor - armorAbsorb);
+                hpLoss = Math.max(0, dmg - armorAbsorb * 0.85);
+            }
+
+            this.hp = Math.max(0, this.hp - hpLoss);
+            this._syncState();
+
+            if (this.hp <= 0) {
+                this.phase = 'gameover';
+                this._syncState();
+                if (EventBus && Events.GAME_OVER) {
+                    EventBus.emit(Events.GAME_OVER, {
+                        wave: this.currentWave,
+                        reason: 'player_eliminated'
+                    });
+                }
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * 套用補給物資回復（生命／護甲）
+         */
+        applyPickup(payload) {
+            const p = payload || {};
+            if (typeof p.healHp === 'number' && p.healHp > 0) {
+                this.hp = clamp(this.hp + p.healHp, 0, GAMEMODE_CONFIG.maxHp);
+            }
+            if (typeof p.armorAmount === 'number' && p.armorAmount > 0) {
+                this.armor = clamp(this.armor + p.armorAmount, 0, GAMEMODE_CONFIG.maxArmor);
+            }
+            this._syncState();
+        }
+
+        /**
+         * 每幀檢查波次敵軍存活狀態與下一波次排程
+         */
+        update(deltaTime) {
+            if (this.phase !== 'combat') {
+                return;
+            }
+
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+            const alive = this.enemyAI && typeof this.enemyAI.getAliveCount === 'function'
+                ? this.enemyAI.getAliveCount()
+                : 0;
+
+            if (GameState && typeof GameState.patch === 'function') {
+                GameState.patch('wave', {
+                    currentWave: this.currentWave,
+                    enemiesRemaining: alive
+                }, true);
+            }
+
+            if (alive <= 0) {
+                if (!this._waveClearPending) {
+                    this._waveClearPending = true;
+                    this._nextWaveTimer = GAMEMODE_CONFIG.nextWaveDelay;
+
+                    if (EventBus && Events.WAVE_CLEAR) {
+                        EventBus.emit(Events.WAVE_CLEAR, {
+                            wave: this.currentWave
+                        });
+                    }
+                } else {
+                    this._nextWaveTimer -= dt;
+                    if (this._nextWaveTimer <= 0) {
+                        this.spawnWave(this.currentWave + 1);
+                    }
+                }
+            } else {
+                this._waveClearPending = false;
+            }
+        }
+
+        _syncState() {
+            if (!GameState || typeof GameState.patch !== 'function') return;
+
+            const alive = this.enemyAI && typeof this.enemyAI.getAliveCount === 'function'
+                ? this.enemyAI.getAliveCount()
+                : 0;
+
+            GameState.patch('phase', this.phase, true);
+            GameState.patch('player', {
+                hp: this.hp,
+                maxHp: GAMEMODE_CONFIG.maxHp,
+                armor: this.armor,
+                maxArmor: GAMEMODE_CONFIG.maxArmor
+            }, true);
+            GameState.patch('wave', {
+                currentWave: this.currentWave,
+                enemiesRemaining: alive
+            }, true);
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+            this.initialized = false;
         }
     }
 
-    const gameModeManager = new GameModeManager();
-    WZ.GameMode = gameModeManager;
-    if (WZ.bus) {
-        WZ.bus.on('RENDERER_READY', data => {
-            log('system', '接收到渲染器就緒事件，準備初始化遊戲模式管理器...');
-            if (data && data.scene) {
-                gameModeManager.init(data.scene);
-                WZ.bus.emit('GAMEMODE_READY');
-            } else log('error', '渲染器就緒事件中缺少場景物件');
-        });
-    }
+    // ------------------------------------------------------------------------
+    // 3. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const gameModeManagerInstance = new GameModeManager();
 
-    const attachUpdate = () => {
-        if (!WZ.Renderer || WZ.Renderer._wzGameModeAttached) return false;
-        const renderer = WZ.Renderer;
-        const previousOnRender = renderer.onRender;
-        renderer.onRender = (alpha, dt) => {
-            gameModeManager.update(dt);
-            if (typeof previousOnRender === 'function') previousOnRender(alpha, dt);
-        };
-        renderer._wzGameModeAttached = true;
-        log('info', 'GameModeManager 已成功掛載至主渲染循環');
-        return true;
+    const moduleExport = {
+        GameModeManagerClass: GameModeManager,
+        instance: gameModeManagerInstance,
+        GAMEMODE_CONFIG: GAMEMODE_CONFIG
     };
-    if (!attachUpdate()) {
-        const checkInterval = setInterval(() => {
-            if (attachUpdate()) clearInterval(checkInterval);
-        }, 100);
-    }
-    log('success', 'js/36_gamemode_manager.js 已成功載入並掛載至 window.WZ.GameMode');
-});
+
+    TacticalWarfare.GameModeManager = gameModeManagerInstance;
+    TacticalWarfare.registerModule('36_gamemode_manager', moduleExport);
+})(window);
