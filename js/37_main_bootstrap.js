@@ -37,6 +37,17 @@
             return TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || TacticalWarfare.InputSystem || null;
         }
 
+        _setGamePhase(nextPhase) {
+            if (!GameState) return;
+            if (typeof GameState.setPhase === 'function') {
+                GameState.setPhase(nextPhase);
+            } else if (typeof GameState.patch === 'function') {
+                GameState.patch({ phase: nextPhase }, true);
+            } else if (GameState.raw) {
+                GameState.raw.phase = nextPhase;
+            }
+        }
+
         init(options) {
             const opts = options || {};
 
@@ -228,6 +239,9 @@
         }
 
         startCombat(waveNumber) {
+            this._setGamePhase('combat');
+            this.paused = false;
+
             const inputCtrl = this._getInputController();
             if (inputCtrl) {
                 if (typeof inputCtrl.setEnabled === 'function') {
@@ -255,6 +269,8 @@
         }
 
         returnToLobby() {
+            this._setGamePhase('lobby');
+
             const inputCtrl = this._getInputController();
             if (inputCtrl) {
                 if (typeof inputCtrl.setEnabled === 'function') {
