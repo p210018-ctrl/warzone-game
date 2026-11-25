@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TACTICAL WARFARE // 3D 現代戰術第一人稱射擊</title>
 
-    <!-- 引入 Three.js 核心渲染引擎（全域版本，支援本機直接雙擊開啟） -->
+    <!-- 引入 Three.js 核心渲染引擎（全域版本） -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <style>
@@ -233,20 +233,6 @@
             transform: translate(-50%, -50%);
         }
 
-        .damage-direction-arc {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            border-top: 6px solid rgba(255, 42, 42, 0.95);
-            border-left: 6px solid transparent;
-            border-right: 6px solid transparent;
-            border-bottom: 6px solid transparent;
-            filter: drop-shadow(0 0 8px rgba(255, 36, 36, 0.9));
-        }
-
         /* ====================================================================
            左上角戰術雷達小地圖
            ==================================================================== */
@@ -320,32 +306,8 @@
             gap: 6px;
         }
 
-        .killfeed-entry {
-            padding: 6px 12px;
-            font-size: 12px;
-            border-radius: 4px;
-            border-right: 3px solid #ff543a;
-            background: linear-gradient(90deg, rgba(12, 18, 25, 0.25), rgba(12, 18, 25, 0.86));
-            animation: killfeedSlideIn 0.18s ease-out;
-        }
-
-        .killfeed-entry.headshot {
-            border-right-color: #ffcf33;
-        }
-
-        @keyframes killfeedSlideIn {
-            from {
-                opacity: 0;
-                transform: translateX(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
-        }
-
         /* ====================================================================
-           中央動作進度條（換彈 / 插入護甲板）與戰術橫幅通知
+           中央動作進度條與戰術橫幅通知
            ==================================================================== */
         #center-action-progress-container {
             position: absolute;
@@ -641,9 +603,6 @@
             transform: none;
         }
 
-        /* ====================================================================
-           模組載入狀態與錯誤診斷列（協助逐檔開發時確認每個腳本是否正常載入）
-           ==================================================================== */
         #module-diagnostic-panel {
             max-width: 640px;
             width: 100%;
@@ -671,14 +630,12 @@
     <div id="tactical-hud-container">
         <div id="damage-vignette-overlay"></div>
 
-        <!-- 狙擊鏡高倍率瞄準覆蓋層 -->
         <div id="sniper-scope-overlay">
             <div class="sniper-scope-horizontal-line"></div>
             <div class="sniper-scope-vertical-line"></div>
             <div class="sniper-scope-center-dot"></div>
         </div>
 
-        <!-- 中央動態準星 -->
         <div id="dynamic-crosshair-group">
             <div class="crosshair-center-dot"></div>
             <div class="crosshair-tick" id="crosshair-tick-top"></div>
@@ -687,7 +644,6 @@
             <div class="crosshair-tick" id="crosshair-tick-right"></div>
         </div>
 
-        <!-- 命中回饋十字標記 -->
         <div id="hitmarker-indicator">
             <span class="hitmarker-segment hitmarker-segment-top-left"></span>
             <span class="hitmarker-segment hitmarker-segment-top-right"></span>
@@ -695,10 +651,8 @@
             <span class="hitmarker-segment hitmarker-segment-bottom-right"></span>
         </div>
 
-        <!-- 受擊方向弧形指示容器 -->
         <div id="damage-direction-ring"></div>
 
-        <!-- 左上角即時戰術雷達 -->
         <div id="tactical-radar-panel">
             <canvas id="tactical-radar-canvas" width="156" height="156"></canvas>
             <div class="tactical-radar-footer">
@@ -707,7 +661,6 @@
             </div>
         </div>
 
-        <!-- 頂部波次與戰績狀態列 -->
         <div id="top-status-bar">
             <div>波次<span class="status-metric-value" id="status-wave-value">1</span></div>
             <div>剩餘敵軍<span class="status-metric-value" id="status-enemies-value">0</span></div>
@@ -715,10 +668,8 @@
             <div>戰術分數<span class="status-metric-value" id="status-score-value">0</span></div>
         </div>
 
-        <!-- 右上角擊殺播報列表 -->
         <div id="killfeed-container"></div>
 
-        <!-- 中央換彈 / 插板進度條 -->
         <div id="center-action-progress-container">
             <div id="center-action-progress-label">動作執行中...</div>
             <div class="center-action-progress-track">
@@ -726,10 +677,8 @@
             </div>
         </div>
 
-        <!-- 中央戰術橫幅提示 -->
         <div id="tactical-banner-message"></div>
 
-        <!-- 左下角生命與三片防彈甲狀態 -->
         <div id="player-vitals-panel">
             <div class="armor-plates-row">
                 <div class="armor-plate-slot"><div class="armor-plate-fill" id="armor-plate-fill-0"></div></div>
@@ -746,7 +695,6 @@
             </div>
         </div>
 
-        <!-- 右下角武器與彈藥狀態 -->
         <div id="weapon-status-panel">
             <div class="weapon-header-row">
                 <span id="weapon-firemode-label">全自動</span>
@@ -784,112 +732,141 @@
         </div>
 
         <button id="start-game-button" type="button" disabled>正在檢查模組載入狀態...</button>
-        <div id="module-diagnostic-panel">正在初始化引擎與載入 12 個模組檔案...</div>
+        <div id="module-diagnostic-panel">正在初始化引擎與載入 38 個模組檔案...</div>
     </div>
 
-    <!-- 全域命名空間與模組診斷初始化腳本 -->
+    <!-- 模組診斷與啟動橋接 -->
     <script>
         (function () {
-            window.TacticalWarfare = window.TacticalWarfare || {
-                expectedModules: [
-                    'Config',
-                    'AudioEngine',
-                    'SceneManager',
-                    'WorldMap',
-                    'PlayerController',
-                    'WeaponViewModel',
-                    'VisualEffects',
-                    'WeaponCombat',
-                    'EnemyIntelligence',
-                    'TacticalHud',
-                    'InputManager',
-                    'GameMain'
-                ],
-                loadedModules: {},
-                runtimeErrors: []
-            };
+            const TOTAL_MODULES = 38;
+            window.__TW_LOADED_COUNT__ = 0;
+            window.__TW_ERRORS__ = [];
 
-            window.TacticalWarfare.registerModule = function (moduleName, moduleExport) {
-                window.TacticalWarfare[moduleName] = moduleExport;
-                window.TacticalWarfare.loadedModules[moduleName] = true;
-            };
-
-            window.addEventListener('error', function (errorEvent) {
-                const errorMessage = errorEvent.message || '未知腳本錯誤';
-                const sourceFile = errorEvent.filename ? errorEvent.filename.split('/').pop() : 'index.html';
-                const lineNumber = errorEvent.lineno || 0;
-                window.TacticalWarfare.runtimeErrors.push(sourceFile + ' 第 ' + lineNumber + ' 行：' + errorMessage);
-                updateModuleDiagnosticDisplay();
+            window.addEventListener('error', function (errEvent) {
+                const msg = errEvent.message || '未知腳本錯誤';
+                const file = errEvent.filename ? errEvent.filename.split('/').pop() : 'index.html';
+                const line = errEvent.lineno || 0;
+                window.__TW_ERRORS__.push(file + ' 第 ' + line + ' 行：' + msg);
+                refreshDiagnostic();
             });
 
-            function updateModuleDiagnosticDisplay() {
-                const diagnosticPanel = document.getElementById('module-diagnostic-panel');
-                const startButton = document.getElementById('start-game-button');
-                if (!diagnosticPanel || !startButton) {
-                    return;
-                }
+            function refreshDiagnostic() {
+                const panel = document.getElementById('module-diagnostic-panel');
+                const btn = document.getElementById('start-game-button');
+                if (!panel || !btn) return;
 
                 if (typeof window.THREE === 'undefined') {
-                    diagnosticPanel.className = 'has-error';
-                    diagnosticPanel.textContent = '錯誤：無法載入 Three.js 引擎，請確認網路連線正常後重新整理頁面。';
-                    startButton.disabled = true;
-                    startButton.textContent = '引擎載入失敗';
+                    panel.className = 'has-error';
+                    panel.textContent = '錯誤：無法載入 Three.js 引擎，請確認網路連線正常後重新整理頁面。';
+                    btn.disabled = true;
+                    btn.textContent = '引擎載入失敗';
                     return;
                 }
 
-                const missingModules = [];
-                for (let index = 0; index < window.TacticalWarfare.expectedModules.length; index = index + 1) {
-                    const moduleName = window.TacticalWarfare.expectedModules[index];
-                    if (!window.TacticalWarfare.loadedModules[moduleName]) {
-                        missingModules.push(moduleName);
-                    }
-                }
-
-                if (window.TacticalWarfare.runtimeErrors.length > 0) {
-                    diagnosticPanel.className = 'has-error';
-                    diagnosticPanel.textContent = '偵測到程式錯誤：' + window.TacticalWarfare.runtimeErrors[0];
-                    startButton.disabled = true;
-                    startButton.textContent = '請修正腳本錯誤';
+                if (window.__TW_ERRORS__.length > 0) {
+                    panel.className = 'has-error';
+                    panel.textContent = '偵測到程式錯誤：' + window.__TW_ERRORS__[0];
+                    btn.disabled = true;
+                    btn.textContent = '請修正腳本錯誤';
                     return;
                 }
 
-                if (missingModules.length > 0) {
-                    diagnosticPanel.className = '';
-                    diagnosticPanel.textContent =
-                        '已載入 ' +
-                        (window.TacticalWarfare.expectedModules.length - missingModules.length) +
-                        ' / ' +
-                        window.TacticalWarfare.expectedModules.length +
-                        ' 個模組。尚缺：' +
-                        missingModules.join('、');
-                    startButton.disabled = true;
-                    startButton.textContent = '等待其餘模組檔案完成...';
+                const tw = window.TacticalWarfare;
+                const registered = tw && tw.modules ? Object.keys(tw.modules).length : 0;
+                const count = Math.max(window.__TW_LOADED_COUNT__ || 0, registered);
+
+                if (count < TOTAL_MODULES) {
+                    panel.className = '';
+                    panel.textContent = '已載入 ' + count + ' / ' + TOTAL_MODULES + ' 個模組，正在完成啟動...';
+                    btn.disabled = true;
+                    btn.textContent = '正在載入模組...';
                     return;
                 }
 
-                diagnosticPanel.className = '';
-                diagnosticPanel.textContent = '全部 12 個遊戲模組載入完成，系統就緒。';
-                startButton.disabled = false;
-                startButton.textContent = '點擊投入戰場';
+                panel.className = '';
+                panel.textContent = '全部 ' + TOTAL_MODULES + ' 個模組載入完成，系統就緒。';
+                btn.disabled = false;
+                btn.textContent = '點擊投入戰場';
             }
 
-            window.TacticalWarfare.updateModuleDiagnosticDisplay = updateModuleDiagnosticDisplay;
-            window.addEventListener('load', updateModuleDiagnosticDisplay);
+            function bindStartAction() {
+                const btn = document.getElementById('start-game-button');
+                const menu = document.getElementById('game-menu-overlay');
+                if (!btn) return;
+
+                btn.addEventListener('click', function () {
+                    const tw = window.TacticalWarfare;
+                    if (tw && tw.GameRuntime && typeof tw.GameRuntime.startCombat === 'function') {
+                        tw.GameRuntime.startCombat(1);
+                    } else if (tw && tw.MainBootstrap && typeof tw.MainBootstrap.startCombat === 'function') {
+                        tw.MainBootstrap.startCombat(1);
+                    }
+                    if (menu) {
+                        menu.classList.add('hidden');
+                    }
+                });
+
+                const bus = window.TacticalWarfare && window.TacticalWarfare.EventBus;
+                const evts = window.TacticalWarfare && window.TacticalWarfare.Events;
+                if (bus && evts && evts.GAME_START) {
+                    bus.on(evts.GAME_START, function () {
+                        if (menu) menu.classList.add('hidden');
+                    });
+                }
+                if (bus && evts && evts.GAME_RESET) {
+                    bus.on(evts.GAME_RESET, function (payload) {
+                        if (menu && (!payload || payload.phase === 'lobby')) {
+                            menu.classList.remove('hidden');
+                        }
+                    });
+                }
+            }
+
+            window.addEventListener('load', function () {
+                bindStartAction();
+                refreshDiagnostic();
+            });
         })();
     </script>
 
-    <!-- 依固定相依順序載入 12 個獨立遊戲模組檔案 -->
-    <script src="01-config.js"></script>
-    <script src="02-audio.js"></script>
-    <script src="03-scene.js"></script>
-    <script src="04-map.js"></script>
-    <script src="05-player.js"></script>
-    <script src="06-viewmodel.js"></script>
-    <script src="07-vfx.js"></script>
-    <script src="08-combat.js"></script>
-    <script src="09-enemy.js"></script>
-    <script src="10-hud.js"></script>
-    <script src="11-input.js"></script>
-    <script src="12-main.js"></script>
+    <!-- 依相依順序載入 js/01 至 js/38 -->
+    <script src="js/01_event_bus_state.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/02_renderer_core.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/03_pbr_materials.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/04_atmosphere_lighting.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/05_physics_collision.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/06_map_terrain_ground.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/07_map_props_covers.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/08_map_explosives_pickups.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/09_input_system.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/10_player_movement.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/11_player_controller.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/12_weapon_models_m4a1.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/13_weapon_models_mp5.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/14_weapon_models_ax50.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/15_weapon_models_x16.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/16_viewmodel_rig.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/17_ballistics_recoil.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/18_weapon_controller.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/19_vfx_particle_engine.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/20_vfx_muzzle_decals.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/21_vfx_explosions_tracers.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/22_audio_procedural.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/23_audio_weapons_combat.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/24_audio_foley_env.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/25_audio_music_ui.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/26_enemy_soldier_mesh.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/27_enemy_upper_lower_ik.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/28_enemy_warzone_locomotion.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/29_ragdoll_physics.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/30_enemy_tactical_ai.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/31_ui_lobby_3d.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/32_ui_hud_customizer.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/33_ui_settings_modal.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/34_ui_combat_hud.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/35_ui_killfeed_score.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/36_gamemode_manager.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/37_main_bootstrap.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/38_game_runtime.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
 </body>
 </html>
