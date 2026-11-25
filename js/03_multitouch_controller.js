@@ -18,8 +18,8 @@
 
     const INPUT_DEFAULTS = Object.freeze({
         mouseSensitivity: 1.5,
-        touchSensitivity: 0.009,
-        adsSensitivityMultiplier: 0.65,
+        touchSensitivity: 0.14,
+        adsSensitivityMultiplier: 0.72,
         invertY: false,
         joystickMaxRadius: 56,
         joystickDeadzone: 0.12,
@@ -362,8 +362,7 @@
 
             const touchSens = GameState.get('settings.touchSensitivity');
             if (typeof touchSens === 'number' && touchSens > 0) {
-                const mappedTouch = touchSens > 0.05 ? touchSens * INPUT_DEFAULTS.touchSensitivity : touchSens;
-                this.config.touchSensitivity = Math.max(mappedTouch, INPUT_DEFAULTS.touchSensitivity);
+                this.config.touchSensitivity = Math.max(touchSens, INPUT_DEFAULTS.touchSensitivity);
             }
 
             const adsMult = GameState.get('settings.adsSensitivityMultiplier');
@@ -387,6 +386,13 @@
                 this.config.mouseSensitivity = value;
             }
             return this.config.mouseSensitivity;
+        }
+
+        setTouchSensitivity(value) {
+            if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+                this.config.touchSensitivity = value;
+            }
+            return this.config.touchSensitivity;
         }
 
         _buildTouchUI() {
@@ -726,7 +732,7 @@
 
         _accumulateTouchLook(dx, dy, dtMs) {
             const speedPxPerMs = Math.sqrt(dx * dx + dy * dy) / dtMs;
-            const accelBoost = 1 + Math.min(0.65, speedPxPerMs * 0.45);
+            const accelBoost = 1 + Math.min(1.2, speedPxPerMs * 0.75);
             const adsScale = this.actions.ads ? this.config.adsSensitivityMultiplier : 1.0;
             const sens = this.config.touchSensitivity * accelBoost * adsScale;
             const ySign = this.config.invertY ? -1 : 1;
