@@ -3,10 +3,6 @@
  * 37_main_bootstrap.js
  * 戰術 FPS 引擎總啟動編排器與主更新迴圈協調器（Main Bootstrap）
  * ============================================================================
- * 職責：
- * 1. 按模組相依順序初始化核心、物理、世界場景、槍械與移動、AI／布娃娃、音效／VFX 與 UI
- * 2. 管理 requestAnimationFrame 主迴圈，依戰局階段（lobby / combat / gameover）協調各子系統更新
- * 3. 提供啟動、重新開局、暫停／恢復與完整資源釋放介面，並暴露於 TacticalWarfare 命名空間
  */
 (function (global) {
     'use strict';
@@ -21,18 +17,11 @@
     const GameState = TacticalWarfare.GameState;
 
     function clamp(val, minVal, maxVal) {
-        if (val < minVal) {
-            return minVal;
-        }
-        if (val > maxVal) {
-            return maxVal;
-        }
+        if (val < minVal) return minVal;
+        if (val > maxVal) return maxVal;
         return val;
     }
 
-    // ------------------------------------------------------------------------
-    // 1. MainBootstrap 主類別
-    // ------------------------------------------------------------------------
     class MainBootstrap {
         constructor() {
             this.initialized = false;
@@ -44,13 +33,13 @@
             this._unsubscribers = [];
         }
 
-        /**
-         * 依相依順序初始化全引擎各子系統
-         */
+        _getInputController() {
+            return TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || TacticalWarfare.InputSystem || null;
+        }
+
         init(options) {
             const opts = options || {};
 
-            // 1. 渲染核心與材質／光影
             if (TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.init === 'function') {
                 TacticalWarfare.RendererCore.init(opts.renderer || opts);
             }
@@ -70,7 +59,6 @@
                 TacticalWarfare.AtmosphereLighting.init({ scene: scene });
             }
 
-            // 2. 物理碰撞與戰場場景／掩體／油桶／補給
             if (TacticalWarfare.PhysicsCollision && typeof TacticalWarfare.PhysicsCollision.init === 'function') {
                 TacticalWarfare.PhysicsCollision.init({ scene: scene });
             }
@@ -93,16 +81,21 @@
                 });
             }
 
-            // 3. 輸入與第一人稱武器／移動／彈道／音效／VFX
-            if (TacticalWarfare.InputSystem && typeof TacticalWarfare.InputSystem.init === 'function') {
-                TacticalWarfare.InputSystem.init(opts.input || {});
+            // 3. 統一輸入控制器（03_multitouch_controller.js）
+            const inputCtrl = this._getInputController();
+            if (inputCtrl && typeof inputCtrl.init === 'function') {
+                inputCtrl.init(opts.input || {
+                    pointerLockElement: TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getDomElement
+                        ? TacticalWarfare.RendererCore.getDomElement()
+                        : null
+                });
             }
 
             if (TacticalWarfare.PlayerMovement && typeof TacticalWarfare.PlayerMovement.init === 'function') {
                 TacticalWarfare.PlayerMovement.init({
                     physics: TacticalWarfare.PhysicsCollision,
                     terrain: TacticalWarfare.MapTerrainGround,
-                    inputSystem: TacticalWarfare.InputSystem,
+                    inputSystem: inputCtrl,
                     camera: camera
                 });
             }
@@ -118,7 +111,7 @@
                 TacticalWarfare.WeaponController.init({
                     camera: camera,
                     ballistics: TacticalWarfare.BallisticsRecoil,
-                    inputSystem: TacticalWarfare.InputSystem
+                    inputSystem: inputCtrl
                 });
             }
 
@@ -137,7 +130,6 @@
                 });
             }
 
-            // 4. 敵軍模型、上下半身 IK、戰術移動、戰術 AI 與布娃娃物理
             if (TacticalWarfare.EnemySoldierMesh && typeof TacticalWarfare.EnemySoldierMesh.init === 'function') {
                 TacticalWarfare.EnemySoldierMesh.init({ scene: scene });
             }
@@ -173,7 +165,6 @@
                 });
             }
 
-            // 5. 介面系統、3D 大廳與波次模式管理器
             if (TacticalWarfare.UiHudCustomizer && typeof TacticalWarfare.UiHudCustomizer.init === 'function') {
                 TacticalWarfare.UiHudCustomizer.init(opts.hudCustom || {});
             }
@@ -236,10 +227,19 @@
             }
         }
 
-        /**
-         * 進入實戰交戰模式（第 1 波）
-         */
         startCombat(waveNumber) {
+            const inputCtrl = this._getInputController();
+            if (inputCtrl) {
+                if (typeof inputCtrl.setEnabled === 'function') {
+                    inputCtrl.setEnabled(true);
+                } else {
+                    inputCtrl.enabled = true;
+                }
+                if (typeof inputCtrl.setTouchUIVisible === 'function') {
+                    inputCtrl.setTouchUIVisible(true);
+                }
+            }
+
             if (TacticalWarfare.UiLobby3d && typeof TacticalWarfare.UiLobby3d.setActive === 'function') {
                 TacticalWarfare.UiLobby3d.setActive(false);
             }
@@ -254,10 +254,19 @@
             }
         }
 
-        /**
-         * 重設並返回戰術大廳狀態
-         */
         returnToLobby() {
+            const inputCtrl = this._getInputController();
+            if (inputCtrl) {
+                if (typeof inputCtrl.setEnabled === 'function') {
+                    inputCtrl.setEnabled(false);
+                } else {
+                    inputCtrl.enabled = false;
+                }
+                if (typeof inputCtrl.setTouchUIVisible === 'function') {
+                    inputCtrl.setTouchUIVisible(false);
+                }
+            }
+
             if (TacticalWarfare.GameModeManager && typeof TacticalWarfare.GameModeManager.resetMatch === 'function') {
                 TacticalWarfare.GameModeManager.resetMatch('lobby', true);
             }
@@ -269,9 +278,6 @@
             }
         }
 
-        /**
-         * 啟動 requestAnimationFrame 主迴圈
-         */
         startLoop() {
             if (this.running) return;
             this.running = true;
@@ -308,9 +314,6 @@
             this.paused = Boolean(paused);
         }
 
-        /**
-         * 單步推進全引擎邏輯與畫面渲染
-         */
         step(deltaTime) {
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const phase = GameState && typeof GameState.get === 'function'
@@ -400,9 +403,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 2. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const mainBootstrapInstance = new MainBootstrap();
 
     const moduleExport = {
