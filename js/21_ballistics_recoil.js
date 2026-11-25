@@ -3,12 +3,6 @@
  * 21_ballistics_recoil.js
  * 戰術彈道散布、後座力曲線、射擊節流與命中結算系統
  * ============================================================================
- * 職責：
- * 1. 管理各槍械彈道與後座參數（RPM 射速、彈匣容量、散布半徑、後座跳動、傷害與衰減）
- * 2. 處理開火節流、準星散布累積與回正、後座力視角跳動與回復
- * 3. 呼叫 PhysicsCollision.raycastCombat 進行射擊判定，處理高爆油桶受擊與廣播
- *    WEAPON_FIRE / BULLET_IMPACT / ENEMY_HIT 事件
- * 4. 同步更新 GameState 武器彈藥、散布、後座與命中標記狀態
  */
 (function (global) {
     'use strict';
@@ -22,9 +16,6 @@
     const EventBus = TacticalWarfare.EventBus;
     const GameState = TacticalWarfare.GameState;
 
-    // ------------------------------------------------------------------------
-    // 1. 武器彈道與後座力參數表
-    // ------------------------------------------------------------------------
     const BALLISTICS_WEAPON_SPECS = Object.freeze({
         M4A1: {
             id: 'M4A1',
@@ -109,12 +100,8 @@
     });
 
     function clamp(val, minVal, maxVal) {
-        if (val < minVal) {
-            return minVal;
-        }
-        if (val > maxVal) {
-            return maxVal;
-        }
+        if (val < minVal) return minVal;
+        if (val > maxVal) return maxVal;
         return val;
     }
 
@@ -122,14 +109,13 @@
         return a + (b - a) * t;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. BallisticsRecoil 主類別
-    // ------------------------------------------------------------------------
     class BallisticsRecoil {
         constructor() {
             this.initialized = false;
             this.physics = null;
             this.propsCovers = null;
+            this.camera = null;
+            this.inputSystem = null;
 
             this.activeWeaponId = 'M4A1';
             this.ammoByWeapon = {
@@ -143,18 +129,25 @@
             this._spreadBonus = 0;
             this.currentSpread = 0.032;
 
-            // 視角後座力偏移（pitch 向上為正或負由呼叫端視相機慣例決定）
             this.recoilOffset = { pitch: 0, yaw: 0 };
+            this._isFiringHeld = false;
+            this._semiTriggered = false;
             this._unsubscribers = [];
+            this._domListeners = [];
         }
 
-        /**
-         * 初始化彈道與後座系統
-         */
         init(options) {
             const opts = options || {};
             this.physics = opts.physics || TacticalWarfare.PhysicsCollision || null;
-            this.propsCovers = opts.propsCovers || TacticalWarfare.MapPropsCovers || null;
+            this.propsCovers = opts.propsCovers || TacticalWarfare.MapExplosivesPickups || TacticalWarfare.MapPropsCovers || null;
+            this.camera = opts.camera ||
+                (TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
+                    ? TacticalWarfare.RendererCore.getCamera()
+                    : null);
+            this.inputSystem = opts.inputSystem ||
+                TacticalWarfare.MultiTouchController ||
+                TacticalWarfare.InputController ||
+                null;
 
             this.resetAmmo();
             if (GameState && typeof GameState.get === 'function') {
@@ -164,16 +157,49 @@
 
             if (!this.initialized) {
                 this._bindEvents();
+                this._bindInputListeners();
                 this.initialized = true;
             }
 
             return this;
         }
 
+        _bindInputListeners() {
+            const doc = global.document;
+            if (!doc) return;
+
+            const onMouseDown = (ev) => {
+                if (ev.button !== 0) return;
+                const target = ev.target;
+                if (target && target.closest && target.closest('button, input, select, textarea, [data-rt]')) {
+                    return;
+                }
+                this._isFiringHeld = true;
+                this._semiTriggered = false;
+            };
+
+            const onMouseUp = (ev) => {
+                if (ev.button !== 0) return;
+                this._isFiringHeld = false;
+                this._semiTriggered = false;
+            };
+
+            const onWindowBlur = () => {
+                this._isFiringHeld = false;
+                this._semiTriggered = false;
+            };
+
+            doc.addEventListener('mousedown', onMouseDown);
+            global.addEventListener('mouseup', onMouseUp);
+            global.addEventListener('blur', onWindowBlur);
+
+            this._domListeners.push({ target: doc, name: 'mousedown', fn: onMouseDown });
+            this._domListeners.push({ target: global, name: 'mouseup', fn: onMouseUp });
+            this._domListeners.push({ target: global, name: 'blur', fn: onWindowBlur });
+        }
+
         _bindEvents() {
-            if (!EventBus || !Events) {
-                return;
-            }
+            if (!EventBus || !Events) return;
 
             if (Events.WEAPON_EQUIP) {
                 this._unsubscribers.push(
@@ -188,13 +214,10 @@
                 );
             }
 
-            // 拾取補給包時補充備用彈藥
             if (Events.PICKUP_COLLECTED) {
                 this._unsubscribers.push(
                     EventBus.on(Events.PICKUP_COLLECTED, (payload) => {
-                        if (!payload || typeof payload.ammoRatio !== 'number') {
-                            return;
-                        }
+                        if (!payload || typeof payload.ammoRatio !== 'number') return;
                         this.addAmmoRatio(payload.ammoRatio);
                     })
                 );
@@ -206,12 +229,79 @@
                         this.resetAmmo();
                         this._fireCooldown = 0;
                         this._spreadBonus = 0;
+                        this._isFiringHeld = false;
+                        this._semiTriggered = false;
                         this.recoilOffset.pitch = 0;
                         this.recoilOffset.yaw = 0;
                         this._syncAmmoToState();
                     })
                 );
             }
+        }
+
+        _wantsToFire(spec) {
+            const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || null;
+            let inputFiring = this._isFiringHeld;
+
+            if (ctrl) {
+                if (typeof ctrl.isFiring === 'function') {
+                    inputFiring = inputFiring || Boolean(ctrl.isFiring());
+                } else if (typeof ctrl.firing === 'boolean') {
+                    inputFiring = inputFiring || ctrl.firing;
+                } else if (ctrl.state && typeof ctrl.state.firing === 'boolean') {
+                    inputFiring = inputFiring || ctrl.state.firing;
+                }
+            }
+
+            if (GameState && typeof GameState.get === 'function') {
+                if (GameState.get('weapons.isFiring', false) || GameState.get('input.fire', false)) {
+                    inputFiring = true;
+                }
+            }
+
+            if (!inputFiring) {
+                this._semiTriggered = false;
+                return false;
+            }
+
+            if (spec && spec.fireMode === 'semi') {
+                if (this._semiTriggered) {
+                    return false;
+                }
+                this._semiTriggered = true;
+            }
+
+            return true;
+        }
+
+        _getShotContext(isAiming, isMoving) {
+            const THREE = global.THREE;
+            const cam = this.camera ||
+                (TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
+                    ? TacticalWarfare.RendererCore.getCamera()
+                    : null);
+
+            const origin = new THREE.Vector3();
+            const forward = new THREE.Vector3(0, 0, -1);
+
+            if (cam) {
+                cam.updateMatrixWorld(true);
+                cam.getWorldPosition(origin);
+                cam.getWorldDirection(forward);
+            } else if (TacticalWarfare.PlayerMovement && TacticalWarfare.PlayerMovement.position) {
+                const p = TacticalWarfare.PlayerMovement.position;
+                origin.set(p.x || 0, (p.y || 0) + 1.65, p.z || 0);
+            } else {
+                origin.set(0, 1.65, 0);
+            }
+
+            return {
+                weaponId: this.activeWeaponId,
+                origin: origin,
+                forward: forward,
+                isAiming: Boolean(isAiming),
+                isMoving: Boolean(isMoving)
+            };
         }
 
         resetAmmo() {
@@ -242,16 +332,11 @@
             this._syncAmmoToState();
         }
 
-        /**
-         * 完成裝填時呼叫，將備用彈藥填入目前彈匣
-         */
         applyReloadComplete(weaponId) {
             const wId = weaponId || this.activeWeaponId;
             const spec = BALLISTICS_WEAPON_SPECS[wId];
             const slot = this.ammoByWeapon[wId];
-            if (!spec || !slot) {
-                return false;
-            }
+            if (!spec || !slot) return false;
             const needed = Math.max(0, spec.magSize - slot.mag);
             const transfer = Math.min(needed, slot.reserve);
             slot.mag += transfer;
@@ -267,25 +352,17 @@
         getAmmoState(weaponId) {
             const wId = weaponId || this.activeWeaponId;
             const slot = this.ammoByWeapon[wId];
-            if (!slot) {
-                return { mag: 0, reserve: 0 };
-            }
+            if (!slot) return { mag: 0, reserve: 0 };
             return { mag: slot.mag, reserve: slot.reserve };
         }
 
         canFire(weaponId) {
             const wId = weaponId || this.activeWeaponId;
             const slot = this.ammoByWeapon[wId];
-            if (!slot || slot.mag <= 0) {
-                return false;
-            }
+            if (!slot || slot.mag <= 0) return false;
             return this._fireCooldown <= 0;
         }
 
-        /**
-         * 執行單次射擊結算（扣彈、後座跳動、散布擴散、射線命中與事件廣播）
-         * @param {Object} shotCtx - { weaponId, origin, forward, isAiming, isMoving }
-         */
         fireShot(shotCtx) {
             const THREE = global.THREE;
             const ctx = shotCtx || {};
@@ -301,7 +378,6 @@
             const secondsPerShot = 60 / Math.max(30, spec.rpm);
             this._fireCooldown = secondsPerShot;
 
-            // 累積後座與散布
             const adsScale = ctx.isAiming ? 0.58 : 1.0;
             this.recoilOffset.pitch += spec.recoilPitch * adsScale;
             this.recoilOffset.yaw += ((Math.random() - 0.5) * 2) * spec.recoilYaw * adsScale;
@@ -323,7 +399,6 @@
                 });
             }
 
-            // 計算含散布的射線方向
             const baseSpread = ctx.isAiming ? spec.adsSpread : spec.hipSpread;
             const movePenalty = ctx.isMoving && !ctx.isAiming ? 0.012 : 0;
             const totalSpread = baseSpread + movePenalty + this._spreadBonus;
@@ -339,7 +414,6 @@
                 dir.normalize();
             }
 
-            // 建構正交右向與上向進行圓錐散布偏移
             const upRef = Math.abs(dir.y) > 0.99 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
             const rightVec = new THREE.Vector3().crossVectors(dir, upRef).normalize();
             const upVec = new THREE.Vector3().crossVectors(rightVec, dir).normalize();
@@ -429,9 +503,6 @@
             return Math.round(baseDmg);
         }
 
-        /**
-         * 每幀更新射速冷卻、散布回正與後座力回復
-         */
         update(deltaTime, isAiming, isMoving) {
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             if (this._fireCooldown > 0) {
@@ -440,7 +511,10 @@
 
             const spec = this.getWeaponSpec(this.activeWeaponId);
 
-            // 散布回正
+            if (this._fireCooldown <= 0 && this._wantsToFire(spec)) {
+                this.fireShot(this._getShotContext(isAiming, isMoving));
+            }
+
             const spreadDecay = Math.exp(-9.5 * dt);
             this._spreadBonus *= spreadDecay;
 
@@ -448,7 +522,6 @@
             const movePenalty = isMoving && !isAiming ? 0.012 : 0;
             this.currentSpread = baseSpread + movePenalty + this._spreadBonus;
 
-            // 後座力回正
             const recDecay = Math.exp(-spec.recoilRecovery * dt);
             this.recoilOffset.pitch *= recDecay;
             this.recoilOffset.yaw *= recDecay;
@@ -463,9 +536,7 @@
         }
 
         _syncAmmoToState() {
-            if (!GameState || typeof GameState.patch !== 'function') {
-                return;
-            }
+            if (!GameState || typeof GameState.patch !== 'function') return;
             const slot = this.ammoByWeapon[this.activeWeaponId] || { mag: 0, reserve: 0 };
             GameState.patch('weapons', {
                 activeId: this.activeWeaponId,
@@ -481,13 +552,18 @@
                 }
             }
             this._unsubscribers = [];
+
+            for (let i = 0; i < this._domListeners.length; i = i + 1) {
+                const item = this._domListeners[i];
+                if (item && item.target && item.fn) {
+                    item.target.removeEventListener(item.name, item.fn);
+                }
+            }
+            this._domListeners = [];
             this.initialized = false;
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const ballisticsRecoilInstance = new BallisticsRecoil();
 
     const moduleExport = {
