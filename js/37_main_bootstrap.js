@@ -61,6 +61,9 @@
             const camera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
                 ? TacticalWarfare.RendererCore.getCamera()
                 : null;
+            const weaponCamera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getWeaponCamera === 'function'
+                ? TacticalWarfare.RendererCore.getWeaponCamera()
+                : null;
 
             if (TacticalWarfare.PbrMaterials && typeof TacticalWarfare.PbrMaterials.init === 'function') {
                 TacticalWarfare.PbrMaterials.init({ scene: scene });
@@ -111,6 +114,13 @@
                 });
             }
 
+            if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.init === 'function') {
+                TacticalWarfare.FpHandsAnatomy.init({
+                    parentGroup: weaponCamera || camera,
+                    camera: camera
+                });
+            }
+
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.init === 'function') {
                 TacticalWarfare.BallisticsRecoil.init({
                     physics: TacticalWarfare.PhysicsCollision,
@@ -120,7 +130,7 @@
 
             if (TacticalWarfare.WeaponController && typeof TacticalWarfare.WeaponController.init === 'function') {
                 TacticalWarfare.WeaponController.init({
-                    camera: camera,
+                    camera: weaponCamera || camera,
                     ballistics: TacticalWarfare.BallisticsRecoil,
                     inputSystem: inputCtrl
                 });
@@ -254,6 +264,9 @@
                 }
             }
 
+            if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.setVisible === 'function') {
+                TacticalWarfare.FpHandsAnatomy.setVisible(true);
+            }
             if (TacticalWarfare.UiLobby3d && typeof TacticalWarfare.UiLobby3d.setActive === 'function') {
                 TacticalWarfare.UiLobby3d.setActive(false);
             }
@@ -347,6 +360,10 @@
                 const moveRes = TacticalWarfare.PlayerMovement && typeof TacticalWarfare.PlayerMovement.update === 'function'
                     ? TacticalWarfare.PlayerMovement.update(dt)
                     : null;
+
+                if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.update === 'function') {
+                    TacticalWarfare.FpHandsAnatomy.update(dt, moveRes && moveRes.bobOffset ? moveRes.bobOffset : null);
+                }
 
                 if (TacticalWarfare.WeaponController && typeof TacticalWarfare.WeaponController.update === 'function') {
                     TacticalWarfare.WeaponController.update(dt, moveRes);
