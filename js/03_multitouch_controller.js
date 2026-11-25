@@ -1,671 +1,1348 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/03_multitouch_controller.js
- * 檔案說明：多點觸控追蹤、虛擬搖桿運算、核心按鍵拖動瞄準 (Touch-Through Drag Aiming)。
- *           徹底解決「按住開鏡/開火時無法滑動視角」的致命痛點。
- *           掛載於 window.WZ.Touch。
- * 目標行數：1200 - 1800 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 03_multitouch_controller.js
+ * 多點觸控虛擬操縱系統與桌面鍵鼠（Pointer Lock）統一輸入核心
+ * ============================================================================
+ * 職責：
+ * 1. 提供與裝置無關的統一輸入介面（InputController / MultiTouchController），
+ *    讓後續玩家移動、開火與武器系統無需區分手機觸控或電腦鍵鼠。
+ * 2. 實作真正的多指獨立追蹤（strict touch.identifier !== null）：
+ *    - 左半區浮動虛擬搖桿（移動 + 前推到底自動觸發衝刺）
+ *    - 右半區自由滑動視角（支援微調精準瞄準與快速甩槍加速曲線）
+ *    - 右側開火鍵支援「按住射擊同時滑動壓槍／跟槍」
+ *    - 左側輔助開火鍵與戰術快捷鍵（開鏡、換彈、跳躍、蹲下、切槍、手榴彈、暫停）
+ * 3. 整合桌面端 WASD 移動、Shift 衝刺、C/Ctrl 蹲下、Space 跳躍、R 換彈、
+ *    G 投擲、1~3/Q/滾輪切槍，以及滑鼠 Pointer Lock 與異常抖動濾波。
+ * 4. 視窗失焦、暫停或退出鎖定時自動清空按鍵狀態，杜絕卡鍵與無限開火。
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('03_multitouch_controller.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
+    // ------------------------------------------------------------------------
+    // 1. 輸入預設參數與按鍵對照表
+    // ------------------------------------------------------------------------
+    const INPUT_DEFAULTS = Object.freeze({
+        mouseSensitivity: 0.0022,
+        touchSensitivity: 0.0048,
+        adsSensitivityMultiplier: 0.55,
+        invertY: false,
+        joystickMaxRadius: 56,
+        joystickDeadzone: 0.12,
+        autoSprintThreshold: 0.86,
+        mouseSpikeLimit: 180,
+        touchControlsMode: 'auto' // 'auto' | 'always' | 'off'
+    });
 
-    /* =========================================================================
-     * 第一部分：常數定義與環境檢測
-     * ========================================================================= */
+    const TOUCH_UI_STYLE_ID = 'tw-multitouch-ui-styles';
+    const TOUCH_UI_CONTAINER_ID = 'touch-controls-layer';
 
-    Logger.system('開始載入多點觸控模組 (js/03_multitouch_controller.js)...');
-
-    /**
-     * 觸控手勢的配置參數
-     */
-    const CONFIG = {
-        // 虛擬搖桿設定
-        JOYSTICK_DEADZONE: 0.15,        // 死區大小 (0.0 - 1.0)
-        JOYSTICK_RADIUS: 60,            // 搖桿可移動的最大半徑 (像素)
-        JOYSTICK_MAX_TOUCH_DIST: 120,   // 觸控點最大跟隨距離
-        
-        // 戰術衝刺判定
-        SPRINT_THRESHOLD: 0.85,         // 搖桿推到底的閾值
-        SPRINT_HOLD_TIME: 300,          // 推到底持續多久觸發衝刺 (毫秒)
-        DOUBLE_TAP_DELAY: 250,          // 雙擊判定的時間窗口 (毫秒)
-        
-        // 觸控追蹤設定
-        MAX_TOUCHES: 5,                 // 支援的最大同時觸控點數
-        TOUCH_ID_CLEANUP_DELAY: 500,    // 觸控結束後多久清理狀態 (毫秒)
-        
-        // 螢幕分區 (比例)
-        SCREEN_SPLIT_RATIO: 0.5,        // 左半屏為搖桿區，右半屏為視角與按鍵區
-    };
-
-    /**
-     * 定義需要支援「拖動穿透瞄準」的按鈕 ID 列表
-     * 當手指按在這些按鈕上並滑動時，除了按鈕保持按下，還會傳遞視角增量。
-     */
-    const DRAG_THROUGH_BUTTONS = [
-        'btn-fire',
-        'btn-ads',
-        'btn-jump',
-        'btn-crouch',
-        'btn-reload',
-        'btn-lethal'
-    ];
-
-    /* =========================================================================
-     * 第二部分：核心類別 (TouchController)
-     * ========================================================================= */
-
-    class TouchController {
-        constructor() {
-            // =================================================================
-            // 1. 內部狀態管理
-            // =================================================================
-
-            /**
-             * 儲存所有活躍的觸控點狀態
-             * 結構: { [identifier]: TouchState }
-             * TouchState: { 
-             *   id, x, y, startX, startY, 
-             *   type: 'joystick' | 'look' | 'button',
-             *   buttonId: string | null,
-             *   startTime: number,
-             *   lastX, lastY
-             * }
-             */
-            this.activeTouches = new Map();
-
-            /**
-             * 搖桿狀態
-             */
-            this.joystickState = {
-                isActive: false,
-                touchId: null,
-                centerX: 0,
-                centerY: 0,
-                currentX: 0,
-                currentY: 0,
-                deltaX: 0,       // 標準化 -1.0 到 1.0
-                deltaY: 0,       // 標準化 -1.0 到 1.0
-                magnitude: 0,    // 長度 (0.0 - 1.0)
-                angle: 0,        // 角度 (弧度)
-                
-                // 衝刺狀態
-                isSprinting: false,
-                isTacSprinting: false,
-                sprintTimer: 0,
-                lastTapTime: 0
-            };
-
-            /**
-             * 視角拖拽增量 (每幀需由外部讀取並歸零)
-             */
-            this.lookDelta = {
-                x: 0,
-                y: 0
-            };
-
-            /**
-             * 按鈕當前狀態 (是否被按下)
-             * 結構: { [buttonId]: boolean }
-             */
-            this.buttonStates = {};
-            DRAG_THROUGH_BUTTONS.forEach(id => {
-                this.buttonStates[id] = false;
-            });
-
-            // 綁定事件，避免 this 丟失
-            this._onTouchStart = this._onTouchStart.bind(this);
-            this._onTouchMove = this._onTouchMove.bind(this);
-            this._onTouchEnd = this._onTouchEnd.bind(this);
-            this._onTouchCancel = this._onTouchCancel.bind(this);
-
-            // 防止默認行為 (滑動網頁、縮放)
-            this._preventDefault = this._preventDefault.bind(this);
-
-            Logger.success('TouchController 實例化完成');
+    // ------------------------------------------------------------------------
+    // 2. 動態注入戰術觸控 HUD 樣式（免依賴外部 CSS）
+    // ------------------------------------------------------------------------
+    function injectTouchStyles() {
+        const doc = global.document;
+        if (!doc || doc.getElementById(TOUCH_UI_STYLE_ID)) {
+            return;
         }
 
-        /* =====================================================================
-         * 初始化與事件綁定
-         * ===================================================================== */
+        const style = doc.createElement('style');
+        style.id = TOUCH_UI_STYLE_ID;
+        style.textContent = [
+            '#touch-controls-layer {',
+            '    position: fixed;',
+            '    inset: 0;',
+            '    z-index: 40;',
+            '    pointer-events: none;',
+            '    user-select: none;',
+            '    -webkit-user-select: none;',
+            '    touch-action: none;',
+            '    overflow: hidden;',
+            '    display: none;',
+            '}',
+            '#touch-controls-layer.tw-touch-visible {',
+            '    display: block;',
+            '}',
+            '.tw-touch-zone {',
+            '    position: absolute;',
+            '    top: 0;',
+            '    bottom: 0;',
+            '    pointer-events: auto;',
+            '    touch-action: none;',
+            '}',
+            '.tw-touch-zone-left {',
+            '    left: 0;',
+            '    width: 46%;',
+            '}',
+            '.tw-touch-zone-right {',
+            '    right: 0;',
+            '    width: 54%;',
+            '}',
+            '.tw-joystick-base {',
+            '    position: absolute;',
+            '    width: 124px;',
+            '    height: 124px;',
+            '    margin-left: -62px;',
+            '    margin-top: -62px;',
+            '    border-radius: 50%;',
+            '    border: 2px solid rgba(160, 212, 255, 0.38);',
+            '    background: radial-gradient(circle, rgba(24, 38, 52, 0.35) 0%, rgba(12, 20, 28, 0.14) 75%);',
+            '    box-shadow: 0 0 18px rgba(0, 0, 0, 0.25) inset;',
+            '    pointer-events: none;',
+            '    opacity: 0.55;',
+            '    transition: opacity 0.12s ease, border-color 0.12s ease;',
+            '}',
+            '.tw-joystick-base.active {',
+            '    opacity: 0.95;',
+            '    border-color: rgba(110, 210, 255, 0.78);',
+            '}',
+            '.tw-joystick-base.sprinting {',
+            '    border-color: rgba(255, 184, 64, 0.95);',
+            '    box-shadow: 0 0 20px rgba(255, 174, 52, 0.35);',
+            '}',
+            '.tw-joystick-sprint-tag {',
+            '    position: absolute;',
+            '    top: -22px;',
+            '    left: 50%;',
+            '    transform: translateX(-50%);',
+            '    font-family: monospace, sans-serif;',
+            '    font-size: 10px;',
+            '    letter-spacing: 1px;',
+            '    color: #ffc85c;',
+            '    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);',
+            '    opacity: 0;',
+            '    transition: opacity 0.12s ease;',
+            '    white-space: nowrap;',
+            '}',
+            '.tw-joystick-base.sprinting .tw-joystick-sprint-tag {',
+            '    opacity: 1;',
+            '}',
+            '.tw-joystick-knob {',
+            '    position: absolute;',
+            '    left: 50%;',
+            '    top: 50%;',
+            '    width: 48px;',
+            '    height: 48px;',
+            '    margin-left: -24px;',
+            '    margin-top: -24px;',
+            '    border-radius: 50%;',
+            '    background: radial-gradient(circle at 35% 35%, rgba(215, 240, 255, 0.85), rgba(92, 160, 210, 0.55));',
+            '    border: 2px solid rgba(255, 255, 255, 0.72);',
+            '    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);',
+            '    transform: translate3d(0, 0, 0);',
+            '}',
+            '.tw-btn {',
+            '    position: absolute;',
+            '    display: flex;',
+            '    align-items: center;',
+            '    justify-content: center;',
+            '    flex-direction: column;',
+            '    border-radius: 50%;',
+            '    border: 1.5px solid rgba(195, 225, 250, 0.45);',
+            '    background: rgba(14, 22, 32, 0.52);',
+            '    color: rgba(235, 246, 255, 0.92);',
+            '    font-family: "Segoe UI", system-ui, sans-serif;',
+            '    font-weight: 700;',
+            '    font-size: 12px;',
+            '    letter-spacing: 0.5px;',
+            '    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);',
+            '    backdrop-filter: blur(4px);',
+            '    -webkit-backdrop-filter: blur(4px);',
+            '    pointer-events: auto;',
+            '    touch-action: none;',
+            '    transition: transform 0.08s ease, background 0.1s ease, border-color 0.1s ease;',
+            '}',
+            '.tw-btn.pressed, .tw-btn.toggled {',
+            '    transform: scale(0.92);',
+            '    background: rgba(58, 148, 220, 0.55);',
+            '    border-color: rgba(145, 222, 255, 0.95);',
+            '}',
+            '.tw-btn-fire {',
+            '    width: 78px;',
+            '    height: 78px;',
+            '    right: 34px;',
+            '    bottom: 66px;',
+            '    border-color: rgba(255, 130, 82, 0.75);',
+            '    background: rgba(190, 52, 32, 0.46);',
+            '    font-size: 14px;',
+            '}',
+            '.tw-btn-fire.pressed {',
+            '    background: rgba(242, 74, 42, 0.78);',
+            '    border-color: #ffd3b5;',
+            '}',
+            '.tw-btn-fire-left {',
+            '    width: 58px;',
+            '    height: 58px;',
+            '    left: 26px;',
+            '    bottom: 205px;',
+            '    border-color: rgba(255, 130, 82, 0.65);',
+            '    background: rgba(185, 50, 30, 0.4);',
+            '    font-size: 11px;',
+            '}',
+            '.tw-btn-ads {',
+            '    width: 60px;',
+            '    height: 60px;',
+            '    right: 126px;',
+            '    bottom: 124px;',
+            '}',
+            '.tw-btn-jump {',
+            '    width: 54px;',
+            '    height: 54px;',
+            '    right: 32px;',
+            '    bottom: 162px;',
+            '}',
+            '.tw-btn-crouch {',
+            '    width: 52px;',
+            '    height: 52px;',
+            '    right: 118px;',
+            '    bottom: 46px;',
+            '}',
+            '.tw-btn-reload {',
+            '    width: 52px;',
+            '    height: 52px;',
+            '    right: 184px;',
+            '    bottom: 62px;',
+            '}',
+            '.tw-btn-grenade {',
+            '    width: 48px;',
+            '    height: 48px;',
+            '    right: 196px;',
+            '    bottom: 132px;',
+            '    border-color: rgba(255, 198, 92, 0.55);',
+            '}',
+            '.tw-btn-switch {',
+            '    width: 84px;',
+            '    height: 36px;',
+            '    border-radius: 18px;',
+            '    right: 18px;',
+            '    bottom: 12px;',
+            '    font-size: 11px;',
+            '}',
+            '.tw-btn-pause {',
+            '    width: 40px;',
+            '    height: 40px;',
+            '    border-radius: 10px;',
+            '    right: 16px;',
+            '    top: 16px;',
+            '    font-size: 13px;',
+            '}',
+            '@media (max-height: 450px) {',
+            '    .tw-btn-fire { width: 68px; height: 68px; right: 24px; bottom: 48px; }',
+            '    .tw-btn-ads { width: 52px; height: 52px; right: 106px; bottom: 100px; }',
+            '    .tw-btn-jump { width: 48px; height: 48px; right: 24px; bottom: 132px; }',
+            '    .tw-btn-crouch { width: 46px; height: 46px; right: 102px; bottom: 32px; }',
+            '    .tw-btn-reload { width: 46px; height: 46px; right: 160px; bottom: 46px; }',
+            '    .tw-btn-grenade { width: 44px; height: 44px; right: 168px; bottom: 108px; }',
+            '    .tw-btn-fire-left { width: 50px; height: 50px; left: 18px; bottom: 168px; }',
+            '}'
+        ].join('\n');
+
+        doc.head.appendChild(style);
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. MultiTouchController 主類別（整合觸控與桌面鍵鼠）
+    // ------------------------------------------------------------------------
+    class MultiTouchController {
+        constructor() {
+            this.initialized = false;
+            this.enabled = true;
+            this.pointerLockElement = null;
+            this.pointerLocked = false;
+
+            // 裝置偵測與觸控顯示設定
+            this.isTouchCapable = this._detectTouchCapability();
+            this.activeInputMode = this.isTouchCapable ? 'touch' : 'desktop';
+            this.touchControlsMode = INPUT_DEFAULTS.touchControlsMode;
+            this.touchUIVisible = false;
+
+            // 靈敏度與偏好設定
+            this.config = {
+                mouseSensitivity: INPUT_DEFAULTS.mouseSensitivity,
+                touchSensitivity: INPUT_DEFAULTS.touchSensitivity,
+                adsSensitivityMultiplier: INPUT_DEFAULTS.adsSensitivityMultiplier,
+                invertY: INPUT_DEFAULTS.invertY,
+                joystickMaxRadius: INPUT_DEFAULTS.joystickMaxRadius,
+                joystickDeadzone: INPUT_DEFAULTS.joystickDeadzone,
+                autoSprintThreshold: INPUT_DEFAULTS.autoSprintThreshold,
+                mouseSpikeLimit: INPUT_DEFAULTS.mouseSpikeLimit
+            };
+
+            // 統一輸出狀態（供 PlayerController / WeaponSystem 每幀讀取）
+            this.moveVector = { x: 0, y: 0, magnitude: 0 };
+            this.lookDelta = { dx: 0, dy: 0 };
+
+            // 持續按壓／切換狀態
+            this.actions = {
+                fire: false,
+                ads: false,
+                sprint: false,
+                crouch: false,
+                jump: false,
+                reload: false,
+                melee: false,
+                grenade: false,
+                interact: false
+            };
+
+            // 單幀邊緣觸發佇列（讀取一次即清除）
+            this.pressedQueue = {
+                jump: false,
+                reload: false,
+                grenade: false,
+                melee: false,
+                interact: false,
+                weaponNext: false,
+                weaponPrev: false,
+                weaponSlot: 0, // 1, 2, 3（0 代表無切換請求）
+                pause: false
+            };
+
+            // 鍵盤按鍵狀態表
+            this._keysDown = Object.create(null);
+            this._mouseButtons = { left: false, right: false };
+
+            // 觸控來源獨立追蹤（避免左手放開覆蓋右手狀態）
+            this._touchMove = { x: 0, y: 0, autoSprint: false };
+            this._touchFireCount = 0;
+            this._touchAdsToggled = false;
+            this._touchCrouchToggled = false;
+            this._desktopCrouchToggled = false;
+
+            // 多指識別 ID（嚴格以 null 判斷未啟用，避免 identifier === 0 誤判）
+            this._joystickTouchId = null;
+            this._joystickOrigin = { x: 0, y: 0 };
+            this._joystickDefaultPos = { x: 112, y: 0 };
+
+            this._lookTouchId = null;
+            this._lookLastPos = { x: 0, y: 0 };
+            this._lookLastTime = 0;
+
+            this._fireDragTouchId = null;
+            this._fireDragLastPos = { x: 0, y: 0 };
+            this._fireDragLastTime = 0;
+
+            this._buttonTouchMap = new Map(); // touchId -> { action, element }
+
+            // DOM 參照
+            this.uiLayer = null;
+            this.leftZone = null;
+            this.rightZone = null;
+            this.joystickBase = null;
+            this.joystickKnob = null;
+            this.buttons = {};
+
+            // 綁定監聽器與清理追蹤
+            this._boundHandlers = {};
+            this._unsubscribers = [];
+        }
 
         /**
-         * 初始化並綁定事件監聽
-         * @param {HTMLElement} container 用於監聽觸控事件的容器 (通常是 #app-container 或 canvas)
+         * 初始化統一輸入系統、掛載鍵鼠監聽與建構多點觸控 HUD
          */
-        init(container) {
-            if (!container) {
-                Logger.error('初始化失敗：找不到觸控容器元素');
+        init(options) {
+            if (this.initialized) {
+                return this;
+            }
+
+            const opts = options || {};
+            this._syncSettingsFromState();
+
+            if (opts.pointerLockElement) {
+                this.pointerLockElement = opts.pointerLockElement;
+            } else if (TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getDomElement()) {
+                this.pointerLockElement = TacticalWarfare.RendererCore.getDomElement();
+            } else {
+                this.pointerLockElement = global.document.getElementById('game-canvas-container') || global.document.body;
+            }
+
+            injectTouchStyles();
+            this._buildTouchUI();
+            this._bindDesktopEvents();
+            this._bindTouchEvents();
+            this._bindSystemEvents();
+
+            this._refreshTouchUIVisibility();
+            this.initialized = true;
+            return this;
+        }
+
+        _detectTouchCapability() {
+            return (
+                ('ontouchstart' in global) ||
+                (global.navigator && global.navigator.maxTouchPoints > 0) ||
+                (global.navigator && global.navigator.msMaxTouchPoints > 0)
+            );
+        }
+
+        _syncSettingsFromState() {
+            if (!GameState || typeof GameState.get !== 'function') {
                 return;
             }
 
-            this.container = container;
+            const mouseSens = GameState.get('settings.mouseSensitivity');
+            if (typeof mouseSens === 'number' && mouseSens > 0) {
+                // 若設定值以 0.1~10 尺度儲存，自動換算為弧度係數；若已是小數則直接採用
+                this.config.mouseSensitivity = mouseSens > 0.05 ? mouseSens * 0.0022 : mouseSens;
+            }
 
-            // 使用 passive: false 以便能阻止默認行為 (如滑動、雙擊縮放)
-            container.addEventListener('touchstart', this._onTouchStart, { passive: false });
-            container.addEventListener('touchmove', this._onTouchMove, { passive: false });
-            container.addEventListener('touchend', this._onTouchEnd, { passive: false });
-            container.addEventListener('touchcancel', this._onTouchCancel, { passive: false });
+            const touchSens = GameState.get('settings.touchSensitivity');
+            if (typeof touchSens === 'number' && touchSens > 0) {
+                this.config.touchSensitivity = touchSens > 0.05 ? touchSens * 0.0048 : touchSens;
+            }
 
-            // 禁用右鍵菜單與長按
-            container.addEventListener('contextmenu', this._preventDefault);
-            
-            Logger.success('多點觸控事件已綁定至容器');
+            const adsMult = GameState.get('settings.adsSensitivityMultiplier');
+            if (typeof adsMult === 'number' && adsMult > 0) {
+                this.config.adsSensitivityMultiplier = Math.max(0.15, Math.min(1.5, adsMult));
+            }
 
-            // 註冊狀態機監聽，當遊戲暫停時重置所有觸控
-            if (WZ.bus) {
-                WZ.bus.on('STATE_CHANGED', (data) => {
-                    if (data.to === 'PAUSED' || data.to === 'GAMEOVER') {
-                        this.resetAllTouches();
-                        Logger.info('遊戲暫停/結束，已重置所有觸控狀態');
+            const invertY = GameState.get('settings.invertY');
+            if (typeof invertY === 'boolean') {
+                this.config.invertY = invertY;
+            }
+
+            const touchMode = GameState.get('settings.touchControlsMode');
+            if (touchMode === 'auto' || touchMode === 'always' || touchMode === 'off') {
+                this.touchControlsMode = touchMode;
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // 4. 觸控 HUD 建立與按鈕管理
+        // --------------------------------------------------------------------
+        _buildTouchUI() {
+            const doc = global.document;
+            let container = doc.getElementById(TOUCH_UI_CONTAINER_ID);
+            if (!container) {
+                container = doc.createElement('div');
+                container.id = TOUCH_UI_CONTAINER_ID;
+                doc.body.appendChild(container);
+            } else {
+                container.innerHTML = '';
+            }
+            this.uiLayer = container;
+
+            // 左半區移動感應區
+            this.leftZone = doc.createElement('div');
+            this.leftZone.className = 'tw-touch-zone tw-touch-zone-left';
+            this.uiLayer.appendChild(this.leftZone);
+
+            // 右半區視角瞄準感應區
+            this.rightZone = doc.createElement('div');
+            this.rightZone.className = 'tw-touch-zone tw-touch-zone-right';
+            this.uiLayer.appendChild(this.rightZone);
+
+            // 虛擬搖桿視覺元件（固定待命位置，按下時浮動至手指落點）
+            this.joystickBase = doc.createElement('div');
+            this.joystickBase.className = 'tw-joystick-base';
+
+            const sprintTag = doc.createElement('div');
+            sprintTag.className = 'tw-joystick-sprint-tag';
+            sprintTag.textContent = 'SPRINT';
+            this.joystickBase.appendChild(sprintTag);
+
+            this.joystickKnob = doc.createElement('div');
+            this.joystickKnob.className = 'tw-joystick-knob';
+            this.joystickBase.appendChild(this.joystickKnob);
+            this.uiLayer.appendChild(this.joystickBase);
+
+            this._resetJoystickVisualPosition();
+
+            // 建立戰術動作按鈕
+            const buttonSpecs = [
+                { key: 'fireRight', action: 'fireDrag', label: '開火', className: 'tw-btn tw-btn-fire' },
+                { key: 'fireLeft', action: 'fireHold', label: '開火', className: 'tw-btn tw-btn-fire-left' },
+                { key: 'ads', action: 'adsToggle', label: '瞄準', className: 'tw-btn tw-btn-ads' },
+                { key: 'jump', action: 'jump', label: '跳躍', className: 'tw-btn tw-btn-jump' },
+                { key: 'crouch', action: 'crouchToggle', label: '蹲下', className: 'tw-btn tw-btn-crouch' },
+                { key: 'reload', action: 'reload', label: '換彈', className: 'tw-btn tw-btn-reload' },
+                { key: 'grenade', action: 'grenade', label: '手雷', className: 'tw-btn tw-btn-grenade' },
+                { key: 'weaponSwitch', action: 'weaponNext', label: '切換武器', className: 'tw-btn tw-btn-switch' },
+                { key: 'pause', action: 'pause', label: 'II', className: 'tw-btn tw-btn-pause' }
+            ];
+
+            for (let i = 0; i < buttonSpecs.length; i = i + 1) {
+                const spec = buttonSpecs[i];
+                const btn = doc.createElement('div');
+                btn.className = spec.className;
+                btn.textContent = spec.label;
+                btn.setAttribute('data-tw-action', spec.action);
+                btn.setAttribute('role', 'button');
+                this.uiLayer.appendChild(btn);
+                this.buttons[spec.key] = btn;
+            }
+        }
+
+        _resetJoystickVisualPosition() {
+            if (!this.joystickBase || !this.joystickKnob) {
+                return;
+            }
+            const vh = global.innerHeight || 720;
+            this._joystickDefaultPos.x = Math.max(88, Math.min(130, (global.innerWidth || 1280) * 0.14));
+            this._joystickDefaultPos.y = Math.max(120, vh - 122);
+
+            this.joystickBase.style.left = this._joystickDefaultPos.x + 'px';
+            this.joystickBase.style.top = this._joystickDefaultPos.y + 'px';
+            this.joystickBase.classList.remove('active', 'sprinting');
+            this.joystickKnob.style.transform = 'translate3d(0px, 0px, 0px)';
+        }
+
+        // --------------------------------------------------------------------
+        // 5. 多點觸控事件處理（支援雙指／三指／四指操作）
+        // --------------------------------------------------------------------
+        _bindTouchEvents() {
+            const passiveFalse = { passive: false };
+
+            // 左搖桿區
+            this._boundHandlers.leftTouchStart = (e) => this._onLeftZoneTouchStart(e);
+            this._boundHandlers.leftTouchMove = (e) => this._onLeftZoneTouchMove(e);
+            this._boundHandlers.leftTouchEnd = (e) => this._onLeftZoneTouchEnd(e);
+
+            this.leftZone.addEventListener('touchstart', this._boundHandlers.leftTouchStart, passiveFalse);
+            this.leftZone.addEventListener('touchmove', this._boundHandlers.leftTouchMove, passiveFalse);
+            this.leftZone.addEventListener('touchend', this._boundHandlers.leftTouchEnd, passiveFalse);
+            this.leftZone.addEventListener('touchcancel', this._boundHandlers.leftTouchEnd, passiveFalse);
+
+            // 右視角區
+            this._boundHandlers.rightTouchStart = (e) => this._onRightZoneTouchStart(e);
+            this._boundHandlers.rightTouchMove = (e) => this._onRightZoneTouchMove(e);
+            this._boundHandlers.rightTouchEnd = (e) => this._onRightZoneTouchEnd(e);
+
+            this.rightZone.addEventListener('touchstart', this._boundHandlers.rightTouchStart, passiveFalse);
+            this.rightZone.addEventListener('touchmove', this._boundHandlers.rightTouchMove, passiveFalse);
+            this.rightZone.addEventListener('touchend', this._boundHandlers.rightTouchEnd, passiveFalse);
+            this.rightZone.addEventListener('touchcancel', this._boundHandlers.rightTouchEnd, passiveFalse);
+
+            // 所有觸控動作按鈕
+            this._boundHandlers.btnTouchStart = (e) => this._onButtonTouchStart(e);
+            this._boundHandlers.btnTouchMove = (e) => this._onButtonTouchMove(e);
+            this._boundHandlers.btnTouchEnd = (e) => this._onButtonTouchEnd(e);
+
+            const btnKeys = Object.keys(this.buttons);
+            for (let i = 0; i < btnKeys.length; i = i + 1) {
+                const btn = this.buttons[btnKeys[i]];
+                btn.addEventListener('touchstart', this._boundHandlers.btnTouchStart, passiveFalse);
+                btn.addEventListener('touchmove', this._boundHandlers.btnTouchMove, passiveFalse);
+                btn.addEventListener('touchend', this._boundHandlers.btnTouchEnd, passiveFalse);
+                btn.addEventListener('touchcancel', this._boundHandlers.btnTouchEnd, passiveFalse);
+            }
+        }
+
+        _onLeftZoneTouchStart(event) {
+            if (!this.enabled) {
+                return;
+            }
+            event.preventDefault();
+            this._markTouchModeActive();
+
+            if (this._joystickTouchId !== null) {
+                return;
+            }
+
+            const touch = event.changedTouches[0];
+            if (!touch) {
+                return;
+            }
+
+            this._joystickTouchId = touch.identifier;
+            this._joystickOrigin.x = touch.clientX;
+            this._joystickOrigin.y = touch.clientY;
+
+            this.joystickBase.style.left = touch.clientX + 'px';
+            this.joystickBase.style.top = touch.clientY + 'px';
+            this.joystickBase.classList.add('active');
+            this.joystickKnob.style.transform = 'translate3d(0px, 0px, 0px)';
+
+            this._updateTouchMove(0, 0);
+        }
+
+        _onLeftZoneTouchMove(event) {
+            if (!this.enabled || this._joystickTouchId === null) {
+                return;
+            }
+            event.preventDefault();
+
+            const touch = this._findTouchById(event.changedTouches, this._joystickTouchId);
+            if (!touch) {
+                return;
+            }
+
+            const maxR = this.config.joystickMaxRadius;
+            let dx = touch.clientX - this._joystickOrigin.x;
+            let dy = touch.clientY - this._joystickOrigin.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > maxR) {
+                const scale = maxR / dist;
+                dx = dx * scale;
+                dy = dy * scale;
+            }
+
+            this.joystickKnob.style.transform = 'translate3d(' + dx.toFixed(1) + 'px, ' + dy.toFixed(1) + 'px, 0px)';
+
+            const normX = dx / maxR;
+            const normY = -dy / maxR; // 螢幕向上推為前進 (+1)
+            this._updateTouchMove(normX, normY);
+        }
+
+        _onLeftZoneTouchEnd(event) {
+            if (this._joystickTouchId === null) {
+                return;
+            }
+            const touch = this._findTouchById(event.changedTouches, this._joystickTouchId);
+            if (!touch) {
+                return;
+            }
+
+            event.preventDefault();
+            this._joystickTouchId = null;
+            this._updateTouchMove(0, 0);
+            this._resetJoystickVisualPosition();
+        }
+
+        _updateTouchMove(rawX, rawY) {
+            const mag = Math.sqrt(rawX * rawX + rawY * rawY);
+            const deadzone = this.config.joystickDeadzone;
+
+            if (mag < deadzone) {
+                this._touchMove.x = 0;
+                this._touchMove.y = 0;
+                this._touchMove.autoSprint = false;
+                if (this.joystickBase) {
+                    this.joystickBase.classList.remove('sprinting');
+                }
+            } else {
+                const adjustedMag = Math.min(1, (mag - deadzone) / (1 - deadzone));
+                const dirX = rawX / mag;
+                const dirY = rawY / mag;
+                this._touchMove.x = dirX * adjustedMag;
+                this._touchMove.y = dirY * adjustedMag;
+
+                // 前推超過門檻且未處於開鏡狀態，自動啟用戰術衝刺
+                const shouldSprint =
+                    this._touchMove.y >= this.config.autoSprintThreshold &&
+                    Math.abs(this._touchMove.x) <= 0.48 &&
+                    !this.actions.ads &&
+                    !this.actions.crouch;
+
+                this._touchMove.autoSprint = shouldSprint;
+                if (this.joystickBase) {
+                    this.joystickBase.classList.toggle('sprinting', shouldSprint);
+                }
+            }
+
+            this._recomputeCombinedState();
+        }
+
+        _onRightZoneTouchStart(event) {
+            if (!this.enabled) {
+                return;
+            }
+            event.preventDefault();
+            this._markTouchModeActive();
+
+            if (this._lookTouchId !== null) {
+                return;
+            }
+
+            const touch = event.changedTouches[0];
+            if (!touch) {
+                return;
+            }
+
+            this._lookTouchId = touch.identifier;
+            this._lookLastPos.x = touch.clientX;
+            this._lookLastPos.y = touch.clientY;
+            this._lookLastTime = global.performance ? global.performance.now() : Date.now();
+        }
+
+        _onRightZoneTouchMove(event) {
+            if (!this.enabled || this._lookTouchId === null) {
+                return;
+            }
+            event.preventDefault();
+
+            const touch = this._findTouchById(event.changedTouches, this._lookTouchId);
+            if (!touch) {
+                return;
+            }
+
+            const now = global.performance ? global.performance.now() : Date.now();
+            const dtMs = Math.max(4, now - this._lookLastTime);
+            const dx = touch.clientX - this._lookLastPos.x;
+            const dy = touch.clientY - this._lookLastPos.y;
+
+            this._lookLastPos.x = touch.clientX;
+            this._lookLastPos.y = touch.clientY;
+            this._lookLastTime = now;
+
+            this._accumulateTouchLook(dx, dy, dtMs);
+        }
+
+        _onRightZoneTouchEnd(event) {
+            if (this._lookTouchId === null) {
+                return;
+            }
+            const touch = this._findTouchById(event.changedTouches, this._lookTouchId);
+            if (!touch) {
+                return;
+            }
+            event.preventDefault();
+            this._lookTouchId = null;
+        }
+
+        _onButtonTouchStart(event) {
+            if (!this.enabled) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            this._markTouchModeActive();
+
+            const btn = event.currentTarget;
+            const action = btn.getAttribute('data-tw-action');
+
+            for (let i = 0; i < event.changedTouches.length; i = i + 1) {
+                const touch = event.changedTouches[i];
+                this._buttonTouchMap.set(touch.identifier, { action: action, element: btn });
+                btn.classList.add('pressed');
+
+                if (action === 'fireDrag') {
+                    this._touchFireCount = this._touchFireCount + 1;
+                    if (this._fireDragTouchId === null) {
+                        this._fireDragTouchId = touch.identifier;
+                        this._fireDragLastPos.x = touch.clientX;
+                        this._fireDragLastPos.y = touch.clientY;
+                        this._fireDragLastTime = global.performance ? global.performance.now() : Date.now();
                     }
-                });
+                } else if (action === 'fireHold') {
+                    this._touchFireCount = this._touchFireCount + 1;
+                } else if (action === 'adsToggle') {
+                    this._touchAdsToggled = !this._touchAdsToggled;
+                    btn.classList.toggle('toggled', this._touchAdsToggled);
+                    this._emitInputAction('ads', this._touchAdsToggled);
+                } else if (action === 'crouchToggle') {
+                    this._touchCrouchToggled = !this._touchCrouchToggled;
+                    btn.classList.toggle('toggled', this._touchCrouchToggled);
+                    this._emitInputAction('crouch', this._touchCrouchToggled);
+                } else if (action === 'jump') {
+                    this.pressedQueue.jump = true;
+                    this.actions.jump = true;
+                    this._emitInputAction('jump', true);
+                } else if (action === 'reload') {
+                    this.pressedQueue.reload = true;
+                    this._emitInputAction('reload', true);
+                } else if (action === 'grenade') {
+                    this.pressedQueue.grenade = true;
+                    this._emitInputAction('grenade', true);
+                } else if (action === 'weaponNext') {
+                    this.pressedQueue.weaponNext = true;
+                    this._emitInputAction('weaponNext', true);
+                } else if (action === 'pause') {
+                    this.pressedQueue.pause = true;
+                    this._emitInputAction('pause', true);
+                }
             }
+
+            this._recomputeCombinedState();
         }
 
-        _preventDefault(e) {
-            if (e.cancelable) {
-                e.preventDefault();
+        _onButtonTouchMove(event) {
+            if (!this.enabled || this._fireDragTouchId === null) {
+                return;
             }
+            const touch = this._findTouchById(event.changedTouches, this._fireDragTouchId);
+            if (!touch) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const now = global.performance ? global.performance.now() : Date.now();
+            const dtMs = Math.max(4, now - this._fireDragLastTime);
+            const dx = touch.clientX - this._fireDragLastPos.x;
+            const dy = touch.clientY - this._fireDragLastPos.y;
+
+            this._fireDragLastPos.x = touch.clientX;
+            this._fireDragLastPos.y = touch.clientY;
+            this._fireDragLastTime = now;
+
+            // 右側開火鍵同時支援拖曳壓槍與跟槍
+            this._accumulateTouchLook(dx, dy, dtMs);
         }
 
-        /* =====================================================================
-         * 核心事件處理器
-         * ===================================================================== */
+        _onButtonTouchEnd(event) {
+            event.preventDefault();
+            event.stopPropagation();
 
-        /**
-         * 處理觸控開始事件
-         * @param {TouchEvent} e 
-         */
-        _onTouchStart(e) {
-            e.preventDefault();
-
-            const touches = e.changedTouches;
-            for (let i = 0; i < touches.length; i++) {
-                const touch = touches[i];
-                
-                // 防呆：如果已達最大觸控點數，忽略新觸控
-                if (this.activeTouches.size >= CONFIG.MAX_TOUCHES) {
-                    Logger.warn(`已達最大觸控點數 (${CONFIG.MAX_TOUCHES})，忽略新的觸控 (ID: ${touch.identifier})`);
+            for (let i = 0; i < event.changedTouches.length; i = i + 1) {
+                const touch = event.changedTouches[i];
+                const record = this._buttonTouchMap.get(touch.identifier);
+                if (!record) {
                     continue;
                 }
 
-                const touchId = touch.identifier;
-                const x = touch.clientX;
-                const y = touch.clientY;
-                const time = performance.now();
+                this._buttonTouchMap.delete(touch.identifier);
+                record.element.classList.remove('pressed');
 
-                // 判定觸控類型
-                const screenWidth = window.innerWidth;
-                const isLeftHalf = x < screenWidth * CONFIG.SCREEN_SPLIT_RATIO;
-                
-                // 檢查是否點擊在按鈕上
-                const targetButton = this._getButtonAt(x, y);
-
-                const touchState = {
-                    id: touchId,
-                    x: x,
-                    y: y,
-                    startX: x,
-                    startY: y,
-                    lastX: x,
-                    lastY: y,
-                    startTime: time,
-                    type: 'none',
-                    buttonId: null
-                };
-
-                if (targetButton) {
-                    // 點擊在按鈕上 (右半屏的按鈕)
-                    touchState.type = 'button';
-                    touchState.buttonId = targetButton;
-                    this._handleButtonStart(targetButton, touchId, x, y);
-                    Logger.event(`觸控開始：點擊按鈕 [${targetButton}] (ID: ${touchId})`);
-                } else if (isLeftHalf) {
-                    // 點擊在左半屏，啟動虛擬搖桿
-                    touchState.type = 'joystick';
-                    this._handleJoystickStart(touchId, x, y);
-                    Logger.event(`觸控開始：左半屏虛擬搖桿 (ID: ${touchId})`);
-                } else {
-                    // 點擊在右半屏空白處，作為視角拖拽
-                    touchState.type = 'look';
-                    Logger.event(`觸控開始：右半屏視角拖拽 (ID: ${touchId})`);
-                }
-
-                // 存入活動觸控字典
-                this.activeTouches.set(touchId, touchState);
-            }
-        }
-
-        /**
-         * 處理觸控移動事件
-         * @param {TouchEvent} e 
-         */
-        _onTouchMove(e) {
-            e.preventDefault();
-
-            const touches = e.changedTouches;
-            for (let i = 0; i < touches.length; i++) {
-                const touch = touches[i];
-                const touchId = touch.identifier;
-                const state = this.activeTouches.get(touchId);
-
-                if (!state) continue;
-
-                const x = touch.clientX;
-                const y = touch.clientY;
-                const dx = x - state.lastX;
-                const dy = y - state.lastY;
-
-                // 更新位置
-                state.x = x;
-                state.y = y;
-                state.lastX = x;
-                state.lastY = y;
-
-                // 根據類型分發處理
-                if (state.type === 'joystick') {
-                    this._handleJoystickMove(touchId, x, y);
-                } else if (state.type === 'look') {
-                    // 直接累加視角增量
-                    this.lookDelta.x += dx;
-                    this.lookDelta.y += dy;
-                } else if (state.type === 'button') {
-                    // 核心痛點：按鈕拖動穿透瞄準
-                    this._handleButtonMove(state.buttonId, touchId, dx, dy);
-                }
-            }
-        }
-
-        /**
-         * 處理觸控結束事件
-         * @param {TouchEvent} e 
-         */
-        _onTouchEnd(e) {
-            e.preventDefault();
-
-            const touches = e.changedTouches;
-            for (let i = 0; i < touches.length; i++) {
-                const touch = touches[i];
-                const touchId = touch.identifier;
-                const state = this.activeTouches.get(touchId);
-
-                if (!state) continue;
-
-                // 根據類型進行清理
-                if (state.type === 'joystick') {
-                    this._handleJoystickEnd(touchId);
-                } else if (state.type === 'button') {
-                    this._handleButtonEnd(state.buttonId, touchId);
-                }
-
-                // 移除追蹤狀態
-                this.activeTouches.delete(touchId);
-                Logger.event(`觸控結束 (ID: ${touchId}, 類型: ${state.type})`);
-            }
-        }
-
-        /**
-         * 處理觸控意外中斷事件 (如來電、系統手勢)
-         * @param {TouchEvent} e 
-         */
-        _onTouchCancel(e) {
-            e.preventDefault();
-
-            const touches = e.changedTouches;
-            for (let i = 0; i < touches.length; i++) {
-                const touch = touches[i];
-                const touchId = touch.identifier;
-                const state = this.activeTouches.get(touchId);
-
-                if (!state) continue;
-
-                Logger.warn(`觸控意外中斷 (ID: ${touchId}, 類型: ${state.type})`);
-                
-                // 強制重置該觸控點對應的狀態
-                if (state.type === 'joystick') {
-                    this._handleJoystickEnd(touchId);
-                } else if (state.type === 'button') {
-                    this._handleButtonEnd(state.buttonId, touchId);
-                }
-
-                this.activeTouches.delete(touchId);
-            }
-        }
-
-        /* =====================================================================
-         * 虛擬搖桿內部邏輯
-         * ===================================================================== */
-
-        /**
-         * 搖桿起始處理
-         */
-        _handleJoystickStart(touchId, x, y) {
-            const now = performance.now();
-            
-            // 判定雙擊 (用於切換戰術衝刺)
-            if (now - this.joystickState.lastTapTime < CONFIG.DOUBLE_TAP_DELAY) {
-                this.joystickState.isTacSprinting = !this.joystickState.isTacSprinting;
-                Logger.info(`雙擊判定：戰術衝刺狀態切換為 ${this.joystickState.isTacSprinting ? '開啟' : '關閉'}`);
-                if (WZ.bus) {
-                    WZ.bus.emit('TAC_SPRINT_TOGGLED', this.joystickState.isTacSprinting);
-                }
-            }
-            this.joystickState.lastTapTime = now;
-
-            // 初始化搖桿中心點 (動態搖桿，點擊點即為中心)
-            this.joystickState.isActive = true;
-            this.joystickState.touchId = touchId;
-            this.joystickState.centerX = x;
-            this.joystickState.centerY = y;
-            this.joystickState.currentX = x;
-            this.joystickState.currentY = y;
-            this.joystickState.deltaX = 0;
-            this.joystickState.deltaY = 0;
-            this.joystickState.magnitude = 0;
-            this.joystickState.angle = 0;
-
-            // 重置衝刺計時器
-            this.joystickState.sprintTimer = 0;
-            if (!this.joystickState.isTacSprinting) {
-                this.joystickState.isSprinting = false;
-            }
-        }
-
-        /**
-         * 搖桿移動處理
-         */
-        _handleJoystickMove(touchId, x, y) {
-            if (!this.joystickState.isActive || this.joystickState.touchId !== touchId) return;
-
-            this.joystickState.currentX = x;
-            this.joystickState.currentY = y;
-
-            // 計算與中心點的位移
-            let dx = x - this.joystickState.centerX;
-            let dy = y - this.joystickState.centerY;
-            let dist = Math.sqrt(dx * dx + dy * dy);
-
-            // 限制最大位移
-            if (dist > CONFIG.JOYSTICK_MAX_TOUCH_DIST) {
-                dx = (dx / dist) * CONFIG.JOYSTICK_MAX_TOUCH_DIST;
-                dy = (dy / dist) * CONFIG.JOYSTICK_MAX_TOUCH_DIST;
-                dist = CONFIG.JOYSTICK_MAX_TOUCH_DIST;
-            }
-
-            // 計算標準化向量 (-1.0 到 1.0)
-            let normalizedX = dx / CONFIG.JOYSTICK_MAX_TOUCH_DIST;
-            let normalizedY = dy / CONFIG.JOYSTICK_MAX_TOUCH_DIST;
-            let magnitude = Math.min(1.0, dist / CONFIG.JOYSTICK_MAX_TOUCH_DIST);
-
-            // 死區處理
-            if (magnitude < CONFIG.JOYSTICK_DEADZONE) {
-                normalizedX = 0;
-                normalizedY = 0;
-                magnitude = 0;
-            }
-
-            this.joystickState.deltaX = normalizedX;
-            this.joystickState.deltaY = normalizedY;
-            this.joystickState.magnitude = magnitude;
-            this.joystickState.angle = Math.atan2(dy, dx);
-
-            // 衝刺判定 (推到底)
-            const isPushedToEdge = magnitude > CONFIG.SPRINT_THRESHOLD;
-            
-            if (isPushedToEdge && !this.joystickState.isSprinting) {
-                this.joystickState.sprintTimer += 16.66; // 約略每幀時間
-                if (this.joystickState.sprintTimer > CONFIG.SPRINT_HOLD_TIME) {
-                    this.joystickState.isSprinting = true;
-                    Logger.info('搖桿推到底，觸發普通衝刺');
-                    if (WZ.bus) WZ.bus.emit('SPRINT_STATE_CHANGED', true);
-                }
-            } else if (!isPushedToEdge) {
-                this.joystickState.sprintTimer = 0;
-                if (this.joystickState.isSprinting) {
-                    this.joystickState.isSprinting = false;
-                    Logger.info('搖桿離開邊緣，取消普通衝刺');
-                    if (WZ.bus) WZ.bus.emit('SPRINT_STATE_CHANGED', false);
-                }
-            }
-        }
-
-        /**
-         * 搖桿結束處理
-         */
-        _handleJoystickEnd(touchId) {
-            if (this.joystickState.touchId !== touchId) return;
-
-            this.joystickState.isActive = false;
-            this.joystickState.touchId = null;
-            this.joystickState.deltaX = 0;
-            this.joystickState.deltaY = 0;
-            this.joystickState.magnitude = 0;
-            this.joystickState.sprintTimer = 0;
-            
-            if (this.joystickState.isSprinting) {
-                this.joystickState.isSprinting = false;
-                if (WZ.bus) WZ.bus.emit('SPRINT_STATE_CHANGED', false);
-            }
-
-            // 如果關閉了搖桿，則自動取消戰術衝刺 (除非另有設定)
-            // 這裡保留戰術衝刺狀態，交由玩家手動關閉或自動超時
-        }
-
-        /* =====================================================================
-         * 按鈕與拖動穿透瞄準邏輯
-         * ===================================================================== */
-
-        /**
-         * 取得觸控點所在的按鈕 ID
-         * @param {number} x 
-         * @param {number} y 
-         * @returns {string | null}
-         */
-        _getButtonAt(x, y) {
-            // 我們透過 DOM 的 elementFromPoint 來判定
-            // 但因為 UI 層有 pointer-events: none 的設定，這裡用座標碰撞檢測會更穩
-            // 為了效能，我們直接從 DOM 節點讀取按鈕的 boundingClientRect
-            
-            for (const id of DRAG_THROUGH_BUTTONS) {
-                const el = document.getElementById(id);
-                if (el) {
-                    const rect = el.getBoundingClientRect();
-                    // 擴大判定範圍 (手指觸控有容錯空間)
-                    const padding = 10; 
-                    if (x >= rect.left - padding && x <= rect.right + padding &&
-                        y >= rect.top - padding && y <= rect.bottom + padding) {
-                        return id;
+                if (record.action === 'fireDrag') {
+                    this._touchFireCount = Math.max(0, this._touchFireCount - 1);
+                    if (this._fireDragTouchId === touch.identifier) {
+                        this._fireDragTouchId = null;
                     }
+                } else if (record.action === 'fireHold') {
+                    this._touchFireCount = Math.max(0, this._touchFireCount - 1);
+                } else if (record.action === 'jump') {
+                    this.actions.jump = false;
+                }
+            }
+
+            this._recomputeCombinedState();
+        }
+
+        _accumulateTouchLook(dx, dy, dtMs) {
+            // 計算滑動速度並套用平滑甩槍加速曲線（慢滑精準、快滑轉身迅速）
+            const speedPxPerMs = Math.sqrt(dx * dx + dy * dy) / dtMs;
+            const accelBoost = 1 + Math.min(0.65, speedPxPerMs * 0.45);
+            const adsScale = this.actions.ads ? this.config.adsSensitivityMultiplier : 1.0;
+            const sens = this.config.touchSensitivity * accelBoost * adsScale;
+            const ySign = this.config.invertY ? -1 : 1;
+
+            this.lookDelta.dx += dx * sens;
+            this.lookDelta.dy += dy * sens * ySign;
+        }
+
+        _findTouchById(touchList, targetId) {
+            if (!touchList) {
+                return null;
+            }
+            for (let i = 0; i < touchList.length; i = i + 1) {
+                if (touchList[i].identifier === targetId) {
+                    return touchList[i];
                 }
             }
             return null;
         }
 
-        /**
-         * 按鈕按下處理
-         */
-        _handleButtonStart(buttonId, touchId, x, y) {
-            this.buttonStates[buttonId] = true;
-            Logger.event(`按鈕按下: [${buttonId}]`);
+        // --------------------------------------------------------------------
+        // 6. 桌面端鍵盤與滑鼠（Pointer Lock）事件處理
+        // --------------------------------------------------------------------
+        _bindDesktopEvents() {
+            const doc = global.document;
 
-            // 根據按鈕 ID 觸發不同的事件
-            if (WZ.bus) {
-                switch(buttonId) {
-                    case 'btn-fire':
-                        WZ.bus.emit('FIRE_BUTTON_DOWN');
-                        break;
-                    case 'btn-ads':
-                        WZ.bus.emit('ADS_BUTTON_DOWN');
-                        break;
-                    case 'btn-jump':
-                        WZ.bus.emit('JUMP_BUTTON_DOWN');
-                        break;
-                    case 'btn-crouch':
-                        WZ.bus.emit('SLIDE_BUTTON_DOWN');
-                        break;
-                    case 'btn-reload':
-                        WZ.bus.emit('RELOAD_BUTTON_DOWN');
-                        break;
-                    case 'btn-lethal':
-                        WZ.bus.emit('LETHAL_BUTTON_DOWN');
-                        break;
+            this._boundHandlers.keyDown = (e) => this._onKeyDown(e);
+            this._boundHandlers.keyUp = (e) => this._onKeyUp(e);
+            this._boundHandlers.mouseMove = (e) => this._onMouseMove(e);
+            this._boundHandlers.mouseDown = (e) => this._onMouseDown(e);
+            this._boundHandlers.mouseUp = (e) => this._onMouseUp(e);
+            this._boundHandlers.wheel = (e) => this._onWheel(e);
+            this._boundHandlers.contextMenu = (e) => {
+                if (this.pointerLocked || e.target === this.pointerLockElement) {
+                    e.preventDefault();
+                }
+            };
+            this._boundHandlers.pointerLockChange = () => this._onPointerLockChange();
+            this._boundHandlers.windowBlur = () => this.resetAllInputs();
+            this._boundHandlers.windowResize = () => {
+                if (this._joystickTouchId === null) {
+                    this._resetJoystickVisualPosition();
+                }
+            };
+
+            global.addEventListener('keydown', this._boundHandlers.keyDown);
+            global.addEventListener('keyup', this._boundHandlers.keyUp);
+            global.addEventListener('mousemove', this._boundHandlers.mouseMove);
+            global.addEventListener('mousedown', this._boundHandlers.mouseDown);
+            global.addEventListener('mouseup', this._boundHandlers.mouseUp);
+            global.addEventListener('wheel', this._boundHandlers.wheel, { passive: true });
+            global.addEventListener('contextmenu', this._boundHandlers.contextMenu);
+            global.addEventListener('blur', this._boundHandlers.windowBlur);
+            global.addEventListener('resize', this._boundHandlers.windowResize);
+            doc.addEventListener('pointerlockchange', this._boundHandlers.pointerLockChange);
+        }
+
+        _onKeyDown(event) {
+            if (!this.enabled) {
+                return;
+            }
+            const tag = event.target && event.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+                return;
+            }
+
+            const code = event.code;
+            const wasDown = !!this._keysDown[code];
+            this._keysDown[code] = true;
+
+            if (code === 'Space') {
+                event.preventDefault();
+                if (!wasDown) {
+                    this.pressedQueue.jump = true;
+                    this._emitInputAction('jump', true);
+                }
+            } else if (!wasDown) {
+                if (code === 'KeyR') {
+                    this.pressedQueue.reload = true;
+                    this._emitInputAction('reload', true);
+                } else if (code === 'KeyG') {
+                    this.pressedQueue.grenade = true;
+                    this._emitInputAction('grenade', true);
+                } else if (code === 'KeyV' || code === 'KeyF') {
+                    this.pressedQueue.melee = true;
+                    this._emitInputAction('melee', true);
+                } else if (code === 'KeyE') {
+                    this.pressedQueue.interact = true;
+                    this._emitInputAction('interact', true);
+                } else if (code === 'KeyC') {
+                    this._desktopCrouchToggled = !this._desktopCrouchToggled;
+                    this._emitInputAction('crouch', this._desktopCrouchToggled);
+                } else if (code === 'Digit1') {
+                    this.pressedQueue.weaponSlot = 1;
+                    this._emitInputAction('weaponSlot', 1);
+                } else if (code === 'Digit2') {
+                    this.pressedQueue.weaponSlot = 2;
+                    this._emitInputAction('weaponSlot', 2);
+                } else if (code === 'Digit3') {
+                    this.pressedQueue.weaponSlot = 3;
+                    this._emitInputAction('weaponSlot', 3);
+                } else if (code === 'KeyQ') {
+                    this.pressedQueue.weaponNext = true;
+                    this._emitInputAction('weaponNext', true);
+                } else if (code === 'KeyP') {
+                    this.pressedQueue.pause = true;
+                    this._emitInputAction('pause', true);
+                }
+            }
+
+            this._recomputeCombinedState();
+        }
+
+        _onKeyUp(event) {
+            this._keysDown[event.code] = false;
+            this._recomputeCombinedState();
+        }
+
+        _onMouseMove(event) {
+            if (!this.enabled || !this.pointerLocked) {
+                return;
+            }
+
+            const limit = this.config.mouseSpikeLimit;
+            const rawX = event.movementX || 0;
+            const rawY = event.movementY || 0;
+
+            // 過濾瀏覽器 Pointer Lock 偶發的異常大跳動
+            if (Math.abs(rawX) > limit * 2 || Math.abs(rawY) > limit * 2) {
+                return;
+            }
+
+            const clampedX = Math.max(-limit, Math.min(limit, rawX));
+            const clampedY = Math.max(-limit, Math.min(limit, rawY));
+            const adsScale = this.actions.ads ? this.config.adsSensitivityMultiplier : 1.0;
+            const sens = this.config.mouseSensitivity * adsScale;
+            const ySign = this.config.invertY ? -1 : 1;
+
+            this.lookDelta.dx += clampedX * sens;
+            this.lookDelta.dy += clampedY * sens * ySign;
+        }
+
+        _onMouseDown(event) {
+            if (!this.enabled || !this.pointerLocked) {
+                return;
+            }
+            if (event.button === 0) {
+                this._mouseButtons.left = true;
+            } else if (event.button === 2) {
+                this._mouseButtons.right = true;
+                this._emitInputAction('ads', true);
+            }
+            this._recomputeCombinedState();
+        }
+
+        _onMouseUp(event) {
+            if (event.button === 0) {
+                this._mouseButtons.left = false;
+            } else if (event.button === 2) {
+                this._mouseButtons.right = false;
+                this._emitInputAction('ads', false);
+            }
+            this._recomputeCombinedState();
+        }
+
+        _onWheel(event) {
+            if (!this.enabled || !this.pointerLocked) {
+                return;
+            }
+            if (event.deltaY > 4) {
+                this.pressedQueue.weaponNext = true;
+                this._emitInputAction('weaponNext', true);
+            } else if (event.deltaY < -4) {
+                this.pressedQueue.weaponPrev = true;
+                this._emitInputAction('weaponPrev', true);
+            }
+        }
+
+        _onPointerLockChange() {
+            const doc = global.document;
+            const lockedEl = doc.pointerLockElement || doc.mozPointerLockElement || doc.webkitPointerLockElement;
+            this.pointerLocked = Boolean(lockedEl);
+
+            if (this.pointerLocked) {
+                this.activeInputMode = 'desktop';
+                this._refreshTouchUIVisibility();
+            } else {
+                // 退出 Pointer Lock 時立即清除所有按住狀態
+                this._mouseButtons.left = false;
+                this._mouseButtons.right = false;
+                this._recomputeCombinedState();
+            }
+
+            if (EventBus) {
+                EventBus.emit(Events.POINTER_LOCK_CHANGED || 'input:pointerLockChanged', {
+                    locked: this.pointerLocked
+                });
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // 7. 跨模組事件連動與狀態合併
+        // --------------------------------------------------------------------
+        _bindSystemEvents() {
+            if (!EventBus) {
+                return;
+            }
+
+            if (Events.SETTINGS_CHANGED) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.SETTINGS_CHANGED, () => {
+                        this._syncSettingsFromState();
+                        this._refreshTouchUIVisibility();
+                    })
+                );
+            }
+
+            const phaseEvent = Events.GAME_PHASE_CHANGED || Events.GAME_STATE_CHANGED || 'game:phaseChanged';
+            this._unsubscribers.push(
+                EventBus.on(phaseEvent, (payload) => {
+                    const phase = typeof payload === 'string' ? payload : (payload && (payload.phase || payload.state));
+                    if (phase === 'playing') {
+                        this.setEnabled(true);
+                        this._refreshTouchUIVisibility(true);
+                    } else if (phase === 'paused' || phase === 'menu' || phase === 'gameover' || phase === 'victory') {
+                        this.resetAllInputs();
+                        this.setTouchUIVisible(false);
+                    }
+                })
+            );
+        }
+
+        _recomputeCombinedState() {
+            // 合併鍵盤移動與虛擬搖桿移動
+            let keyX = 0;
+            let keyY = 0;
+            if (this._keysDown.KeyD || this._keysDown.ArrowRight) keyX += 1;
+            if (this._keysDown.KeyA || this._keysDown.ArrowLeft) keyX -= 1;
+            if (this._keysDown.KeyW || this._keysDown.ArrowUp) keyY += 1;
+            if (this._keysDown.KeyS || this._keysDown.ArrowDown) keyY -= 1;
+
+            if (keyX !== 0 && keyY !== 0) {
+                const invSqrt2 = 0.70710678;
+                keyX *= invSqrt2;
+                keyY *= invSqrt2;
+            }
+
+            let finalX = keyX + this._touchMove.x;
+            let finalY = keyY + this._touchMove.y;
+            const mag = Math.sqrt(finalX * finalX + finalY * finalY);
+            if (mag > 1) {
+                finalX /= mag;
+                finalY /= mag;
+            }
+
+            this.moveVector.x = finalX;
+            this.moveVector.y = finalY;
+            this.moveVector.magnitude = Math.min(1, mag);
+
+            // 合併開火、開鏡、蹲下、衝刺與跳躍
+            this.actions.fire = this._mouseButtons.left || this._touchFireCount > 0;
+            this.actions.ads = this._mouseButtons.right || this._touchAdsToggled;
+
+            const holdCrouch = Boolean(this._keysDown.ControlLeft || this._keysDown.ControlRight);
+            this.actions.crouch = holdCrouch || this._desktopCrouchToggled || this._touchCrouchToggled;
+
+            const keySprint = Boolean(this._keysDown.ShiftLeft || this._keysDown.ShiftRight);
+            this.actions.sprint = (keySprint || this._touchMove.autoSprint) && !this.actions.ads && !this.actions.crouch;
+            this.actions.jump = Boolean(this._keysDown.Space) || this.actions.jump;
+        }
+
+        _markTouchModeActive() {
+            this.isTouchCapable = true;
+            this.activeInputMode = 'touch';
+            if (this.touchControlsMode !== 'off' && !this.touchUIVisible) {
+                this.setTouchUIVisible(true);
+            }
+        }
+
+        _refreshTouchUIVisibility(forceGameplayVisible) {
+            if (this.touchControlsMode === 'off') {
+                this.setTouchUIVisible(false);
+                return;
+            }
+            if (this.touchControlsMode === 'always') {
+                this.setTouchUIVisible(true);
+                return;
+            }
+            // 'auto' 模式：在觸控裝置且未啟用桌面 Pointer Lock 時顯示
+            const shouldShow = (this.isTouchCapable || this.activeInputMode === 'touch') && !this.pointerLocked;
+            if (forceGameplayVisible === true) {
+                this.setTouchUIVisible(shouldShow);
+            } else {
+                const currentPhase = GameState && typeof GameState.get === 'function'
+                    ? GameState.get('game.phase', null)
+                    : null;
+                if (currentPhase === null || currentPhase === 'playing') {
+                    this.setTouchUIVisible(shouldShow);
                 }
             }
         }
 
-        /**
-         * 核心痛點解決：按鈕拖動穿透瞄準
-         * 當手指在按鈕上滑動時，除了保持按鈕按下，還將位移傳給視角
-         */
-        _handleButtonMove(buttonId, touchId, dx, dy) {
-            // 只有當按鈕仍然被按住時，才傳遞位移
-            if (!this.buttonStates[buttonId]) return;
-
-            // 傳遞增量 (加權，可根據設定調整靈敏度)
-            // 這裡加入 1.5 倍靈敏度，模擬真實的開火壓槍操作
-            const sensitivityMultiplier = 1.5;
-            
-            this.lookDelta.x += dx * sensitivityMultiplier;
-            this.lookDelta.y += dy * sensitivityMultiplier;
-            
-            // 如果移動距離過大，可選：取消按鈕按下狀態 (取決於遊戲設計)
-            // 目前設計：只要手指不抬起，按鈕持續有效，實現「邊掃射邊壓槍」。
+        _emitInputAction(actionName, value) {
+            if (!EventBus) {
+                return;
+            }
+            EventBus.emit(Events.INPUT_ACTION || 'input:action', {
+                action: actionName,
+                value: value,
+                source: this.activeInputMode
+            });
         }
 
-        /**
-         * 按鈕釋放處理
-         */
-        _handleButtonEnd(buttonId, touchId) {
-            this.buttonStates[buttonId] = false;
-            Logger.event(`按鈕釋放: [${buttonId}]`);
+        // --------------------------------------------------------------------
+        // 8. 對外公開 API（供玩家控制器、武器系統與 UI 呼叫）
+        // --------------------------------------------------------------------
 
-            if (WZ.bus) {
-                switch(buttonId) {
-                    case 'btn-fire':
-                        WZ.bus.emit('FIRE_BUTTON_UP');
-                        break;
-                    case 'btn-ads':
-                        WZ.bus.emit('ADS_BUTTON_UP');
-                        break;
-                    case 'btn-jump':
-                        WZ.bus.emit('JUMP_BUTTON_UP');
-                        break;
-                    case 'btn-crouch':
-                        WZ.bus.emit('SLIDE_BUTTON_UP');
-                        break;
-                    case 'btn-reload':
-                        WZ.bus.emit('RELOAD_BUTTON_UP');
-                        break;
-                    case 'btn-lethal':
-                        WZ.bus.emit('LETHAL_BUTTON_UP');
-                        break;
+        /**
+         * 請求桌面滑鼠鎖定（必須在玩家點擊事件內呼叫）
+         */
+        requestPointerLock(targetElement) {
+            const el = targetElement || this.pointerLockElement || global.document.body;
+            if (!el || this.isTouchCapable && this.activeInputMode === 'touch') {
+                return;
+            }
+            const req = el.requestPointerLock || el.mozRequestPointerLock || el.webkitRequestPointerLock;
+            if (typeof req === 'function') {
+                try {
+                    const result = req.call(el);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(() => {});
+                    }
+                } catch (_err) {
+                    // 忽略非使用者手勢觸發的鎖定拒絕
                 }
             }
         }
 
-        /* =====================================================================
-         * 公共介面 (Public API)
-         * ===================================================================== */
-
-        /**
-         * 重置所有觸控狀態 (通常用於遊戲暫停或切換場景)
-         */
-        resetAllTouches() {
-            this.activeTouches.clear();
-            this._handleJoystickEnd(this.joystickState.touchId);
-
-            for (const id of DRAG_THROUGH_BUTTONS) {
-                if (this.buttonStates[id]) {
-                    this.buttonStates[id] = false;
-                    // 這裡不觸發 up 事件，避免影響狀態機
-                }
+        exitPointerLock() {
+            const doc = global.document;
+            const exit = doc.exitPointerLock || doc.mozExitPointerLock || doc.webkitExitPointerLock;
+            if (this.pointerLocked && typeof exit === 'function') {
+                exit.call(doc);
             }
+        }
 
-            this.lookDelta.x = 0;
-            this.lookDelta.y = 0;
-            
-            Logger.info('已重置所有觸控狀態');
+        isPointerLocked() {
+            return this.pointerLocked;
+        }
+
+        setEnabled(flag) {
+            this.enabled = Boolean(flag);
+            if (!this.enabled) {
+                this.resetAllInputs();
+            }
+        }
+
+        setTouchUIVisible(visible) {
+            this.touchUIVisible = Boolean(visible);
+            if (this.uiLayer) {
+                this.uiLayer.classList.toggle('tw-touch-visible', this.touchUIVisible);
+            }
+        }
+
+        setTouchControlsMode(mode) {
+            if (mode === 'auto' || mode === 'always' || mode === 'off') {
+                this.touchControlsMode = mode;
+                this._refreshTouchUIVisibility();
+            }
         }
 
         /**
-         * 外部每幀呼叫，讀取並清空視角增量
-         * @returns {{x: number, y: number}} 本幀的視角增量
+         * 取得移動向量（x: -1左 ~ +1右；y: -1後 ~ +1前）
          */
-        consumeLookDelta() {
-            const delta = { x: this.lookDelta.x, y: this.lookDelta.y };
-            this.lookDelta.x = 0;
-            this.lookDelta.y = 0;
-            return delta;
-        }
-
-        /**
-         * 取得當前搖桿狀態 (供移動系統使用)
-         */
-        getJoystickState() {
+        getMoveVector() {
             return {
-                isActive: this.joystickState.isActive,
-                deltaX: this.joystickState.deltaX,
-                deltaY: this.joystickState.deltaY,
-                magnitude: this.joystickState.magnitude,
-                isSprinting: this.joystickState.isSprinting,
-                isTacSprinting: this.joystickState.isTacSprinting
+                x: this.moveVector.x,
+                y: this.moveVector.y,
+                magnitude: this.moveVector.magnitude
             };
         }
 
         /**
-         * 取得按鈕是否被按下
+         * 讀取並清空累積的視角旋轉量（弧度，已套用靈敏度、開鏡倍率與 Y 軸反轉）
          */
-        isButtonPressed(buttonId) {
-            return !!this.buttonStates[buttonId];
+        consumeLookDelta() {
+            const dx = this.lookDelta.dx;
+            const dy = this.lookDelta.dy;
+            this.lookDelta.dx = 0;
+            this.lookDelta.dy = 0;
+            return { dx: dx, dy: dy };
         }
 
         /**
-         * 手動設定戰術衝刺狀態
+         * 查詢持續按住或切換中的動作狀態（fire / ads / sprint / crouch / jump）
          */
-        setTacSprinting(active) {
-            this.joystickState.isTacSprinting = active;
-            Logger.info(`手動設定戰術衝刺狀態: ${active ? '開啟' : '關閉'}`);
-            if (WZ.bus) {
-                WZ.bus.emit('TAC_SPRINT_TOGGLED', active);
+        isActionActive(actionName) {
+            return Boolean(this.actions[actionName]);
+        }
+
+        /**
+         * 讀取並清除單幀觸發事件（jump / reload / grenade / melee / interact / weaponNext / weaponPrev / pause）
+         */
+        consumeActionPress(actionName) {
+            if (actionName === 'weaponSlot') {
+                const slot = this.pressedQueue.weaponSlot;
+                this.pressedQueue.weaponSlot = 0;
+                return slot;
             }
+            const triggered = Boolean(this.pressedQueue[actionName]);
+            this.pressedQueue[actionName] = false;
+            return triggered;
+        }
+
+        /**
+         * 外部程式強制關閉開鏡（例如換彈或奔跑打斷開鏡時呼叫）
+         */
+        clearAdsToggle() {
+            this._touchAdsToggled = false;
+            if (this.buttons.ads) {
+                this.buttons.ads.classList.remove('toggled');
+            }
+            this._recomputeCombinedState();
+        }
+
+        /**
+         * 一次取得完整輸入快照（適合 PlayerController 主迴圈使用）
+         */
+        getInputSnapshot() {
+            return {
+                mode: this.activeInputMode,
+                moveX: this.moveVector.x,
+                moveY: this.moveVector.y,
+                moveMagnitude: this.moveVector.magnitude,
+                fire: this.actions.fire,
+                ads: this.actions.ads,
+                sprint: this.actions.sprint,
+                crouch: this.actions.crouch,
+                jump: this.actions.jump
+            };
+        }
+
+        /**
+         * 清空所有按鍵、觸控手指與視角累積量（用於暫停、失焦與切換關卡）
+         */
+        resetAllInputs() {
+            this._keysDown = Object.create(null);
+            this._mouseButtons.left = false;
+            this._mouseButtons.right = false;
+
+            this._joystickTouchId = null;
+            this._lookTouchId = null;
+            this._fireDragTouchId = null;
+            this._buttonTouchMap.clear();
+
+            this._touchMove.x = 0;
+            this._touchMove.y = 0;
+            this._touchMove.autoSprint = false;
+            this._touchFireCount = 0;
+            this._touchAdsToggled = false;
+            this._touchCrouchToggled = false;
+            this._desktopCrouchToggled = false;
+
+            this.lookDelta.dx = 0;
+            this.lookDelta.dy = 0;
+
+            const actionKeys = Object.keys(this.actions);
+            for (let i = 0; i < actionKeys.length; i = i + 1) {
+                this.actions[actionKeys[i]] = false;
+            }
+
+            const queueKeys = Object.keys(this.pressedQueue);
+            for (let i = 0; i < queueKeys.length; i = i + 1) {
+                this.pressedQueue[queueKeys[i]] = queueKeys[i] === 'weaponSlot' ? 0 : false;
+            }
+
+            const btnKeys = Object.keys(this.buttons);
+            for (let i = 0; i < btnKeys.length; i = i + 1) {
+                this.buttons[btnKeys[i]].classList.remove('pressed', 'toggled');
+            }
+
+            this._resetJoystickVisualPosition();
+            this._recomputeCombinedState();
+        }
+
+        /**
+         * 移除事件監聽與觸控 UI 節點
+         */
+        dispose() {
+            this.resetAllInputs();
+            const doc = global.document;
+
+            global.removeEventListener('keydown', this._boundHandlers.keyDown);
+            global.removeEventListener('keyup', this._boundHandlers.keyUp);
+            global.removeEventListener('mousemove', this._boundHandlers.mouseMove);
+            global.removeEventListener('mousedown', this._boundHandlers.mouseDown);
+            global.removeEventListener('mouseup', this._boundHandlers.mouseUp);
+            global.removeEventListener('wheel', this._boundHandlers.wheel);
+            global.removeEventListener('contextmenu', this._boundHandlers.contextMenu);
+            global.removeEventListener('blur', this._boundHandlers.windowBlur);
+            global.removeEventListener('resize', this._boundHandlers.windowResize);
+            doc.removeEventListener('pointerlockchange', this._boundHandlers.pointerLockChange);
+
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+
+            if (this.uiLayer && this.uiLayer.parentNode) {
+                this.uiLayer.parentNode.removeChild(this.uiLayer);
+            }
+
+            this.initialized = false;
         }
     }
 
-    /* =========================================================================
-     * 第三部分：導出與初始化
-     * ========================================================================= */
+    // ------------------------------------------------------------------------
+    // 9. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const controllerInstance = new MultiTouchController();
 
-    // 1. 實例化
-    const touchController = new TouchController();
+    const moduleExport = {
+        MultiTouchControllerClass: MultiTouchController,
+        instance: controllerInstance,
+        INPUT_DEFAULTS: INPUT_DEFAULTS
+    };
 
-    // 2. 掛載到 WZ 命名空間
-    WZ.Touch = touchController;
-
-    // 3. 監聽 CORE_SYSTEM_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('CORE_SYSTEM_READY', () => {
-            Logger.system('接收到核心系統就緒事件，準備初始化觸控系統...');
-            
-            // 使用 document.body 作為監聽容器，捕捉全螢幕觸控
-            touchController.init(document.body);
-            
-            // 初始化完成後，通知其他模組
-            WZ.bus.emit('TOUCH_READY');
-        });
-    }
-
-    Logger.success('js/03_multitouch_controller.js 已成功載入並掛載至 window.WZ.Touch');
-
-}); // 結束工廠函數
+    TacticalWarfare.MultiTouchController = controllerInstance;
+    TacticalWarfare.InputController = controllerInstance;
+    TacticalWarfare.registerModule('03_multitouch_controller', moduleExport);
+})(window);
