@@ -1,571 +1,349 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/28_enemy_warzone_locomotion.js
- * 檔案說明：敵人外部動作狀態機。專職驅動《現代戰爭 / 戰區》風格的流暢運動，
- *           包含經典螃蟹橫走 (ADAD Strafe)、正確前傾的戰術滑鏟、
- *           戰術飛撲臥倒，以及各種動作的平滑過渡與骨骼變換。
- *           掛載於 window.WZ.EnemyLocomotion。
- * 目標行數：1300 - 1800 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 28_enemy_warzone_locomotion.js
+ * 敵軍戰區戰術移動、側翼包抄、碰撞滑行與防重疊分離系統
+ * ============================================================================
+ * 職責：
+ * 1. 計算敵軍在戰場中的巡邏、追擊與側翼包抄期望移動方向與速度
+ * 2. 呼叫 PhysicsCollision 進行障礙物圓形滑行與地形高度查詢，確保敵軍不穿牆、不懸空
+ * 3. 實作敵軍個體間的軟性推擠分離，避免多個敵軍重疊在同一座標
+ * 4. 同步士兵網格位置／偏航角並輸出移動狀態，供 AI 狀態機與 EnemyUpperLowerIK 使用
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('28_enemy_warzone_locomotion.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
+    // ------------------------------------------------------------------------
+    // 1. 敵軍戰區移動與碰撞常數
+    // ------------------------------------------------------------------------
+    const ENEMY_LOCOMOTION_CONFIG = Object.freeze({
+        patrolSpeed: 2.6,
+        advanceSpeed: 4.5,
+        flankSpeed: 5.1,
+        sprintSpeed: 6.4,
+        soldierRadius: 0.42,
+        minSeparationDist: 1.05,
+        arenaHalfExtent: 35.0,
+        defaultFlankSign: 1
+    });
 
-    /* =========================================================================
-     * 第一部分：環境檢測與配置常數
-     * ========================================================================= */
-
-    Logger.system('開始載入敵人運動狀態機 (js/28_enemy_warzone_locomotion.js)...');
-
-    const THREE = global.THREE;
-    if (!THREE) {
-        Logger.error('找不到 Three.js，無法初始化敵人運動系統！');
-        return;
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) {
+            return minVal;
+        }
+        if (val > maxVal) {
+            return maxVal;
+        }
+        return val;
     }
 
-    // 定義敵人的所有運動狀態
-    const EnemyState = {
-        IDLE: 'IDLE',
-        WALK: 'WALK',
-        RUN: 'RUN',
-        STRAFE: 'STRAFE',       // 螃蟹橫走 (ADAD)
-        SLIDE: 'SLIDE',         // 戰術滑鏟
-        DIVE: 'DIVE',           // 戰術飛撲
-        PRONE: 'PRONE',         // 趴下
-        GETTING_UP: 'GETTING_UP'// 起身
-    };
-
-    const CONFIG = {
-        // 移動速度 (單位：公尺/秒)
-        WALK_SPEED: 1.8,
-        RUN_SPEED: 4.5,
-        STRAFE_SPEED: 3.2,
-        
-        // 旋轉速度 (弧度/秒)
-        BODY_TURN_SPEED: 8.0,       // 整體轉向速度
-        PELVIS_TWIST_SPEED: 10.0,   // 骨盆扭轉速度
-        
-        // 姿態角度
-        STRAFE_PELVIS_TWIST: 65 * Math.PI / 180, // 螃蟹步骨盆扭轉角度 (65度)
-        STRAFE_LEAN_ANGLE: 15 * Math.PI / 180,   // 橫移時上半身側傾角度 (Banking)
-        SLIDE_SPINE_PITCH: 18 * Math.PI / 180,   // 滑鏟時脊椎前傾角度 (18度)
-        
-        // 高度設定 (相對於模型原點，模型原點在腳底)
-        PELVIS_HEIGHT_STAND: 0.95,
-        PELVIS_HEIGHT_CROUCH: 0.65,
-        PELVIS_HEIGHT_SLIDE: 0.35,
-        PELVIS_HEIGHT_PRONE: 0.15,
-
-        // 滑鏟設定
-        SLIDE_DURATION: 0.9,        // 滑鏟持續時間 (秒)
-        SLIDE_INITIAL_SPEED: 7.0,   // 滑鏟初速
-        SLIDE_DECELERATION: 5.0,    // 滑鏟減速度
-
-        // 飛撲設定
-        DIVE_UPWARD_FORCE: 4.0,     // 飛撲向上初速
-        DIVE_FORWARD_FORCE: 6.0,    // 飛撲向前初速
-        DIVE_GRAVITY: 12.0,         // 飛撲時的重力
-        DIVE_HARD_LOCK: 0.5,        // 落地硬直時間
-
-        // 動畫過渡平滑度
-        TRANSITION_SPEED: 12.0,
-    };
-
-    /* =========================================================================
-     * 第二部分：數學與動畫工具庫 (Math & Animation Utilities)
-     * ========================================================================= */
-
-    class MathUtils {
-        /**
-         * 線性插值
-         */
-        static lerp(a, b, t) {
-            return a + (b - a) * t;
-        }
-
-        /**
-         * 角度插值 (處理 -PI 到 PI 的跨越問題)
-         */
-        static lerpAngle(a, b, t) {
-            let diff = b - a;
-            while (diff > Math.PI) diff -= Math.PI * 2;
-            while (diff < -Math.PI) diff += Math.PI * 2;
-            return a + diff * t;
-        }
-
-        /**
-         * 平滑阻尼 (類似 Unity 的 SmoothDamp)
-         */
-        static damp(current, target, smoothTime, dt) {
-            const omega = 2.0 / smoothTime;
-            const x = omega * dt;
-            const exp = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x);
-            let change = current - target;
-            let temp = (0 + omega * change) * dt;
-            return target + (change + temp) * exp;
-        }
-
-        /**
-         * 限制數值範圍
-         */
-        static clamp(val, min, max) {
-            return Math.max(min, Math.min(max, val));
-        }
+    function lerp(a, b, t) {
+        return a + (b - a) * t;
     }
 
-    /* =========================================================================
-     * 第三部分：敵人運動核心控制器 (EnemyLocomotionController)
-     * ========================================================================= */
+    function normalizeAngle(angle) {
+        let a = angle;
+        while (a > Math.PI) {
+            a -= Math.PI * 2;
+        }
+        while (a < -Math.PI) {
+            a += Math.PI * 2;
+        }
+        return a;
+    }
 
-    class EnemyLocomotionController {
+    // ------------------------------------------------------------------------
+    // 2. EnemyWarzoneLocomotion 主類別
+    // ------------------------------------------------------------------------
+    class EnemyWarzoneLocomotion {
         constructor() {
-            // 儲存所有敵人的運動狀態
-            // 結構: { enemyId: { bones, state, physics, timers, targets } }
-            this.enemies = new Map();
-            
-            // 全域時間累加器
-            this.globalTime = 0;
-        }
+            this.initialized = false;
+            this.physics = null;
+            this.terrain = null;
+            this.soldierManager = null;
 
-        init() {
-            Logger.info('敵人運動系統初始化...');
-
-            // 監聽士兵模型建立事件，自動註冊
-            if (WZ.bus) {
-                WZ.bus.on('ENEMY_SOLDIER_CREATED', (data) => {
-                    if (data.id && data.soldierData) {
-                        this.registerEnemy(data.id, data.soldierData);
-                    }
-                });
-            }
+            // 以 soldierId 儲存移動狀態與巡邏／側翼參數
+            this._moveStates = new Map();
+            this._unsubscribers = [];
         }
 
         /**
-         * 註冊一個新的敵人運動實例
+         * 初始化敵軍移動系統
          */
-        registerEnemy(id, soldierData) {
-            const bones = soldierData.bones;
-            
-            if (!bones || !bones.root) {
-                Logger.warn(`無法為 ${id} 註冊運動系統：找不到骨骼資料`);
+        init(options) {
+            const opts = options || {};
+            this.physics = opts.physics || TacticalWarfare.PhysicsCollision || null;
+            this.terrain = opts.terrain || TacticalWarfare.MapTerrainGround || null;
+            this.soldierManager = opts.soldierManager || TacticalWarfare.EnemySoldierMesh || null;
+
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
+            }
+
+            return this;
+        }
+
+        _bindEvents() {
+            if (!EventBus || !Events) {
                 return;
             }
 
-            this.enemies.set(id, {
-                id: id,
-                bones: bones,
-                
-                // 當前運動狀態
-                state: EnemyState.IDLE,
-                previousState: EnemyState.IDLE,
-                
-                // 物理數據
-                velocity: new THREE.Vector3(0, 0, 0),
-                position: new THREE.Vector3(0, 0, 0), // 世界座標 (跟隨 root)
-                forward: new THREE.Vector3(0, 0, -1), // 當前朝向
-                
-                // 計時器
-                stateTimer: 0,
-                hardLockTimer: 0,
-                
-                // 目標與插值
-                targets: {
-                    pelvisHeight: CONFIG.PELVIS_HEIGHT_STAND,
-                    pelvisTwist: 0,
-                    spinePitch: 0,
-                    spineRoll: 0,
-                    leftHipX: 0,
-                    leftKneeX: 0,
-                    rightHipX: 0,
-                    rightKneeX: 0
-                },
-                
-                // 當前值 (用於插值)
-                current: {
-                    pelvisHeight: CONFIG.PELVIS_HEIGHT_STAND,
-                    pelvisTwist: 0,
-                    spinePitch: 0,
-                    spineRoll: 0,
-                    leftHipX: 0,
-                    leftKneeX: 0,
-                    rightHipX: 0,
-                    rightKneeX: 0
-                },
-
-                // 螃蟹步參數
-                strafeDir: Math.random() > 0.5 ? 1 : -1,
-                strafeTimer: 0,
-                
-                // 滑鏟參數
-                slideSpeed: 0,
-
-                // 飛撲參數
-                diveY: 0,
-                diveVelocityY: 0,
-                diveForwardVel: 0,
-
-                // 動畫相位
-                animPhase: 0
-            });
-
-            Logger.success(`已註冊敵人運動系統: ${id}`);
-        }
-
-        /**
-         * 每幀更新所有敵人的運動狀態
-         */
-        update(dt) {
-            this.globalTime += dt;
-
-            this.enemies.forEach(enemy => {
-                // 如果處於硬直狀態，只更新物理和計時器
-                if (enemy.hardLockTimer > 0) {
-                    enemy.hardLockTimer -= dt;
-                    this._updatePhysics(enemy, dt);
-                    this._applyToBones(enemy, dt);
-                    return;
-                }
-
-                // 1. 更新狀態機 (模擬 AI 決策)
-                this._updateStateMachine(enemy, dt);
-
-                // 2. 更新物理與位置
-                this._updatePhysics(enemy, dt);
-
-                // 3. 應用到骨骼變換 (動畫)
-                this._applyToBones(enemy, dt);
-            });
-        }
-
-        /* =====================================================================
-         * 狀態機邏輯
-         * ===================================================================== */
-        _updateStateMachine(enemy, dt) {
-            enemy.stateTimer += dt;
-
-            // 模擬 AI 行為 (這裡只是簡單的演示)
-            // 實際應由 WZ.EnemyAI 模組呼叫 setState 方法來控制
-            // 為了展示，我們讓敵人隨機切換狀態
-            
-            if (enemy.state === EnemyState.IDLE) {
-                // 隨機開始移動
-                if (Math.random() < 0.01) {
-                    this.setState(enemy, EnemyState.STRAFE);
-                }
-            } else if (enemy.state === EnemyState.STRAFE) {
-                // 螃蟹步橫移
-                enemy.strafeTimer -= dt;
-                
-                // 左右變向
-                if (enemy.strafeTimer <= 0) {
-                    enemy.strafeDir *= -1;
-                    enemy.strafeTimer = 1.0 + Math.random() * 1.5;
-                    Logger.event(`敵人 ${enemy.id} 螃蟹步變向: ${enemy.strafeDir > 0 ? '右' : '左'}`);
-                }
-
-                // 隨機觸發滑鏟或飛撲
-                if (Math.random() < 0.005) {
-                    this.setState(enemy, EnemyState.SLIDE);
-                } else if (Math.random() < 0.002) {
-                    this.setState(enemy, EnemyState.DIVE);
-                }
-
-            } else if (enemy.state === EnemyState.SLIDE) {
-                // 滑鏟結束後回到站立
-                if (enemy.stateTimer > CONFIG.SLIDE_DURATION) {
-                    this.setState(enemy, EnemyState.IDLE);
-                }
-            }
-            // DIVE 和 PRONE 狀態由其他邏輯控制，這裡省略
-        }
-
-        /**
-         * 切換敵人狀態
-         */
-        setState(enemy, newState) {
-            if (enemy.state === newState) return;
-
-            enemy.previousState = enemy.state;
-            enemy.state = newState;
-            enemy.stateTimer = 0;
-
-            // 狀態進入時的初始化
-            switch (newState) {
-                case EnemyState.SLIDE:
-                    // 滑鏟初始化
-                    enemy.slideSpeed = CONFIG.SLIDE_INITIAL_SPEED;
-                    break;
-                case EnemyState.DIVE:
-                    // 飛撲初始化
-                    enemy.diveVelocityY = CONFIG.DIVE_UPWARD_FORCE;
-                    enemy.diveForwardVel = CONFIG.DIVE_FORWARD_FORCE;
-                    break;
+            if (Events.ENEMY_KILL) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.ENEMY_KILL, (payload) => {
+                        const id = payload && (payload.enemyId || (payload.enemy && payload.enemy.id));
+                        if (id) {
+                            this._moveStates.delete(id);
+                        }
+                    })
+                );
             }
 
-            Logger.event(`敵人 ${enemy.id} 狀態切換: ${enemy.previousState} -> ${enemy.state}`);
-        }
-
-        /* =====================================================================
-         * 物理與位置更新
-         * ===================================================================== */
-        _updatePhysics(enemy, dt) {
-            const root = enemy.bones.root;
-            
-            // 取得當前世界位置
-            root.getWorldPosition(enemy.position);
-
-            // 根據狀態更新移動
-            if (enemy.state === EnemyState.STRAFE) {
-                // 螃蟹步橫移
-                const strafeDir = new THREE.Vector3(1, 0, 0).applyQuaternion(root.quaternion);
-                strafeDir.multiplyScalar(enemy.strafeDir);
-                
-                enemy.position.addScaledVector(strafeDir, CONFIG.STRAFE_SPEED * dt);
-                
-            } else if (enemy.state === EnemyState.SLIDE) {
-                // 滑鏟前進
-                const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(root.quaternion);
-                
-                // 根據當前速度移動
-                enemy.position.addScaledVector(forwardDir, enemy.slideSpeed * dt);
-                
-                // 減速
-                enemy.slideSpeed -= CONFIG.SLIDE_DECELERATION * dt;
-                if (enemy.slideSpeed < 0) enemy.slideSpeed = 0;
-
-            } else if (enemy.state === EnemyState.DIVE) {
-                // 飛撲拋物線移動
-                const forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(root.quaternion);
-                
-                // 水平移動
-                enemy.position.addScaledVector(forwardDir, enemy.diveForwardVel * dt);
-                
-                // 垂直移動
-                enemy.diveVelocityY -= CONFIG.DIVE_GRAVITY * dt;
-                enemy.diveY += enemy.diveVelocityY * dt;
-
-                // 落地檢測
-                if (enemy.diveY <= 0) {
-                    enemy.diveY = 0;
-                    enemy.diveVelocityY = 0;
-                    // 落地轉趴下
-                    this.setState(enemy, EnemyState.PRONE);
-                    enemy.hardLockTimer = CONFIG.DIVE_HARD_LOCK;
-                    Logger.event(`敵人 ${enemy.id} 飛撲落地`);
-                }
+            if (Events.GAME_RESET) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_RESET, () => {
+                        this._moveStates.clear();
+                    })
+                );
             }
-
-            // 應用到根節點
-            root.position.x = enemy.position.x;
-            root.position.y = enemy.diveY; // 飛撲時有高度變化
-            root.position.z = enemy.position.z;
         }
 
-        /* =====================================================================
-         * 骨骼變換 (核心動畫邏輯)
-         * ===================================================================== */
-        _applyToBones(enemy, dt) {
-            const bones = enemy.bones;
-            const targets = enemy.targets;
-            const current = enemy.current;
-
-            // 重置目標值 (預設為站立姿態)
-            targets.pelvisHeight = CONFIG.PELVIS_HEIGHT_STAND;
-            targets.pelvisTwist = 0;
-            targets.spinePitch = 0;
-            targets.spineRoll = 0;
-            targets.leftHipX = 0;
-            targets.leftKneeX = 0;
-            targets.rightHipX = 0;
-            targets.rightKneeX = 0;
-
-            // 根據當前狀態設定目標姿態
-            switch (enemy.state) {
-                case EnemyState.IDLE:
-                    // 呼吸起伏 (輕微)
-                    targets.pelvisHeight = CONFIG.PELVIS_HEIGHT_STAND + Math.sin(this.globalTime * 2) * 0.005;
-                    break;
-
-                case EnemyState.STRAFE:
-                    // 經典螃蟹步
-                    // 1. 骨盆扭轉
-                    targets.pelvisTwist = enemy.strafeDir * CONFIG.STRAFE_PELVIS_TWIST;
-                    
-                    // 2. 上半身側傾 (Banking)
-                    targets.spineRoll = -enemy.strafeDir * CONFIG.STRAFE_LEAN_ANGLE;
-                    
-                    // 3. 腿部交叉邁步 (使用正弦波模擬)
-                    enemy.animPhase += dt * 8.0;
-                    const strafeSin = Math.sin(enemy.animPhase);
-                    
-                    // 根據移動方向，雙腿擺動
-                    targets.leftHipX = strafeSin * 0.4 * enemy.strafeDir;
-                    targets.rightHipX = -strafeSin * 0.4 * enemy.strafeDir;
-                    targets.leftKneeX = Math.max(0, -strafeSin) * 0.6;
-                    targets.rightKneeX = Math.max(0, strafeSin) * 0.6;
-                    
-                    // 壓低重心
-                    targets.pelvisHeight = CONFIG.PELVIS_HEIGHT_CROUCH;
-                    break;
-
-                case EnemyState.SLIDE:
-                    // 戰術滑鏟
-                    // 1. 骨盆大幅壓低
-                    targets.pelvisHeight = CONFIG.PELVIS_HEIGHT_SLIDE;
-                    
-                    // 2. 關鍵修復：脊椎向臉部朝向前方微傾 (絕不向後仰！)
-                    // 注意：模型面向 -Z，所以脊椎向前傾是正 X 旋轉
-                    targets.spinePitch = CONFIG.SLIDE_SPINE_PITCH;
-                    
-                    // 3. 腿部姿勢：左腿前伸，右腿後折
-                    // (這裡需要根據模型的左右來設定，假設左腿是 leftHip)
-                    targets.leftHipX = -1.4; // 前伸
-                    targets.leftKneeX = 0.1; // 幾乎伸直
-                    targets.rightHipX = 0.8; // 向後折
-                    targets.rightKneeX = -1.6; // 折疊
-                    break;
-
-                case EnemyState.DIVE:
-                    // 戰術飛撲 (空中)
-                    // 身體呈水平
-                    targets.spinePitch = Math.PI / 2 - 0.1; 
-                    targets.pelvisHeight = CONFIG.PELVIS_HEIGHT_STAND; // 在空中，不壓低
-                    // 雙腿向後伸直
-                    targets.leftHipX = 0.5;
-                    targets.rightHipX = 0.5;
-                    targets.leftKneeX = 0;
-                    targets.rightKneeX = 0;
-                    break;
-
-                case EnemyState.PRONE:
-                    // 趴下
-                    targets.pelvisHeight = CONFIG.PELVIS_HEIGHT_PRONE;
-                    targets.spinePitch = Math.PI / 2 - 0.1; // 身體貼地
-                    targets.leftHipX = 0.1;
-                    targets.rightHipX = 0.1;
-                    targets.leftKneeX = -0.1;
-                    targets.rightKneeX = -0.1;
-                    break;
-
-                case EnemyState.GETTING_UP:
-                    // 起身過渡 (簡化)
-                    targets.pelvisHeight = CONFIG.PELVIS_HEIGHT_STAND;
-                    break;
-            }
-
-            // =================================================================
-            // 應用平滑插值到骨骼
-            // =================================================================
-            
-            // 1. 骨盆高度
-            current.pelvisHeight = MathUtils.damp(current.pelvisHeight, targets.pelvisHeight, 1.0 / CONFIG.TRANSITION_SPEED, dt);
-            bones.pelvis.position.y = current.pelvisHeight;
-
-            // 2. 骨盆扭轉
-            current.pelvisTwist = MathUtils.damp(current.pelvisTwist, targets.pelvisTwist, 1.0 / CONFIG.TRANSITION_SPEED, dt);
-            bones.pelvis.rotation.y = current.pelvisTwist;
-
-            // 3. 脊椎旋轉 (傾斜與側傾)
-            current.spinePitch = MathUtils.damp(current.spinePitch, targets.spinePitch, 1.0 / CONFIG.TRANSITION_SPEED, dt);
-            current.spineRoll = MathUtils.damp(current.spineRoll, targets.spineRoll, 1.0 / CONFIG.TRANSITION_SPEED, dt);
-            
-            // 重要：脊椎的旋轉是相對於骨盆的，所以我們需要考慮骨盆的扭轉
-            // 這裡我們使用 Euler 角來設定，順序為 YXZ (先扭轉，再前傾，再側傾)
-            bones.spine.rotation.set(current.spinePitch, 0, current.spineRoll);
-            // 注意：WZ.EnemyIK 會在此基礎上修改上半身的追蹤旋轉
-
-            // 4. 腿部關節
-            current.leftHipX = MathUtils.damp(current.leftHipX, targets.leftHipX, 1.0 / CONFIG.TRANSITION_SPEED, dt);
-            current.leftKneeX = MathUtils.damp(current.leftKneeX, targets.leftKneeX, 1.0 / CONFIG.TRANSITION_SPEED, dt);
-            bones.leftThigh.rotation.x = current.leftHipX;
-            bones.leftShin.rotation.x = current.leftKneeX;
-
-            current.rightHipX = MathUtils.damp(current.rightHipX, targets.rightHipX, 1.0 / CONFIG.TRANSITION_SPEED, dt);
-            current.rightKneeX = MathUtils.damp(current.rightKneeX, targets.rightKneeX, 1.0 / CONFIG.TRANSITION_SPEED, dt);
-            bones.rightThigh.rotation.x = current.rightHipX;
-            bones.rightShin.rotation.x = current.rightKneeX;
-        }
-
-        /* =====================================================================
-         * 公共介面
-         * ===================================================================== */
-
-        /**
-         * 強制設定敵人移動狀態 (供 AI 系統調用)
-         */
-        setEnemyState(enemyId, state) {
-            const enemy = this.enemies.get(enemyId);
-            if (!enemy) return;
-            this.setState(enemy, state);
-        }
-
-        /**
-         * 取得敵人當前位置 (供 AI 系統調用)
-         */
-        getEnemyPosition(enemyId) {
-            const enemy = this.enemies.get(enemyId);
-            if (!enemy) return null;
-            return enemy.position.clone();
-        }
-    }
-
-    /* =========================================================================
-     * 第四部分：導出與初始化
-     * ========================================================================= */
-
-    // 1. 實例化
-    const enemyLocomotion = new EnemyLocomotionController();
-
-    // 2. 掛載到 WZ 命名空間
-    WZ.EnemyLocomotion = enemyLocomotion;
-
-    // 3. 監聽 CORE_SYSTEM_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('CORE_SYSTEM_READY', () => {
-            Logger.system('接收到核心系統就緒事件，準備初始化敵人運動系統...');
-            enemyLocomotion.init();
-            WZ.bus.emit('ENEMY_LOCOMOTION_READY');
-        });
-    }
-
-    // 4. 將更新掛載到主渲染循環中
-    if (WZ.Renderer) {
-        const originalOnRender = WZ.Renderer.onRender;
-        WZ.Renderer.onRender = (alpha, dt) => {
-            enemyLocomotion.update(dt);
-            if (originalOnRender) {
-                originalOnRender(alpha, dt);
-            }
-        };
-        Logger.info('EnemyLocomotion 已成功掛載至主渲染循環');
-    } else {
-        // 延遲掛載
-        const checkInterval = setInterval(() => {
-            if (WZ.Renderer) {
-                clearInterval(checkInterval);
-                const originalOnRender = WZ.Renderer.onRender;
-                WZ.Renderer.onRender = (alpha, dt) => {
-                    enemyLocomotion.update(dt);
-                    if (originalOnRender) {
-                        originalOnRender(alpha, dt);
-                    }
+        _getOrCreateState(soldier) {
+            let st = this._moveStates.get(soldier.id);
+            if (!st) {
+                const seedAngle = Math.random() * Math.PI * 2;
+                const radius = 5 + Math.random() * 8;
+                st = {
+                    vx: 0,
+                    vz: 0,
+                    speed: 0,
+                    yaw: soldier.yaw || 0,
+                    flankSign: Math.random() < 0.5 ? -1 : 1,
+                    patrolAnchorX: clamp(soldier.position.x + Math.cos(seedAngle) * radius, -ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent, ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent),
+                    patrolAnchorZ: clamp(soldier.position.z + Math.sin(seedAngle) * radius, -ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent, ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent),
+                    patrolTimer: 1.5 + Math.random() * 2.5
                 };
-                Logger.info('EnemyLocomotion 延遲掛載成功');
+                this._moveStates.set(soldier.id, st);
             }
-        }, 100);
+            return st;
+        }
+
+        _getGroundY(x, z, fallbackY) {
+            if (this.terrain && typeof this.terrain.getHeightAt === 'function') {
+                return this.terrain.getHeightAt(x, z);
+            }
+            if (this.physics && typeof this.physics.getGroundHeightAt === 'function') {
+                return this.physics.getGroundHeightAt(x, z, fallbackY || 0);
+            }
+            return typeof fallbackY === 'number' ? fallbackY : 0;
+        }
+
+        /**
+         * 更新單一敵軍的戰術移動與碰撞滑行
+         * @param {Object} soldier - SoldierRigEntity 實例
+         * @param {number} deltaTime - 幀間隔（秒）
+         * @param {Object} moveCtx - { mode: 'idle'|'patrol'|'advance'|'flank'|'hold', targetPos: {x,z}, desiredSpeed?: number, isCrouching?: boolean }
+         */
+        updateSoldier(soldier, deltaTime, moveCtx) {
+            if (!soldier || !soldier.alive || !soldier.position) {
+                return null;
+            }
+
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+            const ctx = moveCtx || {};
+            const st = this._getOrCreateState(soldier);
+            const mode = ctx.mode || 'patrol';
+            const targetPos = ctx.targetPos || null;
+
+            let dirX = 0;
+            let dirZ = 0;
+            let maxSpeed = 0;
+
+            if (mode === 'patrol') {
+                st.patrolTimer -= dt;
+                const dxPatrol = st.patrolAnchorX - soldier.position.x;
+                const dzPatrol = st.patrolAnchorZ - soldier.position.z;
+                const distPatrol = Math.sqrt(dxPatrol * dxPatrol + dzPatrol * dzPatrol);
+
+                if (distPatrol < 1.2 || st.patrolTimer <= 0) {
+                    const ang = Math.random() * Math.PI * 2;
+                    const rad = 4 + Math.random() * 7;
+                    st.patrolAnchorX = clamp(soldier.position.x + Math.cos(ang) * rad, -ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent, ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent);
+                    st.patrolAnchorZ = clamp(soldier.position.z + Math.sin(ang) * rad, -ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent, ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent);
+                    st.patrolTimer = 2.0 + Math.random() * 2.5;
+                } else {
+                    dirX = dxPatrol / distPatrol;
+                    dirZ = dzPatrol / distPatrol;
+                    maxSpeed = ENEMY_LOCOMOTION_CONFIG.patrolSpeed;
+                }
+            } else if (mode === 'advance' && targetPos) {
+                const dx = targetPos.x - soldier.position.x;
+                const dz = targetPos.z - soldier.position.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist > 6.5) {
+                    dirX = dx / dist;
+                    dirZ = dz / dist;
+                    maxSpeed = typeof ctx.desiredSpeed === 'number' ? ctx.desiredSpeed : ENEMY_LOCOMOTION_CONFIG.advanceSpeed;
+                }
+            } else if (mode === 'flank' && targetPos) {
+                const dx = targetPos.x - soldier.position.x;
+                const dz = targetPos.z - soldier.position.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist > 0.1) {
+                    const toTargetX = dx / dist;
+                    const toTargetZ = dz / dist;
+                    // 垂直切向側翼方向 + 適度推進
+                    const perpX = -toTargetZ * st.flankSign;
+                    const perpZ = toTargetX * st.flankSign;
+                    const advanceWeight = dist > 12 ? 0.55 : 0.25;
+                    let fx = perpX + toTargetX * advanceWeight;
+                    let fz = perpZ + toTargetZ * advanceWeight;
+                    const fLen = Math.sqrt(fx * fx + fz * fz) || 1;
+                    dirX = fx / fLen;
+                    dirZ = fz / fLen;
+                    maxSpeed = typeof ctx.desiredSpeed === 'number' ? ctx.desiredSpeed : ENEMY_LOCOMOTION_CONFIG.flankSpeed;
+                }
+            }
+
+            const targetVx = dirX * maxSpeed;
+            const targetVz = dirZ * maxSpeed;
+            const blend = 1 - Math.exp(-9 * dt);
+            st.vx = lerp(st.vx, targetVx, blend);
+            st.vz = lerp(st.vz, targetVz, blend);
+
+            // 敵軍個體間軟性推擠分離
+            let sepX = 0;
+            let sepZ = 0;
+            if (this.soldierManager && typeof this.soldierManager.getAllSoldiers === 'function') {
+                const all = this.soldierManager.getAllSoldiers();
+                const minSep = ENEMY_LOCOMOTION_CONFIG.minSeparationDist;
+                for (let i = 0; i < all.length; i = i + 1) {
+                    const other = all[i];
+                    if (!other || !other.alive || other.id === soldier.id) continue;
+                    const ox = soldier.position.x - other.position.x;
+                    const oz = soldier.position.z - other.position.z;
+                    const dSq = ox * ox + oz * oz;
+                    if (dSq > 1e-6 && dSq < minSep * minSep) {
+                        const d = Math.sqrt(dSq);
+                        const push = ((minSep - d) / minSep) * 4.5;
+                        sepX += (ox / d) * push;
+                        sepZ += (oz / d) * push;
+                    }
+                }
+            }
+
+            let nextX = soldier.position.x + (st.vx + sepX) * dt;
+            let nextZ = soldier.position.z + (st.vz + sepZ) * dt;
+
+            const bound = ENEMY_LOCOMOTION_CONFIG.arenaHalfExtent;
+            nextX = clamp(nextX, -bound, bound);
+            nextZ = clamp(nextZ, -bound, bound);
+
+            if (this.physics && typeof this.physics.resolveCircleSlide === 'function') {
+                const resolved = this.physics.resolveCircleSlide(
+                    nextX,
+                    nextZ,
+                    soldier.position.y,
+                    ENEMY_LOCOMOTION_CONFIG.soldierRadius
+                );
+                if (resolved) {
+                    nextX = resolved.x;
+                    nextZ = resolved.z;
+                }
+            }
+
+            const nextY = this._getGroundY(nextX, nextZ, soldier.position.y);
+
+            // 決定偏航角：若有目標則朝向目標，否則朝向移動方向
+            let desiredYaw = st.yaw;
+            if (targetPos && (mode === 'advance' || mode === 'flank' || mode === 'hold')) {
+                const aimDx = targetPos.x - nextX;
+                const aimDz = targetPos.z - nextZ;
+                if (aimDx * aimDx + aimDz * aimDz > 1e-4) {
+                    desiredYaw = Math.atan2(-aimDx, -aimDz);
+                }
+            } else if (st.vx * st.vx + st.vz * st.vz > 0.04) {
+                desiredYaw = Math.atan2(-st.vx, -st.vz);
+            }
+
+            const yawDiff = normalizeAngle(desiredYaw - st.yaw);
+            st.yaw = normalizeAngle(st.yaw + yawDiff * (1 - Math.exp(-10 * dt)));
+            st.speed = Math.sqrt(st.vx * st.vx + st.vz * st.vz);
+
+            if (typeof soldier.setPose === 'function') {
+                soldier.setPose(nextX, nextY, nextZ, st.yaw, Boolean(ctx.isCrouching));
+            } else {
+                soldier.position.x = nextX;
+                soldier.position.y = nextY;
+                soldier.position.z = nextZ;
+                soldier.yaw = st.yaw;
+            }
+
+            return {
+                id: soldier.id,
+                position: { x: nextX, y: nextY, z: nextZ },
+                yaw: st.yaw,
+                speed: st.speed,
+                vx: st.vx,
+                vz: st.vz
+            };
+        }
+
+        /**
+         * 批次更新所有存活敵軍移動
+         */
+        updateBatch(deltaTime, moveContextsById) {
+            if (!this.soldierManager || typeof this.soldierManager.getAllSoldiers !== 'function') {
+                return new Map();
+            }
+
+            const results = new Map();
+            const soldiers = this.soldierManager.getAllSoldiers();
+            const isMap = moveContextsById && typeof moveContextsById.get === 'function';
+
+            for (let i = 0; i < soldiers.length; i = i + 1) {
+                const s = soldiers[i];
+                if (!s || !s.alive) continue;
+                const ctx = isMap ? moveContextsById.get(s.id) : null;
+                const out = this.updateSoldier(s, deltaTime, ctx);
+                if (out) {
+                    results.set(s.id, out);
+                }
+            }
+            return results;
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+            this._moveStates.clear();
+            this.initialized = false;
+        }
     }
 
-    Logger.success('js/28_enemy_warzone_locomotion.js 已成功載入並掛載至 window.WZ.EnemyLocomotion');
+    // ------------------------------------------------------------------------
+    // 3. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const enemyWarzoneLocomotionInstance = new EnemyWarzoneLocomotion();
 
-}); // 結束工廠函數
+    const moduleExport = {
+        EnemyWarzoneLocomotionClass: EnemyWarzoneLocomotion,
+        instance: enemyWarzoneLocomotionInstance,
+        ENEMY_LOCOMOTION_CONFIG: ENEMY_LOCOMOTION_CONFIG
+    };
+
+    TacticalWarfare.EnemyWarzoneLocomotion = enemyWarzoneLocomotionInstance;
+    TacticalWarfare.registerModule('28_enemy_warzone_locomotion', moduleExport);
+})(window);
