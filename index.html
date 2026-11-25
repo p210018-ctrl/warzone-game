@@ -614,6 +614,7 @@
             line-height: 1.6;
             color: #9ec0d8;
             text-align: left;
+            word-break: break-word;
         }
 
         #module-diagnostic-panel.has-error {
@@ -740,13 +741,37 @@
         (function () {
             const TOTAL_MODULES = 38;
             window.__TW_LOADED_COUNT__ = 0;
+            window.__TW_LAST_SCRIPT__ = '尚未開始';
             window.__TW_ERRORS__ = [];
 
+            window.markModuleLoaded = function (fileName) {
+                window.__TW_LOADED_COUNT__ = (window.__TW_LOADED_COUNT__ || 0) + 1;
+                window.__TW_LAST_SCRIPT__ = fileName;
+                refreshDiagnostic();
+            };
+
+            window.markModuleError = function (fileName) {
+                window.__TW_ERRORS__.push('找不到或無法載入檔案：' + fileName);
+                refreshDiagnostic();
+            };
+
             window.addEventListener('error', function (errEvent) {
-                const msg = errEvent.message || '未知腳本錯誤';
-                const file = errEvent.filename ? errEvent.filename.split('/').pop() : 'index.html';
-                const line = errEvent.lineno || 0;
-                window.__TW_ERRORS__.push(file + ' 第 ' + line + ' 行：' + msg);
+                const target = errEvent.target;
+                if (target && target.tagName === 'SCRIPT' && target.src) {
+                    const fName = target.src.split('/').pop();
+                    window.__TW_ERRORS__.push('腳本載入失敗：' + fName);
+                } else {
+                    const msg = errEvent.message || '未知腳本錯誤';
+                    const file = errEvent.filename ? errEvent.filename.split('/').pop() : window.__TW_LAST_SCRIPT__;
+                    const line = errEvent.lineno || 0;
+                    window.__TW_ERRORS__.push(file + (line ? ' 第 ' + line + ' 行' : '') + '：' + msg);
+                }
+                refreshDiagnostic();
+            }, true);
+
+            window.addEventListener('unhandledrejection', function (ev) {
+                const reason = ev && ev.reason ? (ev.reason.message || String(ev.reason)) : '未處理的 Promise 錯誤';
+                window.__TW_ERRORS__.push('非同步錯誤：' + reason);
                 refreshDiagnostic();
             });
 
@@ -765,7 +790,7 @@
 
                 if (window.__TW_ERRORS__.length > 0) {
                     panel.className = 'has-error';
-                    panel.textContent = '偵測到程式錯誤：' + window.__TW_ERRORS__[0];
+                    panel.textContent = window.__TW_ERRORS__[0];
                     btn.disabled = true;
                     btn.textContent = '請修正腳本錯誤';
                     return;
@@ -777,7 +802,9 @@
 
                 if (count < TOTAL_MODULES) {
                     panel.className = '';
-                    panel.textContent = '已載入 ' + count + ' / ' + TOTAL_MODULES + ' 個模組，正在完成啟動...';
+                    panel.textContent =
+                        '已載入 ' + count + ' / ' + TOTAL_MODULES +
+                        ' 個模組（最新完成：' + window.__TW_LAST_SCRIPT__ + '），正在完成啟動...';
                     btn.disabled = true;
                     btn.textContent = '正在載入模組...';
                     return;
@@ -830,43 +857,43 @@
     </script>
 
     <!-- 依相依順序載入 js/01 至 js/38 -->
-    <script src="js/01_event_bus_state.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/02_renderer_core.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/03_pbr_materials.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/04_atmosphere_lighting.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/05_physics_collision.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/06_map_terrain_ground.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/07_map_props_covers.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/08_map_explosives_pickups.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/09_input_system.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/10_player_movement.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/11_player_controller.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/12_weapon_models_m4a1.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/13_weapon_models_mp5.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/14_weapon_models_ax50.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/15_weapon_models_x16.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/16_viewmodel_rig.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/17_ballistics_recoil.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/18_weapon_controller.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/19_vfx_particle_engine.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/20_vfx_muzzle_decals.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/21_vfx_explosions_tracers.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/22_audio_procedural.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/23_audio_weapons_combat.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/24_audio_foley_env.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/25_audio_music_ui.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/26_enemy_soldier_mesh.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/27_enemy_upper_lower_ik.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/28_enemy_warzone_locomotion.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/29_ragdoll_physics.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/30_enemy_tactical_ai.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/31_ui_lobby_3d.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/32_ui_hud_customizer.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/33_ui_settings_modal.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/34_ui_combat_hud.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/35_ui_killfeed_score.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/36_gamemode_manager.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/37_main_bootstrap.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
-    <script src="js/38_game_runtime.js" onload="window.__TW_LOADED_COUNT__=(window.__TW_LOADED_COUNT__||0)+1"></script>
+    <script src="js/01_event_bus_state.js" onload="markModuleLoaded('01_event_bus_state.js')" onerror="markModuleError('js/01_event_bus_state.js')"></script>
+    <script src="js/02_renderer_core.js" onload="markModuleLoaded('02_renderer_core.js')" onerror="markModuleError('js/02_renderer_core.js')"></script>
+    <script src="js/03_pbr_materials.js" onload="markModuleLoaded('03_pbr_materials.js')" onerror="markModuleError('js/03_pbr_materials.js')"></script>
+    <script src="js/04_atmosphere_lighting.js" onload="markModuleLoaded('04_atmosphere_lighting.js')" onerror="markModuleError('js/04_atmosphere_lighting.js')"></script>
+    <script src="js/05_physics_collision.js" onload="markModuleLoaded('05_physics_collision.js')" onerror="markModuleError('js/05_physics_collision.js')"></script>
+    <script src="js/06_map_terrain_ground.js" onload="markModuleLoaded('06_map_terrain_ground.js')" onerror="markModuleError('js/06_map_terrain_ground.js')"></script>
+    <script src="js/07_map_props_covers.js" onload="markModuleLoaded('07_map_props_covers.js')" onerror="markModuleError('js/07_map_props_covers.js')"></script>
+    <script src="js/08_map_explosives_pickups.js" onload="markModuleLoaded('08_map_explosives_pickups.js')" onerror="markModuleError('js/08_map_explosives_pickups.js')"></script>
+    <script src="js/09_input_system.js" onload="markModuleLoaded('09_input_system.js')" onerror="markModuleError('js/09_input_system.js')"></script>
+    <script src="js/10_player_movement.js" onload="markModuleLoaded('10_player_movement.js')" onerror="markModuleError('js/10_player_movement.js')"></script>
+    <script src="js/11_player_controller.js" onload="markModuleLoaded('11_player_controller.js')" onerror="markModuleError('js/11_player_controller.js')"></script>
+    <script src="js/12_weapon_models_m4a1.js" onload="markModuleLoaded('12_weapon_models_m4a1.js')" onerror="markModuleError('js/12_weapon_models_m4a1.js')"></script>
+    <script src="js/13_weapon_models_mp5.js" onload="markModuleLoaded('13_weapon_models_mp5.js')" onerror="markModuleError('js/13_weapon_models_mp5.js')"></script>
+    <script src="js/14_weapon_models_ax50.js" onload="markModuleLoaded('14_weapon_models_ax50.js')" onerror="markModuleError('js/14_weapon_models_ax50.js')"></script>
+    <script src="js/15_weapon_models_x16.js" onload="markModuleLoaded('15_weapon_models_x16.js')" onerror="markModuleError('js/15_weapon_models_x16.js')"></script>
+    <script src="js/16_viewmodel_rig.js" onload="markModuleLoaded('16_viewmodel_rig.js')" onerror="markModuleError('js/16_viewmodel_rig.js')"></script>
+    <script src="js/17_ballistics_recoil.js" onload="markModuleLoaded('17_ballistics_recoil.js')" onerror="markModuleError('js/17_ballistics_recoil.js')"></script>
+    <script src="js/18_weapon_controller.js" onload="markModuleLoaded('18_weapon_controller.js')" onerror="markModuleError('js/18_weapon_controller.js')"></script>
+    <script src="js/19_vfx_particle_engine.js" onload="markModuleLoaded('19_vfx_particle_engine.js')" onerror="markModuleError('js/19_vfx_particle_engine.js')"></script>
+    <script src="js/20_vfx_muzzle_decals.js" onload="markModuleLoaded('20_vfx_muzzle_decals.js')" onerror="markModuleError('js/20_vfx_muzzle_decals.js')"></script>
+    <script src="js/21_vfx_explosions_tracers.js" onload="markModuleLoaded('21_vfx_explosions_tracers.js')" onerror="markModuleError('js/21_vfx_explosions_tracers.js')"></script>
+    <script src="js/22_audio_procedural.js" onload="markModuleLoaded('22_audio_procedural.js')" onerror="markModuleError('js/22_audio_procedural.js')"></script>
+    <script src="js/23_audio_weapons_combat.js" onload="markModuleLoaded('23_audio_weapons_combat.js')" onerror="markModuleError('js/23_audio_weapons_combat.js')"></script>
+    <script src="js/24_audio_foley_env.js" onload="markModuleLoaded('24_audio_foley_env.js')" onerror="markModuleError('js/24_audio_foley_env.js')"></script>
+    <script src="js/25_audio_music_ui.js" onload="markModuleLoaded('25_audio_music_ui.js')" onerror="markModuleError('js/25_audio_music_ui.js')"></script>
+    <script src="js/26_enemy_soldier_mesh.js" onload="markModuleLoaded('26_enemy_soldier_mesh.js')" onerror="markModuleError('js/26_enemy_soldier_mesh.js')"></script>
+    <script src="js/27_enemy_upper_lower_ik.js" onload="markModuleLoaded('27_enemy_upper_lower_ik.js')" onerror="markModuleError('js/27_enemy_upper_lower_ik.js')"></script>
+    <script src="js/28_enemy_warzone_locomotion.js" onload="markModuleLoaded('28_enemy_warzone_locomotion.js')" onerror="markModuleError('js/28_enemy_warzone_locomotion.js')"></script>
+    <script src="js/29_ragdoll_physics.js" onload="markModuleLoaded('29_ragdoll_physics.js')" onerror="markModuleError('js/29_ragdoll_physics.js')"></script>
+    <script src="js/30_enemy_tactical_ai.js" onload="markModuleLoaded('30_enemy_tactical_ai.js')" onerror="markModuleError('js/30_enemy_tactical_ai.js')"></script>
+    <script src="js/31_ui_lobby_3d.js" onload="markModuleLoaded('31_ui_lobby_3d.js')" onerror="markModuleError('js/31_ui_lobby_3d.js')"></script>
+    <script src="js/32_ui_hud_customizer.js" onload="markModuleLoaded('32_ui_hud_customizer.js')" onerror="markModuleError('js/32_ui_hud_customizer.js')"></script>
+    <script src="js/33_ui_settings_modal.js" onload="markModuleLoaded('33_ui_settings_modal.js')" onerror="markModuleError('js/33_ui_settings_modal.js')"></script>
+    <script src="js/34_ui_combat_hud.js" onload="markModuleLoaded('34_ui_combat_hud.js')" onerror="markModuleError('js/34_ui_combat_hud.js')"></script>
+    <script src="js/35_ui_killfeed_score.js" onload="markModuleLoaded('35_ui_killfeed_score.js')" onerror="markModuleError('js/35_ui_killfeed_score.js')"></script>
+    <script src="js/36_gamemode_manager.js" onload="markModuleLoaded('36_gamemode_manager.js')" onerror="markModuleError('js/36_gamemode_manager.js')"></script>
+    <script src="js/37_main_bootstrap.js" onload="markModuleLoaded('37_main_bootstrap.js')" onerror="markModuleError('js/37_main_bootstrap.js')"></script>
+    <script src="js/38_game_runtime.js" onload="markModuleLoaded('38_game_runtime.js')" onerror="markModuleError('js/38_game_runtime.js')"></script>
 </body>
 </html>
