@@ -17,7 +17,7 @@
     const GameState = TacticalWarfare.GameState;
 
     const INPUT_DEFAULTS = Object.freeze({
-        mouseSensitivity: 0.012,
+        mouseSensitivity: 1.5,
         touchSensitivity: 0.009,
         adsSensitivityMultiplier: 0.65,
         invertY: false,
@@ -357,8 +357,7 @@
 
             const mouseSens = GameState.get('settings.mouseSensitivity');
             if (typeof mouseSens === 'number' && mouseSens > 0) {
-                const mapped = mouseSens > 0.05 ? mouseSens * INPUT_DEFAULTS.mouseSensitivity : mouseSens;
-                this.config.mouseSensitivity = Math.max(mapped, INPUT_DEFAULTS.mouseSensitivity);
+                this.config.mouseSensitivity = Math.max(mouseSens, INPUT_DEFAULTS.mouseSensitivity);
             }
 
             const touchSens = GameState.get('settings.touchSensitivity');
