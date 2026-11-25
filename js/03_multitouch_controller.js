@@ -17,14 +17,14 @@
     const GameState = TacticalWarfare.GameState;
 
     const INPUT_DEFAULTS = Object.freeze({
-        mouseSensitivity: 0.0062,
-        touchSensitivity: 0.0065,
-        adsSensitivityMultiplier: 0.58,
+        mouseSensitivity: 0.012,
+        touchSensitivity: 0.009,
+        adsSensitivityMultiplier: 0.65,
         invertY: false,
         joystickMaxRadius: 56,
         joystickDeadzone: 0.12,
         autoSprintThreshold: 0.86,
-        mouseSpikeLimit: 220,
+        mouseSpikeLimit: 260,
         touchControlsMode: 'auto' // 'auto' | 'always' | 'off'
     });
 
