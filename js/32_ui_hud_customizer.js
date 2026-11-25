@@ -1,21 +1,267 @@
-/* HUD customizer, limited to controls already present in index.html. */
+/**
+ * ============================================================================
+ * 32_ui_hud_customizer.js
+ * 戰術 HUD 版面、準星樣式與雷達自訂配置管理器（UI HUD Customizer）
+ * ============================================================================
+ * 職責：
+ * 1. 管理準星顏色、線條粗細、間隙、動態散布縮放與雷達／HUD 各區塊顯示參數
+ * 2. 支援 localStorage 儲存、讀取與一鍵還原預設配置
+ * 3. 在設定變更時更新 GameState 並廣播 HUD_CONFIG_CHANGED 事件通知 HUD 渲染模組
+ * 4. 提供查詢與批次套用介面，方便設定面板或測試腳本直接調整 HUD 風格
+ */
 (function (global) {
-  'use strict';
-  const WZ = global.WZ = global.WZ || {};
-  const Logger = WZ.Utils?.Logger || global.console;
-  const log = (method, ...args) => Logger?.[method]?.(...args);
-  const ids = ['joystick-area','btn-fire','btn-jump','btn-crouch','btn-reload'];
-  const defaults = {'joystick-area':{x:15,y:80,scale:1,opacity:.8},'btn-fire':{x:85,y:75,scale:1.2,opacity:.9},'btn-jump':{x:85,y:50,scale:.9,opacity:.8},'btn-crouch':{x:70,y:65,scale:.9,opacity:.8},'btn-reload':{x:55,y:60,scale:.8,opacity:.8}};
-  class Customizer {
-    constructor(){this.layout={};this.overlay=null;this.active=false;this.initialized=false;this.drag=null}
-    init(){if(this.initialized)return;this.initialized=true;try{this.layout={...defaults,...JSON.parse(localStorage.getItem('WZM_HUD_LAYOUT_V1')||'{}')}}catch(_){this.layout={...defaults}}ids.forEach(id=>{if(!this.layout[id])this.layout[id]={...defaults[id]}});this._create();this.apply()}
-    _create(){if(this.overlay)return;this.overlay=document.createElement('div');this.overlay.id='hud-customizer-overlay';Object.assign(this.overlay.style,{position:'fixed',inset:'0',zIndex:'9999',display:'none',background:'rgba(0,0,0,.72)',touchAction:'none'});const toolbar=document.createElement('div');Object.assign(toolbar.style,{position:'absolute',top:'0',left:'0',right:'0',height:'60px',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 16px',background:'#15171c',color:'#d4af37'});toolbar.appendChild(document.createTextNode('HUD 按鍵自定義'));const actions=document.createElement('div');const button=(text,fn)=>{const b=document.createElement('button');b.textContent=text;b.style.marginLeft='8px';b.onclick=fn;return b};actions.append(button('重置',()=>{this.layout=JSON.parse(JSON.stringify(defaults));this._update()}),button('取消',()=>this.disable()),button('保存',()=>{localStorage.setItem('WZM_HUD_LAYOUT_V1',JSON.stringify(this.layout));this.apply();this.disable()}));toolbar.appendChild(actions);this.preview=document.createElement('div');Object.assign(this.preview.style,{position:'absolute',inset:'60px 0 0',pointerEvents:'none'});ids.forEach(id=>{const el=document.createElement('div');el.id='preview-'+id;el.textContent=id.replace('btn-','').toUpperCase();Object.assign(el.style,{position:'absolute',width:'64px',height:'64px',border:'2px solid #d4af37',borderRadius:'50%',display:'grid',placeItems:'center',color:'#fff',background:'#ffffff22',pointerEvents:'auto'});el.onpointerdown=e=>this._dragStart(e,id);this.preview.appendChild(el)});this.overlay.append(toolbar,this.preview);document.body.appendChild(this.overlay);this._update()}
-    _dragStart(e,id){e.preventDefault();const d=this.layout[id];this.drag={id,x:e.clientX,y:e.clientY,startX:d.x,startY:d.y};const move=m=>{if(!this.drag)return;const d=this.layout[id];d.x=Math.max(2,Math.min(98,this.drag.startX+(m.clientX-this.drag.x)/innerWidth*100));d.y=Math.max(5,Math.min(95,this.drag.startY+(m.clientY-this.drag.y)/innerHeight*100));this._update()};const end=()=>{this.drag=null;removeEventListener('pointermove',move);removeEventListener('pointerup',end)};addEventListener('pointermove',move);addEventListener('pointerup',end)}
-    _update(){ids.forEach(id=>{const e=document.getElementById('preview-'+id),d=this.layout[id];if(e&&d){e.style.left=d.x+'%';e.style.top=d.y+'%';e.style.transform=`translate(-50%,-50%) scale(${d.scale})`;e.style.opacity=d.opacity}})}
-    apply(){ids.forEach(id=>{const e=document.getElementById(id),d=this.layout[id];if(e&&d){e.style.position='fixed';e.style.left=d.x+'%';e.style.top=d.y+'%';e.style.transform=`translate(-50%,-50%) scale(${d.scale})`;e.style.opacity=d.opacity}})}
-    enable(){this.init();this.active=true;this.overlay.style.display='block';this._update()}disable(){this.active=false;if(this.overlay)this.overlay.style.display='none'}
-  }
-  const instance=new Customizer();WZ.UICustomizer=instance;
-  if(WZ.bus){WZ.bus.on('CORE_SYSTEM_READY',()=>{instance.init();WZ.bus.emit('UI_CUSTOMIZER_READY')});WZ.bus.on('OPEN_HUD_CUSTOMIZER',()=>instance.enable())}
-  log('success','HUD customizer ready; no extra HUD controls created');
-})(typeof window!=='undefined'?window:globalThis);
+    'use strict';
+
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('32_ui_hud_customizer.js 必須在 01_event_bus_state.js 之後載入');
+    }
+
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
+
+    // ------------------------------------------------------------------------
+    // 1. HUD 自訂預設參數與儲存鍵值
+    // ------------------------------------------------------------------------
+    const HUD_STORAGE_KEY = 'TacticalWarfare.hudCustomizer.v1';
+
+    const DEFAULT_HUD_CONFIG = Object.freeze({
+        crosshair: Object.freeze({
+            enabled: true,
+            color: '#38ef7d',
+            size: 10,
+            thickness: 2,
+            gap: 6,
+            opacity: 0.92,
+            dynamicSpread: true
+        }),
+        radar: Object.freeze({
+            enabled: true,
+            scale: 1.0,
+            range: 42,
+            opacity: 0.85,
+            rotateWithPlayer: true
+        }),
+        panels: Object.freeze({
+            healthArmorVisible: true,
+            ammoWeaponVisible: true,
+            waveScoreVisible: true,
+            tacticalHintsVisible: true,
+            hudScale: 1.0,
+            hudOpacity: 0.92
+        })
+    });
+
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) {
+            return minVal;
+        }
+        if (val > maxVal) {
+            return maxVal;
+        }
+        return val;
+    }
+
+    function cloneConfig(src) {
+        return {
+            crosshair: {
+                enabled: Boolean(src.crosshair.enabled),
+                color: String(src.crosshair.color || '#38ef7d'),
+                size: clamp(Number(src.crosshair.size) || 10, 4, 28),
+                thickness: clamp(Number(src.crosshair.thickness) || 2, 1, 6),
+                gap: clamp(Number(src.crosshair.gap) || 6, 0, 24),
+                opacity: clamp(Number(src.crosshair.opacity) ?? 0.92, 0.1, 1.0),
+                dynamicSpread: Boolean(src.crosshair.dynamicSpread)
+            },
+            radar: {
+                enabled: Boolean(src.radar.enabled),
+                scale: clamp(Number(src.radar.scale) || 1.0, 0.6, 1.6),
+                range: clamp(Number(src.radar.range) || 42, 18, 90),
+                opacity: clamp(Number(src.radar.opacity) ?? 0.85, 0.15, 1.0),
+                rotateWithPlayer: Boolean(src.radar.rotateWithPlayer)
+            },
+            panels: {
+                healthArmorVisible: Boolean(src.panels.healthArmorVisible),
+                ammoWeaponVisible: Boolean(src.panels.ammoWeaponVisible),
+                waveScoreVisible: Boolean(src.panels.waveScoreVisible),
+                tacticalHintsVisible: Boolean(src.panels.tacticalHintsVisible),
+                hudScale: clamp(Number(src.panels.hudScale) || 1.0, 0.7, 1.4),
+                hudOpacity: clamp(Number(src.panels.hudOpacity) ?? 0.92, 0.2, 1.0)
+            }
+        };
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. UiHudCustomizer 主類別
+    // ------------------------------------------------------------------------
+    class UiHudCustomizer {
+        constructor() {
+            this.initialized = false;
+            this.config = cloneConfig(DEFAULT_HUD_CONFIG);
+            this._unsubscribers = [];
+        }
+
+        /**
+         * 初始化 HUD 自訂管理器並載入已儲存設定
+         */
+        init(options) {
+            const opts = options || {};
+            this.config = cloneConfig(DEFAULT_HUD_CONFIG);
+
+            if (opts.loadSaved !== false) {
+                this.loadFromStorage();
+            }
+
+            if (opts.patch) {
+                this.applyPatch(opts.patch, false);
+            }
+
+            this._syncToStateAndBus(false);
+
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
+            }
+
+            return this;
+        }
+
+        _bindEvents() {
+            if (!EventBus || !Events) {
+                return;
+            }
+
+            if (Events.GAME_RESET) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_RESET, () => {
+                        this._syncToStateAndBus(false);
+                    })
+                );
+            }
+        }
+
+        /**
+         * 取得目前 HUD 自訂設定副本
+         */
+        getConfig() {
+            return cloneConfig(this.config);
+        }
+
+        /**
+         * 部分更新準星、雷達或面板設定
+         * @param {Object} partial - { crosshair?: {}, radar?: {}, panels?: {} }
+         * @param {boolean} persist - 是否寫入 localStorage（預設 true）
+         */
+        applyPatch(partial, persist) {
+            if (!partial || typeof partial !== 'object') {
+                return this.getConfig();
+            }
+
+            if (partial.crosshair && typeof partial.crosshair === 'object') {
+                Object.assign(this.config.crosshair, partial.crosshair);
+            }
+            if (partial.radar && typeof partial.radar === 'object') {
+                Object.assign(this.config.radar, partial.radar);
+            }
+            if (partial.panels && typeof partial.panels === 'object') {
+                Object.assign(this.config.panels, partial.panels);
+            }
+
+            this.config = cloneConfig(this.config);
+
+            if (persist !== false) {
+                this.saveToStorage();
+            }
+
+            this._syncToStateAndBus(true);
+            return this.getConfig();
+        }
+
+        /**
+         * 還原為預設 HUD 配置
+         */
+        resetToDefault(persist) {
+            this.config = cloneConfig(DEFAULT_HUD_CONFIG);
+            if (persist !== false) {
+                this.saveToStorage();
+            }
+            this._syncToStateAndBus(true);
+            return this.getConfig();
+        }
+
+        saveToStorage() {
+            try {
+                if (global.localStorage) {
+                    global.localStorage.setItem(HUD_STORAGE_KEY, JSON.stringify(this.config));
+                    return true;
+                }
+            } catch (_err) {
+                // 忽略儲存空間受限或隱私模式例外
+            }
+            return false;
+        }
+
+        loadFromStorage() {
+            try {
+                if (!global.localStorage) {
+                    return false;
+                }
+                const raw = global.localStorage.getItem(HUD_STORAGE_KEY);
+                if (!raw) {
+                    return false;
+                }
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') {
+                    this.config = cloneConfig({
+                        crosshair: Object.assign({}, DEFAULT_HUD_CONFIG.crosshair, parsed.crosshair || {}),
+                        radar: Object.assign({}, DEFAULT_HUD_CONFIG.radar, parsed.radar || {}),
+                        panels: Object.assign({}, DEFAULT_HUD_CONFIG.panels, parsed.panels || {})
+                    });
+                    return true;
+                }
+            } catch (_err) {
+                // 忽略 JSON 解析例外，保留預設值
+            }
+            return false;
+        }
+
+        _syncToStateAndBus(emitEvent) {
+            const snapshot = this.getConfig();
+
+            if (GameState && typeof GameState.patch === 'function') {
+                GameState.patch('hudCustom', snapshot, true);
+            }
+
+            if (emitEvent && EventBus) {
+                const evtName = Events.HUD_CONFIG_CHANGED || 'hud:config_changed';
+                EventBus.emit(evtName, snapshot);
+            }
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+            this.initialized = false;
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const uiHudCustomizerInstance = new UiHudCustomizer();
+
+    const moduleExport = {
+        UiHudCustomizerClass: UiHudCustomizer,
+        instance: uiHudCustomizerInstance,
+        DEFAULT_HUD_CONFIG: DEFAULT_HUD_CONFIG,
+        HUD_STORAGE_KEY: HUD_STORAGE_KEY
+    };
+
+    TacticalWarfare.UiHudCustomizer = uiHudCustomizerInstance;
+    TacticalWarfare.registerModule('32_ui_hud_customizer', moduleExport);
+})(window);
