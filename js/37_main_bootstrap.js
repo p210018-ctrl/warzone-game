@@ -95,7 +95,6 @@
                 });
             }
 
-            // 3. 統一輸入控制器（03_multitouch_controller.js）
             const inputCtrl = this._getInputController();
             if (inputCtrl && typeof inputCtrl.init === 'function') {
                 inputCtrl.init(opts.input || {
@@ -133,6 +132,14 @@
                     camera: weaponCamera || camera,
                     ballistics: TacticalWarfare.BallisticsRecoil,
                     inputSystem: inputCtrl
+                });
+            }
+
+            // [37] 初始化 M4A1 URGI 槍械模型
+            if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.init === 'function') {
+                TacticalWarfare.WeaponM4Urgi.init({
+                    parentGroup: weaponCamera || camera,
+                    visible: true
                 });
             }
 
@@ -267,6 +274,10 @@
             if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.setVisible === 'function') {
                 TacticalWarfare.FpHandsAnatomy.setVisible(true);
             }
+            // [37] 進入戰鬥時確保 M4A1 URGI 槍械模型顯示
+            if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.setVisible === 'function') {
+                TacticalWarfare.WeaponM4Urgi.setVisible(true);
+            }
             if (TacticalWarfare.UiLobby3d && typeof TacticalWarfare.UiLobby3d.setActive === 'function') {
                 TacticalWarfare.UiLobby3d.setActive(false);
             }
@@ -367,6 +378,11 @@
 
                 if (TacticalWarfare.WeaponController && typeof TacticalWarfare.WeaponController.update === 'function') {
                     TacticalWarfare.WeaponController.update(dt, moveRes);
+                }
+
+                // [37] 戰鬥迴圈中每幀更新 M4A1 URGI 模型與後座力動畫
+                if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.update === 'function') {
+                    TacticalWarfare.WeaponM4Urgi.update(dt, moveRes && moveRes.bobOffset ? moveRes.bobOffset : null);
                 }
 
                 if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.update === 'function') {
