@@ -1,754 +1,717 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/11_map_props_covers.js
- * 檔案說明：場地戰術掩體（沙袋陣、貨櫃、木箱、紐澤西護欄、輪胎堆）
- *           與可引爆的紅色燃油桶系統。
- *           包含受擊反饋、爆炸傷害計算、火焰與煙霧粒子特效。
- *           掛載於 window.WZ.MapProps。
- * 目標行數：1200 - 1700 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 11_map_props_covers.js
+ * 戰場道具、低矮掩體、高爆油桶與戰術補給物系統
+ * ============================================================================
+ * 職責：
+ * 1. 建立木箱、戰術掩體、可引爆高爆油桶與地面補給物件，並自動依地面高度貼地放置
+ * 2. 註冊靜態掩體與動態油桶碰撞體至 PhysicsCollision，並提供爆炸物列表查詢
+ * 3. 處理子彈命中高爆油桶與油桶受爆炸波及的連鎖引爆邏輯，並廣播事件
+ * 4. 支援戰局重置時重建油桶與補給物，以及玩家靠近時拾取彈藥／護甲／生命補給
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('11_map_props_covers.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
+    // ------------------------------------------------------------------------
+    // 1. 道具、油桶與補給配置表
+    // ------------------------------------------------------------------------
+    const CRATE_COVER_DEFS = Object.freeze([
+        { id: 'crate_mid_1', x: -4.2, z: -5.5, w: 1.4, h: 1.1, d: 1.4, rotY: 0.15, kind: 'wood', preset: 'wood_crate', surfaceType: 'wood' },
+        { id: 'crate_mid_2', x: 4.5, z: 5.2, w: 1.4, h: 1.1, d: 1.4, rotY: -0.22, kind: 'wood', preset: 'wood_crate', surfaceType: 'wood' },
+        { id: 'crate_nw_1', x: -17.5, z: -14.0, w: 1.6, h: 1.2, d: 1.6, rotY: 0.3, kind: 'wood', preset: 'wood_crate', surfaceType: 'wood' },
+        { id: 'crate_ne_1', x: 17.5, z: -14.0, w: 1.6, h: 1.2, d: 1.6, rotY: -0.25, kind: 'wood', preset: 'wood_crate', surfaceType: 'wood' },
+        { id: 'crate_sw_1', x: -16.5, z: 16.5, w: 1.5, h: 1.15, d: 1.5, rotY: -0.1, kind: 'wood', preset: 'wood_crate', surfaceType: 'wood' },
+        { id: 'crate_se_1', x: 16.5, z: 16.5, w: 1.5, h: 1.15, d: 1.5, rotY: 0.28, kind: 'wood', preset: 'wood_crate', surfaceType: 'wood' },
+        { id: 'barrier_west_1', x: -12.5, z: -6.5, w: 2.8, h: 1.05, d: 0.9, rotY: 0, kind: 'metal', preset: 'metal_dark', surfaceType: 'metal' },
+        { id: 'barrier_east_1', x: 12.5, z: 6.5, w: 2.8, h: 1.05, d: 0.9, rotY: 0, kind: 'metal', preset: 'metal_dark', surfaceType: 'metal' }
+    ]);
 
-    /* =========================================================================
-     * 第一部分：環境檢測與配置常數
-     * ========================================================================= */
+    const EXPLOSIVE_BARREL_DEFS = Object.freeze([
+        { id: 'barrel_center_north', x: -2.6, z: -8.5, hp: 35, radius: 8.5, maxDamage: 220 },
+        { id: 'barrel_center_south', x: 2.6, z: 8.5, hp: 35, radius: 8.5, maxDamage: 220 },
+        { id: 'barrel_west_flank', x: -24.5, z: -6.0, hp: 35, radius: 9.0, maxDamage: 230 },
+        { id: 'barrel_east_flank', x: 24.5, z: 6.0, hp: 35, radius: 9.0, maxDamage: 230 },
+        { id: 'barrel_north_west', x: -12.0, z: -21.0, hp: 35, radius: 8.5, maxDamage: 220 },
+        { id: 'barrel_south_east', x: 12.0, z: 21.0, hp: 35, radius: 8.5, maxDamage: 220 }
+    ]);
 
-    Logger.system('開始載入戰術掩體與燃油桶系統 (js/11_map_props_covers.js)...');
+    const INITIAL_PICKUP_DEFS = Object.freeze([
+        { id: 'pickup_north_1', x: 0.0, z: -15.5, type: 'supply', ammoRatio: 0.5, plates: 1, healAmount: 25 },
+        { id: 'pickup_south_1', x: 0.0, z: 15.5, type: 'supply', ammoRatio: 0.5, plates: 1, healAmount: 25 },
+        { id: 'pickup_west_1', x: -20.0, z: 0.0, type: 'armor_plate', ammoRatio: 0.25, plates: 2, healAmount: 15 },
+        { id: 'pickup_east_1', x: 20.0, z: 0.0, type: 'medkit', ammoRatio: 0.25, plates: 1, healAmount: 40 }
+    ]);
 
-    const THREE = global.THREE;
-    if (!THREE) {
-        Logger.error('找不到 Three.js，無法初始化掩體系統！');
-        return;
-    }
+    const BARREL_RADIUS = 0.52;
+    const BARREL_HEIGHT = 1.35;
+    const PICKUP_COLLECT_RADIUS = 1.65;
 
-    const CONFIG = {
-        // 燃油桶設定
-        BARREL_HEALTH: 100,            // 燃油桶總血量
-        BARREL_FIRE_THRESHOLD: 40,     // 低於此血量開始噴火冒煙
-        BARREL_EXPLOSION_RADIUS: 8.0,  // 爆炸半徑 (公尺)
-        BARREL_EXPLOSION_DAMAGE: 200,  // 爆炸中心傷害
-        BARREL_EXPLOSION_FORCE: 15.0,  // 爆炸擊飛力道
-        
-        // 粒子設定
-        SMOKE_PARTICLE_COUNT: 20,      // 煙霧粒子數量
-        FIRE_PARTICLE_COUNT: 15,       // 火焰粒子數量
-        EXPLOSION_PARTICLE_COUNT: 50,  // 爆炸粒子數量
-        
-        // 掩體設定
-        SANDBAG_WIDTH: 2.0,            // 沙袋寬度
-        SANDBAG_HEIGHT: 1.2,           // 沙袋高度
-        CONTAINER_WIDTH: 3.0,          // 貨櫃寬度
-        CONTAINER_HEIGHT: 2.8,         // 貨櫃高度
-        CONTAINER_DEPTH: 6.0,          // 貨櫃深度
-        WOOD_CRATE_SIZE: 1.2,          // 木箱尺寸
-    };
-
-    /* =========================================================================
-     * 第二部分：材質管理器 (Material Manager)
-     * 負責統一載入與管理所有掩體材質，避免重複建立導致記憶體浪費
-     * ========================================================================= */
-
-    class MaterialManager {
+    // ------------------------------------------------------------------------
+    // 2. MapPropsCovers 主類別
+    // ------------------------------------------------------------------------
+    class MapPropsCovers {
         constructor() {
-            this.materials = {};
+            this.initialized = false;
+            this.scene = null;
+            this.physics = null;
+            this.terrain = null;
+            this.textureFactory = null;
+
+            this.rootGroup = null;
+            this.props = [];
+            this.barrels = [];
+            this.pickups = [];
+            this.registeredStaticColliderIds = [];
+
+            this._nextPickupSeq = 1;
+            this._unsubscribers = [];
         }
 
-        init() {
-            Logger.info('正在初始化掩體材質...');
+        /**
+         * 初始化道具、高爆油桶與戰術補給物件
+         */
+        init(options) {
+            const THREE = global.THREE;
+            if (!THREE) {
+                throw new Error('11_map_props_covers.js 需要 THREE 全域物件');
+            }
 
-            // 1. 沙袋材質 (帆布)
-            let sandbagMap = null;
-            if (WZ.Textures) {
-                const texData = WZ.Textures.getTexture('sandbag', 512);
-                if (texData) {
-                    sandbagMap = new THREE.CanvasTexture(texData.map);
-                    sandbagMap.wrapS = THREE.RepeatWrapping;
-                    sandbagMap.wrapT = THREE.RepeatWrapping;
+            const opts = options || {};
+            this.scene = opts.scene || (TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getScene()) || null;
+            this.physics = opts.physics || TacticalWarfare.PhysicsCollision || null;
+            this.terrain = opts.terrain || TacticalWarfare.MapTerrainGround || null;
+            this.textureFactory = opts.textureFactory || TacticalWarfare.PBRTextureFactory || null;
+
+            if (!this.scene) {
+                throw new Error('11_map_props_covers.js 找不到有效的 Three.js Scene');
+            }
+
+            this.clear();
+
+            this.rootGroup = new THREE.Group();
+            this.rootGroup.name = 'MapPropsCoversGroup';
+            this.scene.add(this.rootGroup);
+
+            this._buildStaticProps();
+            this._registerStaticColliders();
+            this.spawnBarrels();
+            this.spawnInitialPickups();
+
+            if (this.physics && typeof this.physics.setProviders === 'function') {
+                this.physics.setProviders({
+                    getExplosives: () => this.getActiveExplosives()
+                });
+            }
+
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
+            }
+
+            return this;
+        }
+
+        _bindEvents() {
+            if (!EventBus || !Events) {
+                return;
+            }
+
+            if (Events.GAME_RESET) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.GAME_RESET, () => {
+                        this._registerStaticColliders();
+                        this.spawnBarrels();
+                        this.spawnInitialPickups();
+                    })
+                );
+            }
+
+            // 監聽爆炸事件：波及半徑內的其他油桶引發連鎖爆破
+            if (Events.EXPLOSION_TRIGGERED) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.EXPLOSION_TRIGGERED, (payload) => {
+                        if (!payload || !payload.position) {
+                            return;
+                        }
+                        this._applyExplosionToBarrels(
+                            payload.position,
+                            payload.radius || 8.5,
+                            payload.maxDamage || 220,
+                            payload.source
+                        );
+                    })
+                );
+            }
+
+            // 敵軍陣亡時有一定機率在原位掉落戰術補給包
+            if (Events.ENEMY_KILL) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.ENEMY_KILL, (payload) => {
+                        const pos = payload && payload.position;
+                        if (!pos) {
+                            return;
+                        }
+                        if (Math.random() < 0.45) {
+                            const dropType = Math.random() < 0.5 ? 'supply' : 'armor_plate';
+                            this.spawnPickup(pos.x, pos.z, {
+                                type: dropType,
+                                ammoRatio: 0.35,
+                                plates: 1,
+                                healAmount: 20,
+                                ttl: 35
+                            });
+                        }
+                    })
+                );
+            }
+        }
+
+        _getGroundHeight(x, z) {
+            if (this.terrain && typeof this.terrain.getHeightAt === 'function') {
+                return this.terrain.getHeightAt(x, z);
+            }
+            if (this.physics && typeof this.physics.getGroundHeightAt === 'function') {
+                return this.physics.getGroundHeightAt(x, z, 0);
+            }
+            return 0;
+        }
+
+        /**
+         * 建構木箱與低矮戰術掩體
+         */
+        _buildStaticProps() {
+            const THREE = global.THREE;
+            this.props = [];
+
+            for (let i = 0; i < CRATE_COVER_DEFS.length; i = i + 1) {
+                const def = CRATE_COVER_DEFS[i];
+                const groundY = this._getGroundHeight(def.x, def.z);
+                const baseY = groundY - 0.04;
+
+                const mat = this.textureFactory && typeof this.textureFactory.getMaterial === 'function'
+                    ? this.textureFactory.getMaterial(def.preset)
+                    : new THREE.MeshStandardMaterial({
+                        color: def.kind === 'wood' ? 0x7d5c3e : 0x2c323a,
+                        roughness: def.kind === 'wood' ? 0.82 : 0.45
+                    });
+
+                const geo = new THREE.BoxGeometry(def.w, def.h, def.d);
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.name = def.id;
+                mesh.position.set(def.x, baseY + def.h * 0.5, def.z);
+                mesh.rotation.y = def.rotY || 0;
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+
+                this.rootGroup.add(mesh);
+
+                const cos = Math.abs(Math.cos(def.rotY || 0));
+                const sin = Math.abs(Math.sin(def.rotY || 0));
+                const extX = (def.w * 0.5) * cos + (def.d * 0.5) * sin;
+                const extZ = (def.w * 0.5) * sin + (def.d * 0.5) * cos;
+
+                this.props.push({
+                    id: def.id,
+                    kind: def.kind,
+                    surfaceType: def.surfaceType,
+                    aabb: {
+                        minX: def.x - extX,
+                        maxX: def.x + extX,
+                        minY: baseY - 0.1,
+                        maxY: baseY + def.h,
+                        minZ: def.z - extZ,
+                        maxZ: def.z + extZ
+                    },
+                    mesh: mesh
+                });
+            }
+        }
+
+        _registerStaticColliders() {
+            if (!this.physics || typeof this.physics.addBoxCollider !== 'function') {
+                return;
+            }
+
+            if (typeof this.physics.removeColliderById === 'function') {
+                for (let i = 0; i < this.registeredStaticColliderIds.length; i = i + 1) {
+                    this.physics.removeColliderById(this.registeredStaticColliderIds[i]);
                 }
             }
-            this.materials.sandbag = new THREE.MeshStandardMaterial({
-                map: sandbagMap,
-                color: 0xffffff,
-                roughness: 0.95,
-                metalness: 0.05
-            });
+            this.registeredStaticColliderIds = [];
 
-            // 2. 軍用貨櫃材質 (波紋鋼板)
-            // 這裡我們使用純色加金屬質感來模擬波紋鋼板，若需要更精細可配合法線貼圖
-            this.materials.container = new THREE.MeshStandardMaterial({
-                color: 0x2e3b2f, // 深軍綠
-                roughness: 0.6,
-                metalness: 0.7
-            });
-
-            // 3. 木質彈藥箱材質
-            let woodMap = null;
-            if (WZ.Textures) {
-                const texData = WZ.Textures.getTexture('wood_crate', 512);
-                if (texData) {
-                    woodMap = new THREE.CanvasTexture(texData.map);
-                }
-            }
-            this.materials.wood = new THREE.MeshStandardMaterial({
-                map: woodMap,
-                color: 0xffffff,
-                roughness: 0.85,
-                metalness: 0.1
-            });
-
-            // 4. 紐澤西護欄材質 (混凝土)
-            this.materials.concrete = new THREE.MeshStandardMaterial({
-                color: 0x999999,
-                roughness: 0.9,
-                metalness: 0.0
-            });
-
-            // 5. 輪胎材質 (黑色橡膠)
-            this.materials.rubber = new THREE.MeshStandardMaterial({
-                color: 0x111111,
-                roughness: 0.9,
-                metalness: 0.1
-            });
-
-            // 6. 紅色燃油桶材質
-            this.materials.barrelRed = new THREE.MeshStandardMaterial({
-                color: 0xcc2222,
-                roughness: 0.4,
-                metalness: 0.6
-            });
-
-            // 7. 燃油桶白色警示條
-            this.materials.barrelWhite = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                roughness: 0.5,
-                metalness: 0.3
-            });
-
-            // 8. 爆炸後的焦黑材質
-            this.materials.burned = new THREE.MeshStandardMaterial({
-                color: 0x111111,
-                roughness: 1.0,
-                metalness: 0.0
-            });
-
-            Logger.success('掩體材質初始化完畢');
-        }
-
-        get(name) {
-            return this.materials[name] || this.materials.concrete; // 預設返回混凝土
-        }
-    }
-
-    /* =========================================================================
-     * 第三部分：燃油桶類別 (ExplosiveBarrel)
-     * 封裝燃油桶的狀態機、幾何體、粒子特效與受擊邏輯
-     * ========================================================================= */
-
-    class ExplosiveBarrel {
-        constructor(id, position, materialManager) {
-            this.id = id;
-            this.position = position.clone();
-            this.materialManager = materialManager;
-            
-            // 狀態機
-            this.state = 'intact'; // 'intact' | 'burning' | 'exploding' | 'destroyed'
-            this.health = CONFIG.BARREL_HEALTH;
-            
-            // 核心物件
-            this.group = new THREE.Group();
-            this.barrelMesh = null;
-            this.bandMesh = null;
-            
-            // 粒子系統
-            this.smokeParticles = [];
-            this.fireParticles = [];
-            this.smokeTimer = 0;
-            this.fireTimer = 0;
-            
-            // 爆炸計時
-            this.explosionTimer = 0;
-
-            this._createMesh();
-        }
-
-        _createMesh() {
-            this.group.position.copy(this.position);
-
-            // 1. 桶身 (圓柱體)
-            const barrelGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 16);
-            this.barrelMesh = new THREE.Mesh(barrelGeo, this.materialManager.get('barrelRed'));
-            this.barrelMesh.castShadow = true;
-            this.barrelMesh.receiveShadow = true;
-            this.barrelMesh.position.y = 0.6; // 底部對齊地面
-            this.group.add(this.barrelMesh);
-
-            // 2. 白色警示條 (兩個圓環)
-            const bandGeo = new THREE.CylinderGeometry(0.41, 0.41, 0.15, 16);
-            this.bandMesh = new THREE.Mesh(bandGeo, this.materialManager.get('barrelWhite'));
-            this.bandMesh.position.y = 0.8;
-            this.group.add(this.bandMesh);
-
-            const bandGeo2 = new THREE.CylinderGeometry(0.41, 0.41, 0.15, 16);
-            const bandMesh2 = new THREE.Mesh(bandGeo2, this.materialManager.get('barrelWhite'));
-            bandMesh2.position.y = 0.4;
-            this.group.add(bandMesh2);
-
-            // 註冊碰撞體
-            if (WZ.Physics) {
-                const box = new THREE.Box3().setFromObject(this.barrelMesh);
-                WZ.Physics.addStaticCollider({
-                    min: { x: box.min.x, y: box.min.y, z: box.min.z },
-                    max: { x: box.max.x, y: box.max.y, z: box.max.z }
-                }, { type: 'explosive_barrel', id: this.id });
+            for (let i = 0; i < this.props.length; i = i + 1) {
+                const p = this.props[i];
+                const colId = 'prop_' + p.id;
+                this.physics.addBoxCollider({
+                    id: colId,
+                    minX: p.aabb.minX,
+                    maxX: p.aabb.maxX,
+                    minY: p.aabb.minY,
+                    maxY: p.aabb.maxY,
+                    minZ: p.aabb.minZ,
+                    maxZ: p.aabb.maxZ,
+                    surfaceType: p.surfaceType,
+                    blocksMovement: true,
+                    blocksBullets: true,
+                    isDynamic: false
+                });
+                this.registeredStaticColliderIds.push(colId);
             }
         }
 
         /**
-         * 處理受擊
-         * @param {number} damage 傷害值
-         * @param {THREE.Vector3} hitPoint 擊中點
+         * 生成／重置戰場紅色高爆油桶
          */
-        takeDamage(damage, hitPoint) {
-            if (this.state === 'destroyed' || this.state === 'exploding') return;
-
-            this.health -= damage;
-            Logger.event(`燃油桶 [${this.id}] 受到 ${damage} 點傷害，剩餘血量: ${this.health}`);
-
-            // 播放火花特效 (由外部粒子系統處理)
-            if (WZ.bus) {
-                WZ.bus.emit('SPAWN_PARTICLES', { 
-                    type: 'spark', 
-                    position: hitPoint, 
-                    count: 5 
-                });
+        spawnBarrels() {
+            const THREE = global.THREE;
+            if (!THREE || !this.rootGroup) {
+                return;
             }
 
-            // 檢查是否進入燃燒狀態
-            if (this.health <= CONFIG.BARREL_FIRE_THRESHOLD && this.state === 'intact') {
-                this.state = 'burning';
-                Logger.warn(`燃油桶 [${this.id}] 開始燃燒漏油！`);
-                this._startBurning();
-            }
-
-            // 檢查是否爆炸
-            if (this.health <= 0 && this.state !== 'exploding') {
-                this._explode();
-            }
-        }
-
-        _startBurning() {
-            // 可以改變材質顏色，或加上火焰效果
-            this.barrelMesh.material = new THREE.MeshStandardMaterial({
-                color: 0x551111,
-                roughness: 0.8,
-                metalness: 0.2
-            });
-            
-            // 設定爆炸倒數 (例如 2 秒後爆炸)
-            this.explosionTimer = 2.0;
-        }
-
-        _explode() {
-            this.state = 'exploding';
-            Logger.warn(`燃油桶 [${this.id}] 發生劇烈爆炸！`);
-
-            // 1. 觸發全局爆炸事件 (讓相機震動、音效等系統響應)
-            if (WZ.bus) {
-                WZ.bus.emit('EXPLOSION', {
-                    position: this.position,
-                    radius: CONFIG.BARREL_EXPLOSION_RADIUS,
-                    damage: CONFIG.BARREL_EXPLOSION_DAMAGE,
-                    force: CONFIG.BARREL_EXPLOSION_FORCE
-                });
-            }
-
-            // 2. 造成範圍傷害與擊飛 (發送事件給玩家與敵人系統)
-            this._applyExplosionDamage();
-
-            // 3. 生成爆炸特效 (火焰與煙霧粒子)
-            this._spawnExplosionEffects();
-
-            // 4. 隱藏原始桶身，變為焦黑殘骸
-            this.barrelMesh.material = this.materialManager.get('burned');
-            this.bandMesh.visible = false;
-
-            // 5. 標記為已摧毀
-            this.state = 'destroyed';
-        }
-
-        _applyExplosionDamage() {
-            // 尋找範圍內的實體
-            const radiusSq = CONFIG.BARREL_EXPLOSION_RADIUS * CONFIG.BARREL_EXPLOSION_RADIUS;
-
-            // 檢查玩家
-            if (WZ.CameraRig && WZ.PlayerHealth) {
-                const playerPos = WZ.CameraRig.base.position;
-                const dx = playerPos.x - this.position.x;
-                const dy = playerPos.y - this.position.y;
-                const dz = playerPos.z - this.position.z;
-                const distSq = dx*dx + dy*dy + dz*dz;
-
-                if (distSq < radiusSq) {
-                    const dist = Math.sqrt(distSq);
-                    // 距離衰減
-                    const damageFalloff = 1.0 - (dist / CONFIG.BARREL_EXPLOSION_RADIUS);
-                    const finalDamage = CONFIG.BARREL_EXPLOSION_DAMAGE * damageFalloff;
-
-                    Logger.info(`玩家受到爆炸傷害: ${finalDamage.toFixed(1)}`);
-                    
-                    if (WZ.bus) {
-                        WZ.bus.emit('PLAYER_RECEIVE_DAMAGE', {
-                            amount: finalDamage,
-                            sourcePos: this.position,
-                            type: 'explosion'
-                        });
-                    }
+            // 清除既有油桶網格與動態碰撞體
+            for (let i = 0; i < this.barrels.length; i = i + 1) {
+                const b = this.barrels[i];
+                if (b.group && b.group.parent) {
+                    b.group.parent.remove(b.group);
+                }
+                if (this.physics && typeof this.physics.removeColliderById === 'function') {
+                    this.physics.removeColliderById(b.colliderId);
                 }
             }
+            this.barrels = [];
 
-            // 檢查敵人 (假設有敵人管理系統)
-            if (WZ.bus) {
-                WZ.bus.emit('APPLY_EXPLOSION_DAMAGE', {
-                    position: this.position,
-                    radius: CONFIG.BARREL_EXPLOSION_RADIUS,
-                    damage: CONFIG.BARREL_EXPLOSION_DAMAGE,
-                    force: CONFIG.BARREL_EXPLOSION_FORCE
-                });
-            }
-        }
+            const barrelMat = this.textureFactory && typeof this.textureFactory.getMaterial === 'function'
+                ? this.textureFactory.getMaterial('hazard_barrel')
+                : new THREE.MeshStandardMaterial({ color: 0xc92a2a, roughness: 0.4, metalness: 0.65 });
 
-        _spawnExplosionEffects() {
-            // 這裡我們直接在場景中生成火焰球體與煙霧粒子
-            // 為了效能，我們使用簡單的球體與點來模擬
-            
-            const effectGroup = new THREE.Group();
-            effectGroup.position.copy(this.position);
-            
-            // 1. 火焰球 (快速膨脹並消散)
-            const fireGeo = new THREE.SphereGeometry(1.0, 8, 8);
-            const fireMat = new THREE.MeshBasicMaterial({
-                color: 0xffaa00,
-                transparent: true,
-                opacity: 1.0,
-                blending: THREE.AdditiveBlending
-            });
-            const fireMesh = new THREE.Mesh(fireGeo, fireMat);
-            fireMesh.position.y = 0.6;
-            effectGroup.add(fireMesh);
+            const capMat = this.textureFactory && typeof this.textureFactory.getMaterial === 'function'
+                ? this.textureFactory.getMaterial('metal_dark')
+                : new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.35, metalness: 0.85 });
 
-            // 2. 煙霧粒子
-            const smokeGeo = new THREE.SphereGeometry(0.5, 6, 6);
-            const smokeMat = new THREE.MeshBasicMaterial({
-                color: 0x222222,
-                transparent: true,
-                opacity: 0.8
-            });
+            const cylGeo = new THREE.CylinderGeometry(BARREL_RADIUS, BARREL_RADIUS, BARREL_HEIGHT, 18);
+            const rimGeo = new THREE.TorusGeometry(BARREL_RADIUS * 0.98, 0.035, 8, 20);
+            rimGeo.rotateX(Math.PI / 2);
 
-            for (let i = 0; i < 15; i++) {
-                const smokeMesh = new THREE.Mesh(smokeGeo, smokeMat);
-                smokeMesh.position.set(
-                    (Math.random() - 0.5) * 2,
-                    0.5 + Math.random() * 3,
-                    (Math.random() - 0.5) * 2
-                );
-                effectGroup.add(smokeMesh);
-            }
+            for (let i = 0; i < EXPLOSIVE_BARREL_DEFS.length; i = i + 1) {
+                const def = EXPLOSIVE_BARREL_DEFS[i];
+                const groundY = this._getGroundHeight(def.x, def.z);
+                const baseY = groundY - 0.03;
 
-            // 加入場景
-            if (WZ.Renderer && WZ.Renderer.scene) {
-                WZ.Renderer.scene.add(effectGroup);
-            }
+                const group = new THREE.Group();
+                group.name = def.id;
+                group.position.set(def.x, baseY, def.z);
 
-            // 動畫更新 (使用 requestAnimationFrame 簡單模擬)
-            let elapsed = 0;
-            const duration = 1.5; // 動畫持續 1.5 秒
-            
-            const animateEffect = () => {
-                elapsed += 0.016; // 假設 60fps
-                const progress = elapsed / duration;
+                const cylMesh = new THREE.Mesh(cylGeo, barrelMat);
+                cylMesh.position.set(0, BARREL_HEIGHT * 0.5, 0);
+                cylMesh.castShadow = true;
+                cylMesh.receiveShadow = true;
+                group.add(cylMesh);
 
-                if (progress >= 1.0) {
-                    // 動畫結束，移除物件
-                    if (WZ.Renderer && WZ.Renderer.scene) {
-                        WZ.Renderer.scene.remove(effectGroup);
-                    }
-                    // 清理資源
-                    fireGeo.dispose();
-                    fireMat.dispose();
-                    smokeGeo.dispose();
-                    smokeMat.dispose();
-                    return;
+                const topRim = new THREE.Mesh(rimGeo, capMat);
+                topRim.position.set(0, BARREL_HEIGHT - 0.06, 0);
+                group.add(topRim);
+
+                const botRim = new THREE.Mesh(rimGeo, capMat);
+                botRim.position.set(0, 0.08, 0);
+                group.add(botRim);
+
+                this.rootGroup.add(group);
+
+                const box = {
+                    minX: def.x - BARREL_RADIUS,
+                    maxX: def.x + BARREL_RADIUS,
+                    minY: baseY,
+                    maxY: baseY + BARREL_HEIGHT,
+                    minZ: def.z - BARREL_RADIUS,
+                    maxZ: def.z + BARREL_RADIUS
+                };
+
+                const colliderId = 'barrel_col_' + def.id;
+                if (this.physics && typeof this.physics.addBoxCollider === 'function') {
+                    this.physics.addBoxCollider({
+                        id: colliderId,
+                        minX: box.minX,
+                        maxX: box.maxX,
+                        minY: box.minY,
+                        maxY: box.maxY,
+                        minZ: box.minZ,
+                        maxZ: box.maxZ,
+                        surfaceType: 'metal',
+                        blocksMovement: true,
+                        blocksBullets: false, // 由油桶專屬射擊判定處理，命中後扣血引爆
+                        isDynamic: true,
+                        userData: { barrelId: def.id }
+                    });
                 }
 
-                // 火焰膨脹與淡出
-                const scale = 1.0 + progress * 4.0;
-                fireMesh.scale.set(scale, scale, scale);
-                fireMat.opacity = 1.0 - progress;
-
-                // 煙霧上升與擴散
-                effectGroup.children.forEach((child, index) => {
-                    if (index > 0) { // 跳過火焰球
-                        child.position.y += 0.05;
-                        child.position.x += (Math.random() - 0.5) * 0.1;
-                        child.position.z += (Math.random() - 0.5) * 0.1;
-                        const s = 1.0 + progress * 2.0;
-                        child.scale.set(s, s, s);
-                        child.material.opacity = 0.8 * (1.0 - progress);
-                    }
+                this.barrels.push({
+                    id: def.id,
+                    hp: def.hp,
+                    maxHp: def.hp,
+                    radius: def.radius,
+                    maxDamage: def.maxDamage,
+                    hitRadius: 0.65,
+                    exploded: false,
+                    position: { x: def.x, y: baseY + BARREL_HEIGHT * 0.5, z: def.z },
+                    box: box,
+                    colliderId: colliderId,
+                    group: group
                 });
+            }
 
-                requestAnimationFrame(animateEffect);
+            this._updateWorldCounters();
+        }
+
+        /**
+         * 取得尚未引爆的油桶清單（供 PhysicsCollision.raycastCombat 檢測命中）
+         */
+        getActiveExplosives() {
+            const list = [];
+            for (let i = 0; i < this.barrels.length; i = i + 1) {
+                const b = this.barrels[i];
+                if (!b.exploded) {
+                    list.push(b);
+                }
+            }
+            return list;
+        }
+
+        /**
+         * 處理子彈或火力命中油桶
+         */
+        damageBarrel(barrelOrId, damageAmount) {
+            const barrel = typeof barrelOrId === 'string'
+                ? this.barrels.find((item) => item.id === barrelOrId)
+                : barrelOrId;
+
+            if (!barrel || barrel.exploded) {
+                return false;
+            }
+
+            const dmg = typeof damageAmount === 'number' && damageAmount > 0 ? damageAmount : 25;
+            barrel.hp -= dmg;
+
+            // 命中時微幅晃動油桶提示受擊
+            if (barrel.group) {
+                barrel.group.rotation.z = (Math.random() - 0.5) * 0.14;
+                barrel.group.rotation.x = (Math.random() - 0.5) * 0.14;
+            }
+
+            if (barrel.hp <= 0) {
+                this.detonateBarrel(barrel);
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * 引爆指定高爆油桶並廣播爆炸與引爆事件
+         */
+        detonateBarrel(barrelOrId) {
+            const barrel = typeof barrelOrId === 'string'
+                ? this.barrels.find((item) => item.id === barrelOrId)
+                : barrelOrId;
+
+            if (!barrel || barrel.exploded) {
+                return;
+            }
+
+            barrel.exploded = true;
+            barrel.hp = 0;
+
+            if (barrel.group && barrel.group.parent) {
+                barrel.group.parent.remove(barrel.group);
+            }
+
+            if (this.physics && typeof this.physics.removeColliderById === 'function') {
+                this.physics.removeColliderById(barrel.colliderId);
+            }
+
+            const boomPos = {
+                x: barrel.position.x,
+                y: barrel.position.y + 0.2,
+                z: barrel.position.z
             };
 
-            requestAnimationFrame(animateEffect);
-        }
+            this._updateWorldCounters();
 
-        update(dt) {
-            if (this.state === 'burning') {
-                // 燃燒時的震動效果 (讓桶身抖動)
-                this.barrelMesh.position.x = Math.sin(performance.now() * 0.05) * 0.02;
-                this.barrelMesh.position.z = Math.cos(performance.now() * 0.05) * 0.02;
+            if (EventBus) {
+                if (Events.BARREL_DETONATED) {
+                    EventBus.emit(Events.BARREL_DETONATED, {
+                        barrelId: barrel.id,
+                        position: boomPos,
+                        radius: barrel.radius,
+                        maxDamage: barrel.maxDamage
+                    });
+                }
 
-                // 倒數計時爆炸
-                this.explosionTimer -= dt;
-                if (this.explosionTimer <= 0) {
-                    this._explode();
+                if (this.physics && typeof this.physics.emitExplosion === 'function') {
+                    this.physics.emitExplosion({
+                        position: boomPos,
+                        radius: barrel.radius,
+                        maxDamage: barrel.maxDamage,
+                        shakeRadius: 32,
+                        source: 'barrel'
+                    });
+                } else if (Events.EXPLOSION_TRIGGERED) {
+                    EventBus.emit(Events.EXPLOSION_TRIGGERED, {
+                        position: boomPos,
+                        radius: barrel.radius,
+                        maxDamage: barrel.maxDamage,
+                        shakeRadius: 32,
+                        source: 'barrel'
+                    });
                 }
             }
         }
-    }
 
-    /* =========================================================================
-     * 第四部分：掩體生成器 (Prop Generator)
-     * ========================================================================= */
+        /**
+         * 爆炸範圍波及相鄰油桶的連鎖引爆判定
+         */
+        _applyExplosionToBarrels(origin, radius, maxDamage, sourceTag) {
+            for (let i = 0; i < this.barrels.length; i = i + 1) {
+                const b = this.barrels[i];
+                if (b.exploded) {
+                    continue;
+                }
+                const dx = b.position.x - origin.x;
+                const dy = b.position.y - origin.y;
+                const dz = b.position.z - origin.z;
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    class PropGenerator {
-        static createSandbagPile(x, z, width, layers, materialManager) {
-            const group = new THREE.Group();
-            group.position.set(x, 0, z);
+                // 避免同一個油桶因自身爆炸事件重複觸發
+                if (dist < 0.2 && sourceTag === 'barrel') {
+                    continue;
+                }
 
-            const bagRadius = 0.25;
-            const bagWidth = width / 3;
+                if (dist < radius) {
+                    const falloff = 1 - dist / radius;
+                    const splashDamage = (maxDamage || 200) * (0.35 + 0.65 * falloff);
+                    this.damageBarrel(b, splashDamage);
+                }
+            }
+        }
 
-            for (let l = 0; l < layers; l++) {
-                const count = 3 - (l % 2);
-                const yOffset = l * bagRadius * 1.5;
+        /**
+         * 生成初始戰場補給物
+         */
+        spawnInitialPickups() {
+            this.clearPickups();
+            for (let i = 0; i < INITIAL_PICKUP_DEFS.length; i = i + 1) {
+                const def = INITIAL_PICKUP_DEFS[i];
+                this.spawnPickup(def.x, def.z, {
+                    id: def.id,
+                    type: def.type,
+                    ammoRatio: def.ammoRatio,
+                    plates: def.plates,
+                    healAmount: def.healAmount,
+                    ttl: 999999
+                });
+            }
+        }
 
-                for (let i = 0; i < count; i++) {
-                    const bagGeo = new THREE.SphereGeometry(bagRadius, 8, 6);
-                    // 壓扁球體使其像沙袋
-                    bagGeo.scale(bagWidth * 1.5, bagRadius, 1.2);
-                    
-                    const bagMesh = new THREE.Mesh(bagGeo, materialManager.get('sandbag'));
-                    
-                    const offsetX = (i - (count - 1) / 2) * (bagWidth * 1.8);
-                    bagMesh.position.set(offsetX, yOffset + bagRadius, 0);
-                    
-                    bagMesh.castShadow = true;
-                    bagMesh.receiveShadow = true;
-                    
-                    group.add(bagMesh);
+        /**
+         * 在指定 (x, z) 放置戰術補給包
+         */
+        spawnPickup(x, z, opts) {
+            const THREE = global.THREE;
+            if (!THREE || !this.rootGroup) {
+                return null;
+            }
+
+            const spec = opts || {};
+            const groundY = this._getGroundHeight(x, z);
+            const posY = groundY + 0.24;
+
+            const colorHex = spec.type === 'armor_plate'
+                ? 0x29b6f6
+                : (spec.type === 'medkit' ? 0x66bb6a : 0xffb74d);
+
+            const geo = new THREE.BoxGeometry(0.46, 0.24, 0.36);
+            const mat = new THREE.MeshStandardMaterial({
+                color: colorHex,
+                emissive: colorHex,
+                emissiveIntensity: 0.22,
+                roughness: 0.4,
+                metalness: 0.35
+            });
+
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.name = spec.id || ('pickup_' + (this._nextPickupSeq++));
+            mesh.position.set(x, posY, z);
+            mesh.castShadow = true;
+
+            this.rootGroup.add(mesh);
+
+            const pickup = {
+                id: mesh.name,
+                type: spec.type || 'supply',
+                position: { x: x, y: posY, z: z },
+                baseY: posY,
+                ammoRatio: typeof spec.ammoRatio === 'number' ? spec.ammoRatio : 0.4,
+                plates: typeof spec.plates === 'number' ? spec.plates : 1,
+                healAmount: typeof spec.healAmount === 'number' ? spec.healAmount : 25,
+                ttl: typeof spec.ttl === 'number' ? spec.ttl : 40,
+                age: 0,
+                collected: false,
+                mesh: mesh
+            };
+
+            this.pickups.push(pickup);
+            this._updateWorldCounters();
+            return pickup;
+        }
+
+        /**
+         * 每幀更新補給物浮動旋轉、存活時間與玩家靠近拾取判定
+         */
+        update(deltaTime, playerPosition) {
+            const dt = Math.min(0.1, Math.max(0.0001, deltaTime || 0.016));
+            let changed = false;
+
+            for (let i = this.pickups.length - 1; i >= 0; i = i - 1) {
+                const p = this.pickups[i];
+                if (p.collected) {
+                    this.pickups.splice(i, 1);
+                    changed = true;
+                    continue;
+                }
+
+                p.age += dt;
+                if (p.age >= p.ttl) {
+                    if (p.mesh && p.mesh.parent) {
+                        p.mesh.parent.remove(p.mesh);
+                    }
+                    if (p.mesh && p.mesh.geometry) p.mesh.geometry.dispose();
+                    if (p.mesh && p.mesh.material) p.mesh.material.dispose();
+                    this.pickups.splice(i, 1);
+                    changed = true;
+                    continue;
+                }
+
+                if (p.mesh) {
+                    p.mesh.rotation.y += 1.8 * dt;
+                    p.mesh.position.y = p.baseY + Math.sin(p.age * 3.2) * 0.06;
+                }
+
+                if (playerPosition) {
+                    const dx = playerPosition.x - p.position.x;
+                    const dz = playerPosition.z - p.position.z;
+                    const distSq = dx * dx + dz * dz;
+                    if (distSq <= PICKUP_COLLECT_RADIUS * PICKUP_COLLECT_RADIUS) {
+                        p.collected = true;
+                        if (p.mesh && p.mesh.parent) {
+                            p.mesh.parent.remove(p.mesh);
+                        }
+                        if (p.mesh && p.mesh.geometry) p.mesh.geometry.dispose();
+                        if (p.mesh && p.mesh.material) p.mesh.material.dispose();
+                        this.pickups.splice(i, 1);
+                        changed = true;
+
+                        if (EventBus && Events.PICKUP_COLLECTED) {
+                            EventBus.emit(Events.PICKUP_COLLECTED, {
+                                id: p.id,
+                                type: p.type,
+                                ammoRatio: p.ammoRatio,
+                                plates: p.plates,
+                                healAmount: p.healAmount,
+                                position: { x: p.position.x, y: p.position.y, z: p.position.z }
+                            });
+                        }
+                    }
                 }
             }
 
-            // 註冊碰撞 (簡化為一個大的 AABB)
-            if (WZ.Physics) {
-                const box = new THREE.Box3().setFromObject(group);
-                WZ.Physics.addStaticCollider({
-                    min: { x: box.min.x, y: box.min.y, z: box.min.z },
-                    max: { x: box.max.x, y: box.max.y, z: box.max.z }
-                }, { type: 'sandbag' });
+            if (changed) {
+                this._updateWorldCounters();
             }
-
-            return group;
         }
 
-        static createContainer(x, z, rotationY, materialManager) {
-            const group = new THREE.Group();
-            group.position.set(x, 0, z);
-            group.rotation.y = rotationY;
-
-            // 貨櫃主體
-            const geo = new THREE.BoxGeometry(CONFIG.CONTAINER_WIDTH, CONFIG.CONTAINER_HEIGHT, CONFIG.CONTAINER_DEPTH);
-            const mesh = new THREE.Mesh(geo, materialManager.get('container'));
-            mesh.position.y = CONFIG.CONTAINER_HEIGHT / 2;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            group.add(mesh);
-
-            // 貨櫃門 (簡單裝飾)
-            const doorGeo = new THREE.BoxGeometry(CONFIG.CONTAINER_WIDTH * 0.9, CONFIG.CONTAINER_HEIGHT * 0.9, 0.1);
-            const doorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
-            const doorMesh = new THREE.Mesh(doorGeo, doorMat);
-            doorMesh.position.set(0, CONFIG.CONTAINER_HEIGHT / 2, CONFIG.CONTAINER_DEPTH / 2 + 0.05);
-            group.add(doorMesh);
-
-            // 註冊碰撞
-            if (WZ.Physics) {
-                const box = new THREE.Box3().setFromObject(mesh);
-                WZ.Physics.addStaticCollider({
-                    min: { x: box.min.x, y: box.min.y, z: box.min.z },
-                    max: { x: box.max.x, y: box.max.y, z: box.max.z }
-                }, { type: 'container' });
+        _updateWorldCounters() {
+            if (!GameState || !GameState.raw || !GameState.raw.world) {
+                return;
             }
-
-            return group;
+            let activeCount = 0;
+            for (let i = 0; i < this.barrels.length; i = i + 1) {
+                if (!this.barrels[i].exploded) {
+                    activeCount = activeCount + 1;
+                }
+            }
+            GameState.raw.world.activeBarrels = activeCount;
+            GameState.raw.world.activePickups = this.pickups.length;
         }
 
-        static createWoodCrate(x, z, size, materialManager) {
-            const group = new THREE.Group();
-            group.position.set(x, 0, z);
-
-            const geo = new THREE.BoxGeometry(size, size, size);
-            const mesh = new THREE.Mesh(geo, materialManager.get('wood'));
-            mesh.position.y = size / 2;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            group.add(mesh);
-
-            // 註冊碰撞
-            if (WZ.Physics) {
-                const box = new THREE.Box3().setFromObject(mesh);
-                WZ.Physics.addStaticCollider({
-                    min: { x: box.min.x, y: box.min.y, z: box.min.z },
-                    max: { x: box.max.x, y: box.max.y, z: box.max.z }
-                }, { type: 'wood_crate' });
+        clearPickups() {
+            for (let i = 0; i < this.pickups.length; i = i + 1) {
+                const p = this.pickups[i];
+                if (p.mesh && p.mesh.parent) {
+                    p.mesh.parent.remove(p.mesh);
+                }
+                if (p.mesh && p.mesh.geometry) p.mesh.geometry.dispose();
+                if (p.mesh && p.mesh.material) p.mesh.material.dispose();
             }
-
-            return group;
+            this.pickups = [];
+            this._updateWorldCounters();
         }
 
-        static createJerseyBarrier(x, z, rotationY, length, materialManager) {
-            const group = new THREE.Group();
-            group.position.set(x, 0, z);
-            group.rotation.y = rotationY;
+        clear() {
+            this.clearPickups();
 
-            // 紐澤西護欄形狀 (簡化為梯形)
-            const geo = new THREE.BoxGeometry(length, 0.8, 0.6);
-            const mesh = new THREE.Mesh(geo, materialManager.get('concrete'));
-            mesh.position.y = 0.4;
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            group.add(mesh);
-
-            // 頂部窄版
-            const topGeo = new THREE.BoxGeometry(length, 0.3, 0.3);
-            const topMesh = new THREE.Mesh(topGeo, materialManager.get('concrete'));
-            topMesh.position.y = 0.95;
-            group.add(topMesh);
-
-            // 註冊碰撞
-            if (WZ.Physics) {
-                const box = new THREE.Box3().setFromObject(group);
-                WZ.Physics.addStaticCollider({
-                    min: { x: box.min.x, y: box.min.y, z: box.min.z },
-                    max: { x: box.max.x, y: box.max.y, z: box.max.z }
-                }, { type: 'barrier' });
+            for (let i = 0; i < this.barrels.length; i = i + 1) {
+                const b = this.barrels[i];
+                if (this.physics && typeof this.physics.removeColliderById === 'function') {
+                    this.physics.removeColliderById(b.colliderId);
+                }
             }
-
-            return group;
-        }
-
-        static createTireStack(x, z, materialManager) {
-            const group = new THREE.Group();
-            group.position.set(x, 0, z);
-
-            const tireGeo = new THREE.TorusGeometry(0.4, 0.15, 8, 16);
-            
-            for (let i = 0; i < 3; i++) {
-                const tireMesh = new THREE.Mesh(tireGeo, materialManager.get('rubber'));
-                tireMesh.rotation.x = Math.PI / 2;
-                tireMesh.position.y = 0.15 + i * 0.3;
-                tireMesh.castShadow = true;
-                group.add(tireMesh);
-            }
-
-            // 註冊碰撞
-            if (WZ.Physics) {
-                const box = new THREE.Box3().setFromObject(group);
-                WZ.Physics.addStaticCollider({
-                    min: { x: box.min.x, y: box.min.y, z: box.min.z },
-                    max: { x: box.max.x, y: box.max.y, z: box.max.z }
-                }, { type: 'tire_stack' });
-            }
-
-            return group;
-        }
-    }
-
-    /* =========================================================================
-     * 第五部分：掩體總管 (MapPropsManager)
-     * ========================================================================= */
-
-    class MapPropsManager {
-        constructor() {
-            this.rootGroup = null;
-            this.materialManager = new MaterialManager();
             this.barrels = [];
-        }
 
-        init(scene) {
-            if (!scene) return;
-
-            this.rootGroup = new THREE.Group();
-            this.rootGroup.name = 'PropsRoot';
-            scene.add(this.rootGroup);
-
-            // 1. 初始化材質
-            this.materialManager.init();
-
-            // 2. 放置掩體
-            this._spawnCovers();
-
-            // 3. 放置燃油桶
-            this._spawnBarrels();
-
-            // 4. 監聽受擊事件
-            this._setupEvents();
-
-            Logger.success('所有掩體與燃油桶佈置完畢');
-        }
-
-        _spawnCovers() {
-            Logger.info('正在佈置戰術掩體...');
-
-            // 沙袋陣
-            const sandbag1 = PropGenerator.createSandbagPile(-10, -10, 2.5, 3, this.materialManager);
-            this.rootGroup.add(sandbag1);
-
-            const sandbag2 = PropGenerator.createSandbagPile(15, 5, 2.0, 2, this.materialManager);
-            this.rootGroup.add(sandbag2);
-
-            // 貨櫃
-            const container1 = PropGenerator.createContainer(-20, 20, Math.PI / 4, this.materialManager);
-            this.rootGroup.add(container1);
-
-            const container2 = PropGenerator.createContainer(10, -30, -Math.PI / 6, this.materialManager);
-            this.rootGroup.add(container2);
-
-            // 木箱
-            const crate1 = PropGenerator.createWoodCrate(5, 10, 1.5, this.materialManager);
-            this.rootGroup.add(crate1);
-
-            const crate2 = PropGenerator.createWoodCrate(6, 10, 1.2, this.materialManager);
-            this.rootGroup.add(crate2);
-
-            // 紐澤西護欄
-            const barrier1 = PropGenerator.createJerseyBarrier(0, 0, 0, 4.0, this.materialManager);
-            this.rootGroup.add(barrier1);
-
-            // 輪胎堆
-            const tires1 = PropGenerator.createTireStack(-5, 5, this.materialManager);
-            this.rootGroup.add(tires1);
-        }
-
-        _spawnBarrels() {
-            Logger.info('正在佈置紅色燃油桶...');
-
-            const positions = [
-                new THREE.Vector3(-15, 0, -15),
-                new THREE.Vector3(8, 0, -25),
-                new THREE.Vector3(-5, 0, 30),
-                new THREE.Vector3(20, 0, 15)
-            ];
-
-            positions.forEach((pos, index) => {
-                const barrel = new ExplosiveBarrel(index, pos, this.materialManager);
-                this.rootGroup.add(barrel.group);
-                this.barrels.push(barrel);
-            });
-
-            Logger.info(`共放置 ${this.barrels.length} 個燃油桶`);
-        }
-
-        _setupEvents() {
-            if (!WZ.bus) return;
-
-            // 監聽子彈擊中物件
-            WZ.bus.on('BULLET_HIT_OBJECT', (data) => {
-                // 檢查擊中的是否為燃油桶
-                // 這裡我們假設物理引擎會回傳 collider 的 userData
-                if (data.hitObject && data.hitObject.userData.type === 'explosive_barrel') {
-                    const barrelId = data.hitObject.userData.id;
-                    const barrel = this.barrels.find(b => b.id === barrelId);
-                    
-                    if (barrel) {
-                        barrel.takeDamage(data.damage || 10, data.point);
-                    }
+            if (this.physics && typeof this.physics.removeColliderById === 'function') {
+                for (let i = 0; i < this.registeredStaticColliderIds.length; i = i + 1) {
+                    this.physics.removeColliderById(this.registeredStaticColliderIds[i]);
                 }
-            });
+            }
+            this.registeredStaticColliderIds = [];
+
+            if (this.rootGroup && this.scene) {
+                this.scene.remove(this.rootGroup);
+            }
+            this.rootGroup = null;
+            this.props = [];
         }
 
-        update(dt) {
-            // 更新所有燃油桶的狀態
-            this.barrels.forEach(barrel => barrel.update(dt));
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+            this.clear();
+            this.initialized = false;
         }
     }
 
-    /* =========================================================================
-     * 第六部分：導出與初始化
-     * ========================================================================= */
+    // ------------------------------------------------------------------------
+    // 3. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const mapPropsCoversInstance = new MapPropsCovers();
 
-    // 1. 實例化
-    const mapProps = new MapPropsManager();
+    const moduleExport = {
+        MapPropsCoversClass: MapPropsCovers,
+        instance: mapPropsCoversInstance,
+        CRATE_COVER_DEFS: CRATE_COVER_DEFS,
+        EXPLOSIVE_BARREL_DEFS: EXPLOSIVE_BARREL_DEFS
+    };
 
-    // 2. 掛載到 WZ 命名空間
-    WZ.MapProps = mapProps;
-
-    // 3. 監聽 RENDERER_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('RENDERER_READY', (data) => {
-            Logger.system('接收到渲染器就緒事件，準備初始化掩體系統...');
-            
-            if (data.scene) {
-                mapProps.init(data.scene);
-                WZ.bus.emit('PROPS_READY');
-            } else {
-                Logger.error('渲染器就緒事件中缺少場景物件');
-            }
-        });
-    }
-
-    // 4. 將更新掛載到主渲染循環中
-    if (WZ.Renderer) {
-        const originalOnRender = WZ.Renderer.onRender;
-        WZ.Renderer.onRender = (alpha, dt) => {
-            mapProps.update(dt);
-            if (originalOnRender) {
-                originalOnRender(alpha, dt);
-            }
-        };
-        Logger.info('MapProps 已成功掛載至主渲染循環');
-    } else {
-        // 延遲掛載
-        const checkInterval = setInterval(() => {
-            if (WZ.Renderer) {
-                clearInterval(checkInterval);
-                const originalOnRender = WZ.Renderer.onRender;
-                WZ.Renderer.onRender = (alpha, dt) => {
-                    mapProps.update(dt);
-                    if (originalOnRender) {
-                        originalOnRender(alpha, dt);
-                    }
-                };
-                Logger.info('MapProps 延遲掛載成功');
-            }
-        }, 100);
-    }
-
-    Logger.success('js/11_map_props_covers.js 已成功載入並掛載至 window.WZ.MapProps');
-
-}); // 結束工廠函數
+    TacticalWarfare.MapPropsCovers = mapPropsCoversInstance;
+    TacticalWarfare.registerModule('11_map_props_covers', moduleExport);
+})(window);
