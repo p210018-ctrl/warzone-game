@@ -1,702 +1,466 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/08_lighting_atmosphere.js
- * 檔案說明：場景光照佈局、天空穹頂著色器 (Gradient Sky Dome)、
- *           遠景戰術霧效、空中飄浮微塵粒子、室內外動態曝光調節、
- *           以及半透明體積陽光光束 (God Rays) 模擬。
- *           掛載於 window.WZ.Atmosphere。
- * 目標行數：1000 - 1400 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 08_lighting_atmosphere.js
+ * 戰術光照、大氣霧效、平滑時段過渡與環境微粒氛圍系統
+ * ============================================================================
+ * 職責：
+ * 1. 管理戰場環境光、方向光（太陽／月光）、輪廓光、指數霧與漸層天空氛圍
+ * 2. 支援多種戰術時段預設（overcast / dusk / day / night）並提供平滑插值過渡
+ * 3. 讓太陽陰影包圍盒隨玩家位置微幅跟隨，維持近距離掩體與敵軍的高解析陰影
+ * 4. 維護戰場環境微粒（浮游塵埃、戰場微光／餘燼）與爆炸／交火氛圍脈衝
+ * 5. 監聽 EventBus 事件與 RendererCore，支援即時切換時段與更新循環
  */
-
-var global = window; // 
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('08_lighting_atmosphere.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
+    // ------------------------------------------------------------------------
+    // 1. 戰術大氣與光照預設庫
+    // ------------------------------------------------------------------------
+    const ATMOSPHERE_CONFIGS = Object.freeze({
+        overcast: {
+            id: 'overcast',
+            label: '陰雲戰區',
+            skyTop: 0x243647,
+            skyHorizon: 0x62788c,
+            skyBottom: 0x1c242d,
+            fogColor: 0x526577,
+            fogDensity: 0.0085,
+            hemiSky: 0xa2c4e0,
+            hemiGround: 0x2c3238,
+            hemiIntensity: 0.88,
+            sunColor: 0xfff0dc,
+            sunIntensity: 1.18,
+            sunPos: { x: 42, y: 66, z: 30 },
+            rimColor: 0x5d94c4,
+            rimIntensity: 0.36,
+            exposure: 1.08,
+            dustColor: 0xc8ddf0,
+            dustOpacity: 0.34
+        },
+        dusk: {
+            id: 'dusk',
+            label: '黃昏餘暉',
+            skyTop: 0x172238,
+            skyHorizon: 0xbd6e4a,
+            skyBottom: 0x1a1b22,
+            fogColor: 0x5e4747,
+            fogDensity: 0.0092,
+            hemiSky: 0xdc9d78,
+            hemiGround: 0x23242e,
+            hemiIntensity: 0.74,
+            sunColor: 0xff9b5c,
+            sunIntensity: 1.38,
+            sunPos: { x: -64, y: 26, z: -38 },
+            rimColor: 0x4c76ba,
+            rimIntensity: 0.44,
+            exposure: 1.06,
+            dustColor: 0xffb882,
+            dustOpacity: 0.42
+        },
+        day: {
+            id: 'day',
+            label: '晴朗白晝',
+            skyTop: 0x2a6eb8,
+            skyHorizon: 0xa7cce8,
+            skyBottom: 0x3a434b,
+            fogColor: 0x94b7d1,
+            fogDensity: 0.0055,
+            hemiSky: 0xdcf0ff,
+            hemiGround: 0x4c473e,
+            hemiIntensity: 0.96,
+            sunColor: 0xfff9ec,
+            sunIntensity: 1.48,
+            sunPos: { x: 52, y: 82, z: 38 },
+            rimColor: 0x8ebce2,
+            rimIntensity: 0.30,
+            exposure: 1.12,
+            dustColor: 0xf2f7fc,
+            dustOpacity: 0.28
+        },
+        night: {
+            id: 'night',
+            label: '夜幕突襲',
+            skyTop: 0x060b14,
+            skyHorizon: 0x142234,
+            skyBottom: 0x05070a,
+            fogColor: 0x0e1926,
+            fogDensity: 0.0135,
+            hemiSky: 0x3b5b7e,
+            hemiGround: 0x0d1218,
+            hemiIntensity: 0.56,
+            sunColor: 0x90bbe8,
+            sunIntensity: 0.68,
+            sunPos: { x: -34, y: 64, z: 44 },
+            rimColor: 0x326496,
+            rimIntensity: 0.48,
+            exposure: 1.02,
+            dustColor: 0x7aa6d4,
+            dustOpacity: 0.32
+        }
+    });
 
-    /* =========================================================================
-     * 第一部分：環境檢測與依賴驗證
-     * ========================================================================= */
-
-    Logger.system('開始載入光照與氛圍系統 (js/08_lighting_atmosphere.js)...');
-
-    // 確保 Three.js 已載入
-    const THREE = global.THREE;
-    if (!THREE) {
-        Logger.error('找不到 Three.js，無法初始化光照系統！');
-        return;
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) {
+            return minVal;
+        }
+        if (val > maxVal) {
+            return maxVal;
+        }
+        return val;
     }
 
-    /* =========================================================================
-     * 第二部分：配置常數與數學工具 (Config & Math)
-     * ========================================================================= */
-
-    const CONFIG = {
-        // 光源設定
-        SUN_DIRECTION: { x: -0.6, y: -0.8, z: -0.4 }, // 太陽方向 (低角度夕陽)
-        SUN_COLOR: 0xffb36b,                          // 夕陽暖金色
-        SUN_INTENSITY: 2.5,                           // 陽光強度
-        SHADOW_MAP_SIZE: 2048,                        // 陰影貼圖解析度
-        
-        HEMI_SKY_COLOR: 0x2b3642,                     // 半球光 - 天空色 (深戰術藍灰)
-        HEMI_GROUND_COLOR: 0x111418,                  // 半球光 - 地面色 (極深灰)
-        HEMI_INTENSITY: 0.8,                          // 半球光強度
-
-        // 霧效設定
-        FOG_COLOR: 0x8a959e,                          // 戰術灰藍霧
-        FOG_NEAR: 30.0,                               // 霧效近平面
-        FOG_FAR: 180.0,                               // 霧效遠平面
-
-        // 天空穹頂設定
-        SKY_RADIUS: 400,                              // 天空球半徑
-        SKY_TOP_COLOR: 0x1a2b3c,                      // 天空頂部顏色
-        SKY_BOTTOM_COLOR: 0x9e7a5a,                   // 天空地平線顏色 (夕陽)
-
-        // 粒子設定
-        PARTICLE_COUNT: 3000,                         // 微塵粒子總數
-        PARTICLE_AREA: 100,                           // 粒子散佈範圍 (立方體邊長)
-        PARTICLE_MIN_SIZE: 0.05,                      // 最小尺寸
-        PARTICLE_MAX_SIZE: 0.15,                      // 最大尺寸
-        PARTICLE_COLOR: 0xffe4b5,                     // 粒子顏色 (金黃色微塵)
-
-        // 曝光設定
-        EXPOSURE_OUTDOOR: 1.05,                       // 室外基礎曝光
-        EXPOSURE_INDOOR: 1.35,                        // 室內基礎曝光 (較亮，模擬眼睛適應)
-        EXPOSURE_ADAPT_SPEED: 1.2,                    // 曝光過渡速度
-
-        // 體積光設定
-        GOD_RAYS_COUNT: 5,                            // 體積光束數量
-        GOD_RAYS_COLOR: 0xffcc88,                     // 光束顏色
-        GOD_RAYS_MAX_INTENSITY: 0.15                  // 光束最大強度
-    };
-
-    /**
-     * 限制數值範圍
-     */
-    function clamp(value, min, max) {
-        if (value < min) return min;
-        if (value > max) return max;
-        return value;
-    }
-
-    /**
-     * 線性插值
-     */
     function lerp(a, b, t) {
         return a + (b - a) * t;
     }
 
-    /**
-     * 彈簧阻尼器 (用於平滑曝光過渡)
-     */
-    class SpringDamper {
-        constructor(initialValue = 0, stiffness = 100, damping = 10) {
-            this.value = initialValue;
-            this.targetValue = initialValue;
-            this.velocity = 0;
-            this.stiffness = stiffness;
-            this.damping = damping;
-        }
-
-        update(dt) {
-            const safeDt = Math.min(dt, 0.05);
-            const force = (this.targetValue - this.value) * this.stiffness;
-            const dampingForce = this.velocity * this.damping;
-            const acceleration = force - dampingForce;
-            this.velocity += acceleration * safeDt;
-            this.value += this.velocity * safeDt;
-
-            if (Math.abs(this.value - this.targetValue) < 0.001 && Math.abs(this.velocity) < 0.001) {
-                this.value = this.targetValue;
-                this.velocity = 0;
-            }
-        }
-
-        setTarget(target) {
-            this.targetValue = target;
-        }
-
-        reset(value) {
-            this.value = value;
-            this.targetValue = value;
-            this.velocity = 0;
-        }
-    }
-
-    /* =========================================================================
-     * 第三部分：著色器代碼定義 (Shaders)
-     * ========================================================================= */
-
-    /**
-     * 天空穹頂頂點著色器
-     */
-    const SKY_VERTEX_SHADER = `
-        varying vec3 vWorldPosition;
-        void main() {
-            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-            vWorldPosition = worldPosition.xyz;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `;
-
-    /**
-     * 天空穹頂片元著色器 (漸層天空)
-     */
-    const SKY_FRAGMENT_SHADER = `
-        uniform vec3 topColor;
-        uniform vec3 bottomColor;
-        uniform float offset;
-        uniform float exponent;
-        varying vec3 vWorldPosition;
-
-        void main() {
-            // 計算從地平線到天空的漸層比例
-            float h = normalize(vWorldPosition + offset).y;
-            // 限制在 0 到 1 之間
-            float factor = max(pow(max(h, 0.0), exponent), 0.0);
-            // 混合顏色
-            vec3 finalColor = mix(bottomColor, topColor, factor);
-            gl_FragColor = vec4(finalColor, 1.0);
-        }
-    `;
-
-    /**
-     * 粒子頂點著色器
-     */
-    const PARTICLE_VERTEX_SHADER = `
-        uniform float uTime;
-        uniform float uArea;
-        attribute float aSize;
-        attribute float aSpeed;
-        attribute float aPhase;
-        varying float vAlpha;
-
-        void main() {
-            // 基本位置
-            vec3 pos = position;
-
-            // 加上時間與速度造成的飄動 (X 與 Y 軸)
-            pos.x += sin(uTime * aSpeed + aPhase) * 2.0;
-            pos.y += cos(uTime * aSpeed * 0.8 + aPhase) * 1.5;
-            pos.z += sin(uTime * aSpeed * 0.5 + aPhase) * 1.0;
-
-            // 循環邊界 (如果飛出範圍，從另一邊進來)
-            pos.x = mod(pos.x + uArea * 0.5, uArea) - uArea * 0.5;
-            pos.y = mod(pos.y + uArea * 0.5, uArea) - uArea * 0.5;
-            pos.z = mod(pos.z + uArea * 0.5, uArea) - uArea * 0.5;
-
-            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-
-            // 大小根據距離衰減
-            gl_PointSize = aSize * (300.0 / -mvPosition.z);
-
-            // 透明度根據距離淡出
-            vAlpha = clamp(1.0 - (length(mvPosition.xyz) / (uArea * 0.7)), 0.0, 1.0);
-
-            gl_Position = projectionMatrix * mvPosition;
-        }
-    `;
-
-    /**
-     * 粒子片元著色器 (畫圓形並加上柔和邊緣)
-     */
-    const PARTICLE_FRAGMENT_SHADER = `
-        uniform vec3 uColor;
-        varying float vAlpha;
-
-        void main() {
-            // 將座標轉換為 -0.5 到 0.5
-            vec2 coord = gl_PointCoord - vec2(0.5);
-            float dist = length(coord);
-
-            // 若超出圓形範圍則丟棄
-            if (dist > 0.5) discard;
-
-            // 邊緣柔化
-            float alpha = smoothstep(0.5, 0.1, dist) * vAlpha;
-
-            gl_FragColor = vec4(uColor, alpha);
-        }
-    `;
-
-    /**
-     * 體積光束頂點著色器
-     */
-    const GODRAY_VERTEX_SHADER = `
-        varying vec2 vUv;
-        varying vec3 vNormal;
-        void main() {
-            vUv = uv;
-            vNormal = normalize(normalMatrix * normal);
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `;
-
-    /**
-     * 體積光束片元著色器
-     */
-    const GODRAY_FRAGMENT_SHADER = `
-        uniform vec3 uColor;
-        uniform float uIntensity;
-        uniform float uTime;
-        varying vec2 vUv;
-        varying vec3 vNormal;
-
-        void main() {
-            // 邊緣柔化 (中心亮，兩側暗)
-            float edgeFade = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.8, vUv.x);
-            // 沿著光束長度漸弱
-            float lengthFade = smoothstep(1.0, 0.0, vUv.y);
-            
-            // 加入一點閃爍效果
-            float flicker = 0.9 + 0.1 * sin(uTime * 2.0 + vUv.y * 10.0);
-
-            float alpha = edgeFade * lengthFade * uIntensity * flicker;
-
-            gl_FragColor = vec4(uColor, alpha);
-        }
-    `;
-
-    /* =========================================================================
-     * 第四部分：核心類別 (AtmosphereSystem)
-     * ========================================================================= */
-
-    class AtmosphereSystem {
+    // ------------------------------------------------------------------------
+    // 2. LightingAtmosphere 主類別
+    // ------------------------------------------------------------------------
+    class LightingAtmosphere {
         constructor() {
-            // 核心引用
+            this.initialized = false;
             this.scene = null;
             this.camera = null;
-            this.renderer = null;
+            this.rendererCore = null;
 
-            // 光照物件
-            this.sunLight = null;
-            this.hemisphereLight = null;
+            this.currentPresetId = 'overcast';
+            this.targetPresetId = 'overcast';
+            this.transitionProgress = 1.0;
+            this.transitionDuration = 1.4;
 
-            // 天空穹頂
-            this.skyDome = null;
+            // 插值用的當前光照數值快照
+            this._currentFogDensity = ATMOSPHERE_CONFIGS.overcast.fogDensity;
+            this._currentHemiIntensity = ATMOSPHERE_CONFIGS.overcast.hemiIntensity;
+            this._currentSunIntensity = ATMOSPHERE_CONFIGS.overcast.sunIntensity;
+            this._currentRimIntensity = ATMOSPHERE_CONFIGS.overcast.rimIntensity;
+            this._currentExposure = ATMOSPHERE_CONFIGS.overcast.exposure;
+            this._currentSunPos = {
+                x: ATMOSPHERE_CONFIGS.overcast.sunPos.x,
+                y: ATMOSPHERE_CONFIGS.overcast.sunPos.y,
+                z: ATMOSPHERE_CONFIGS.overcast.sunPos.z
+            };
 
-            // 粒子系統
-            this.particles = null;
-            this.particleMaterial = null;
+            // 戰場氛圍微粒（浮游塵埃／微光）
+            this.dustPoints = null;
+            this.dustGeometry = null;
+            this.dustMaterial = null;
+            this.dustCount = 220;
+            this._dustPositions = null;
+            this._dustPhases = null;
+            this._dustAnchor = { x: 0, y: 0, z: 0 };
 
-            // 體積光束
-            this.godRaysGroup = null;
+            // 爆炸熱浪／交火氛圍脈衝強度
+            this._combatPulse = 0;
+            this._elapsed = 0;
 
-            // 時間與狀態
-            this.time = 0;
-            this.isIndoor = false;
-            
-            // 曝光彈簧
-            this.exposureSpring = new SpringDamper(CONFIG.EXPOSURE_OUTDOOR, 5.0, 3.0);
-
-            // 綁定方法
-            this.init = this.init.bind(this);
-            this.update = this.update.bind(this);
-
-            Logger.success('AtmosphereSystem 實例化完成');
+            this._unsubscribers = [];
         }
 
-        /* =====================================================================
-         * 初始化
-         * ===================================================================== */
+        /**
+         * 初始化大氣與環境微粒系統
+         */
+        init(options) {
+            const opts = options || {};
+            this.rendererCore = opts.rendererCore || TacticalWarfare.RendererCore || null;
+            this.scene = opts.scene || (this.rendererCore && this.rendererCore.getScene()) || null;
+            this.camera = opts.camera || (this.rendererCore && this.rendererCore.getCamera()) || null;
 
-        init(scene, camera, renderer) {
-            if (!scene || !camera || !renderer) {
-                Logger.error('初始化失敗：缺少必要的 Three.js 物件');
+            const initialPreset = opts.atmosphere ||
+                (GameState && GameState.get && GameState.get('world.atmosphere')) ||
+                'overcast';
+
+            this.setPreset(initialPreset, true);
+            this._buildAmbientDustSystem();
+
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
+            }
+            return this;
+        }
+
+        _bindEvents() {
+            if (!EventBus || !Events) {
                 return;
             }
 
-            this.scene = scene;
-            this.camera = camera;
-            this.renderer = renderer;
-
-            Logger.system('正在初始化光照與氛圍系統...');
-
-            // 1. 設置霧效
-            this._setupFog();
-
-            // 2. 設置光源
-            this._setupLights();
-
-            // 3. 建立天空穹頂
-            this._createSkyDome();
-
-            // 4. 建立體積光束
-            this._createGodRays();
-
-            // 5. 建立微塵粒子
-            this._createParticles();
-
-            // 6. 監聽事件
-            this._setupEvents();
-
-            Logger.success('光照與氛圍系統初始化完畢');
-        }
-
-        /* =====================================================================
-         * 1. 霧效設定
-         * ===================================================================== */
-
-        _setupFog() {
-            // 使用線性霧，能更好地配合天空顏色的漸層
-            this.scene.fog = new THREE.Fog(
-                CONFIG.FOG_COLOR,
-                CONFIG.FOG_NEAR,
-                CONFIG.FOG_FAR
-            );
-            Logger.info(`霧效已設定：顏色 0x${CONFIG.FOG_COLOR.toString(16)}, 近平面 ${CONFIG.FOG_NEAR}, 遠平面 ${CONFIG.FOG_FAR}`);
-        }
-
-        /* =====================================================================
-         * 2. 光源設定
-         * ===================================================================== */
-
-        _setupLights() {
-            // -------------------------------------------------------------
-            // 2.1 半球環境光 (HemisphereLight)
-            // -------------------------------------------------------------
-            this.hemisphereLight = new THREE.HemisphereLight(
-                CONFIG.HEMI_SKY_COLOR,
-                CONFIG.HEMI_GROUND_COLOR,
-                CONFIG.HEMI_INTENSITY
-            );
-            this.hemisphereLight.position.set(0, 50, 0);
-            this.scene.add(this.hemisphereLight);
-            Logger.info('半球環境光已加入場景');
-
-            // -------------------------------------------------------------
-            // 2.2 主平行光 (DirectionalLight) - 模擬夕陽
-            // -------------------------------------------------------------
-            this.sunLight = new THREE.DirectionalLight(CONFIG.SUN_COLOR, CONFIG.SUN_INTENSITY);
-            
-            // 設定位置 (根據方向向量與距離)
-            const dir = CONFIG.SUN_DIRECTION;
-            const dist = 100;
-            this.sunLight.position.set(dir.x * dist, dir.y * dist, dir.z * dist);
-            
-            // 設定目標點 (場景中心)
-            this.sunLight.target.position.set(0, 0, 0);
-            this.scene.add(this.sunLight.target);
-
-            // -------------------------------------------------------------
-            // 2.3 陰影配置
-            // -------------------------------------------------------------
-            this.sunLight.castShadow = true;
-            
-            // 陰影貼圖尺寸
-            this.sunLight.shadow.mapSize.width = CONFIG.SHADOW_MAP_SIZE;
-            this.sunLight.shadow.mapSize.height = CONFIG.SHADOW_MAP_SIZE;
-
-            // 陰影相機範圍 (涵蓋整個訓練場)
-            const shadowCam = this.sunLight.shadow.camera;
-            shadowCam.near = 1.0;
-            shadowCam.far = 300.0;
-            shadowCam.left = -60;
-            shadowCam.right = 60;
-            shadowCam.top = 60;
-            shadowCam.bottom = -60;
-            
-            // 陰影偏移與偏移量 (防止自陰影瑕疵)
-            this.sunLight.shadow.bias = -0.0005;
-            this.sunLight.shadow.normalBias = 0.02;
-            this.sunLight.shadow.radius = 2.0; // 邊緣柔化
-
-            this.scene.add(this.sunLight);
-            Logger.info('主平行光與陰影配置完成');
-        }
-
-        /* =====================================================================
-         * 3. 天空穹頂 (Sky Dome)
-         * ===================================================================== */
-
-        _createSkyDome() {
-            const skyGeo = new THREE.SphereGeometry(CONFIG.SKY_RADIUS, 32, 15);
-            
-            // 轉換顏色為 Three.js 的 Color 物件
-            const topColor = new THREE.Color(CONFIG.SKY_TOP_COLOR);
-            const bottomColor = new THREE.Color(CONFIG.SKY_BOTTOM_COLOR);
-
-            const skyMat = new THREE.ShaderMaterial({
-                uniforms: {
-                    topColor: { value: topColor },
-                    bottomColor: { value: bottomColor },
-                    offset: { value: 33 },
-                    exponent: { value: 0.6 }
-                },
-                vertexShader: SKY_VERTEX_SHADER,
-                fragmentShader: SKY_FRAGMENT_SHADER,
-                side: THREE.BackSide, // 讓內部可見
-                depthWrite: false     // 不寫入深度，避免遮擋其他物件
-            });
-
-            this.skyDome = new THREE.Mesh(skyGeo, skyMat);
-            this.scene.add(this.skyDome);
-            Logger.info('天空穹頂已建立');
-        }
-
-        /* =====================================================================
-         * 4. 體積光束 (God Rays)
-         * ===================================================================== */
-
-        _createGodRays() {
-            this.godRaysGroup = new THREE.Group();
-            
-            // 體積光通常出現在建築物的窗戶或縫隙中
-            // 這裡我們在場景中隨機放置一些圓柱體來模擬光束
-            for (let i = 0; i < CONFIG.GOD_RAYS_COUNT; i++) {
-                // 建立一個上寬下窄的圓柱體
-                const rayGeo = new THREE.CylinderGeometry(2.0, 5.0, 40, 8, 1, true);
-                
-                const rayMat = new THREE.ShaderMaterial({
-                    uniforms: {
-                        uColor: { value: new THREE.Color(CONFIG.GOD_RAYS_COLOR) },
-                        uIntensity: { value: CONFIG.GOD_RAYS_MAX_INTENSITY },
-                        uTime: { value: 0 }
-                    },
-                    vertexShader: GODRAY_VERTEX_SHADER,
-                    fragmentShader: GODRAY_FRAGMENT_SHADER,
-                    transparent: true,
-                    blending: THREE.AdditiveBlending, // 加法混合，產生發光感
-                    depthWrite: false,
-                    side: THREE.DoubleSide
-                });
-
-                const rayMesh = new THREE.Mesh(rayGeo, rayMat);
-                
-                // 隨機放置在場景中的特定位置 (假設是窗戶附近)
-                rayMesh.position.set(
-                    (Math.random() - 0.5) * 80,
-                    20, // 高度
-                    (Math.random() - 0.5) * 80
+            if (Events.EXPLOSION_TRIGGERED) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.EXPLOSION_TRIGGERED, () => {
+                        this._combatPulse = Math.min(1.0, this._combatPulse + 0.65);
+                    })
                 );
-
-                // 傾斜角度模擬陽光射入
-                rayMesh.rotation.z = Math.PI / 4;
-                rayMesh.rotation.x = Math.PI / 6;
-
-                this.godRaysGroup.add(rayMesh);
             }
 
-            this.scene.add(this.godRaysGroup);
-            Logger.info(`已建立 ${CONFIG.GOD_RAYS_COUNT} 道體積光束`);
+            if (Events.WAVE_START) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.WAVE_START, (payload) => {
+                        const wave = payload && typeof payload.wave === 'number' ? payload.wave : 1;
+                        // 每逢第 3 波切換一次戰場時段增加新鮮感
+                        if (wave > 1 && wave % 3 === 0) {
+                            const order = ['overcast', 'dusk', 'day', 'night'];
+                            const idx = order.indexOf(this.targetPresetId);
+                            const nextId = order[(idx + 1) % order.length];
+                            this.setPreset(nextId, false);
+                        }
+                    })
+                );
+            }
         }
 
-        /* =====================================================================
-         * 5. 微塵粒子系統 (Dust Particles)
-         * ===================================================================== */
-
-        _createParticles() {
-            const particleCount = CONFIG.PARTICLE_COUNT;
-            const area = CONFIG.PARTICLE_AREA;
-
-            // 建立幾何體
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(particleCount * 3);
-            const sizes = new Float32Array(particleCount);
-            const speeds = new Float32Array(particleCount);
-            const phases = new Float32Array(particleCount);
-
-            // 填充數據
-            for (let i = 0; i < particleCount; i++) {
-                // 位置 (散佈在正方體區域內)
-                positions[i * 3] = (Math.random() - 0.5) * area;
-                positions[i * 3 + 1] = (Math.random() - 0.5) * area;
-                positions[i * 3 + 2] = (Math.random() - 0.5) * area;
-
-                // 尺寸
-                sizes[i] = CONFIG.PARTICLE_MIN_SIZE + Math.random() * (CONFIG.PARTICLE_MAX_SIZE - CONFIG.PARTICLE_MIN_SIZE);
-                
-                // 速度 (隨機飄動速度)
-                speeds[i] = 0.1 + Math.random() * 0.5;
-                
-                // 相位 (隨機起始角度)
-                phases[i] = Math.random() * Math.PI * 2;
+        /**
+         * 建立戰場低空浮游塵埃／戰場微粒系統
+         */
+        _buildAmbientDustSystem() {
+            const THREE = global.THREE;
+            if (!THREE || !this.scene) {
+                return;
             }
 
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-            geometry.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
-            geometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+            if (this.dustPoints) {
+                this.scene.remove(this.dustPoints);
+                this.dustPoints = null;
+            }
 
-            // 建立材質
-            this.particleMaterial = new THREE.ShaderMaterial({
-                uniforms: {
-                    uTime: { value: 0 },
-                    uArea: { value: area },
-                    uColor: { value: new THREE.Color(CONFIG.PARTICLE_COLOR) }
-                },
-                vertexShader: PARTICLE_VERTEX_SHADER,
-                fragmentShader: PARTICLE_FRAGMENT_SHADER,
+            const count = this.dustCount;
+            const positions = new Float32Array(count * 3);
+            const phases = new Float32Array(count);
+            const spreadX = 46;
+            const spreadZ = 46;
+            const maxY = 9.5;
+
+            for (let i = 0; i < count; i = i + 1) {
+                const i3 = i * 3;
+                positions[i3] = ((i * 73) % 1000) / 1000 * spreadX * 2 - spreadX;
+                positions[i3 + 1] = 0.4 + (((i * 197) % 1000) / 1000) * maxY;
+                positions[i3 + 2] = ((i * 311) % 1000) / 1000 * spreadZ * 2 - spreadZ;
+                phases[i] = i * 0.618;
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const preset = ATMOSPHERE_CONFIGS[this.currentPresetId] || ATMOSPHERE_CONFIGS.overcast;
+            const mat = new THREE.PointsMaterial({
+                color: preset.dustColor,
+                size: 0.11,
                 transparent: true,
+                opacity: preset.dustOpacity,
                 depthWrite: false,
-                blending: THREE.AdditiveBlending
+                fog: true
             });
 
-            // 建立點雲物件
-            this.particles = new THREE.Points(geometry, this.particleMaterial);
-            this.scene.add(this.particles);
+            const points = new THREE.Points(geo, mat);
+            points.name = 'AmbientBattlefieldDust';
+            points.frustumCulled = false;
 
-            Logger.info(`微塵粒子系統已建立：共 ${particleCount} 顆粒子`);
+            this.dustGeometry = geo;
+            this.dustMaterial = mat;
+            this.dustPoints = points;
+            this._dustPositions = positions;
+            this._dustPhases = phases;
+
+            this.scene.add(points);
         }
 
-        /* =====================================================================
-         * 6. 事件綁定
-         * ===================================================================== */
+        /**
+         * 切換戰場大氣預設（instant = true 時立即套用，否則平滑過渡）
+         */
+        setPreset(presetId, instant) {
+            const config = ATMOSPHERE_CONFIGS[presetId] || ATMOSPHERE_CONFIGS.overcast;
+            this.targetPresetId = config.id;
 
-        _setupEvents() {
-            if (!WZ.bus) return;
+            if (instant) {
+                this.currentPresetId = config.id;
+                this.transitionProgress = 1.0;
+                this._currentFogDensity = config.fogDensity;
+                this._currentHemiIntensity = config.hemiIntensity;
+                this._currentSunIntensity = config.sunIntensity;
+                this._currentRimIntensity = config.rimIntensity;
+                this._currentExposure = config.exposure;
+                this._currentSunPos.x = config.sunPos.x;
+                this._currentSunPos.y = config.sunPos.y;
+                this._currentSunPos.z = config.sunPos.z;
 
-            // 監聽玩家狀態以更新曝光
-            WZ.bus.on('PLAYER_POSITION_UPDATE', (pos) => {
-                // 簡單判定：如果玩家高度低於某個值，或者在特定建築物內，視為室內
-                // 這裡僅為示意，實際應配合場景碰撞資訊
-                const isIndoor = pos.y < 1.0 && Math.abs(pos.x) < 20 && Math.abs(pos.z) < 20;
-                
-                if (isIndoor !== this.isIndoor) {
-                    this.isIndoor = isIndoor;
-                    this.exposureSpring.setTarget(isIndoor ? CONFIG.EXPOSURE_INDOOR : CONFIG.EXPOSURE_OUTDOOR);
-                    Logger.info(`玩家進入${isIndoor ? '室內' : '室外'}區域，調整曝光目標`);
+                if (this.rendererCore && typeof this.rendererCore.setAtmosphere === 'function') {
+                    this.rendererCore.setAtmosphere(config.id);
                 }
-            });
-        }
-
-        /* =====================================================================
-         * 7. 每幀更新邏輯
-         * ===================================================================== */
-
-        update(dt) {
-            // 累加時間
-            this.time += dt;
-
-            // 1. 更新粒子著色器時間
-            if (this.particleMaterial) {
-                this.particleMaterial.uniforms.uTime.value = this.time;
-            }
-
-            // 2. 更新體積光著色器時間
-            if (this.godRaysGroup) {
-                this.godRaysGroup.children.forEach(ray => {
-                    if (ray.material && ray.material.uniforms) {
-                        ray.material.uniforms.uTime.value = this.time;
-                    }
-                });
-            }
-
-            // 3. 更新曝光彈簧並應用到渲染器
-            this.exposureSpring.update(dt);
-            if (this.renderer) {
-                this.renderer.toneMappingExposure = this.exposureSpring.value;
-            }
-
-            // 4. 讓天空穹頂跟隨相機位置 (可選，防止穿幫)
-            if (this.skyDome && this.camera) {
-                this.skyDome.position.copy(this.camera.position);
-            }
-        }
-
-        /* =====================================================================
-         * 公共介面 (Public API)
-         * ===================================================================== */
-
-        /**
-         * 取得當前光源狀態
-         */
-        getLights() {
-            return {
-                sun: this.sunLight,
-                hemisphere: this.hemisphereLight
-            };
-        }
-
-        /**
-         * 清理資源
-         */
-        dispose() {
-            if (this.skyDome) {
-                this.scene.remove(this.skyDome);
-                this.skyDome.geometry.dispose();
-                this.skyDome.material.dispose();
-            }
-
-            if (this.particles) {
-                this.scene.remove(this.particles);
-                this.particles.geometry.dispose();
-                this.particleMaterial.dispose();
-            }
-
-            if (this.godRaysGroup) {
-                this.scene.remove(this.godRaysGroup);
-                this.godRaysGroup.children.forEach(ray => {
-                    ray.geometry.dispose();
-                    ray.material.dispose();
-                });
-            }
-
-            Logger.warn('光照與氛圍系統資源已清理');
-        }
-    }
-
-    /* =========================================================================
-     * 第五部分：導出與初始化
-     * ========================================================================= */
-
-    // 1. 實例化
-    const atmosphere = new AtmosphereSystem();
-
-    // 2. 掛載到 WZ 命名空間
-    WZ.Atmosphere = atmosphere;
-
-    // 3. 監聽 RENDERER_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('RENDERER_READY', (data) => {
-            Logger.system('接收到渲染器就緒事件，準備初始化氛圍系統...');
-            
-            if (data.scene && data.camera && data.renderer) {
-                atmosphere.init(data.scene, data.camera, data.renderer);
-                WZ.bus.emit('ATMOSPHERE_READY');
+                if (this.dustMaterial) {
+                    this.dustMaterial.color.setHex(config.dustColor);
+                    this.dustMaterial.opacity = config.dustOpacity;
+                }
             } else {
-                Logger.error('渲染器就緒事件中缺少必要物件');
+                this.transitionProgress = 0.0;
             }
-        });
-    }
 
-    // 4. 將更新掛載到主渲染循環中
-    if (WZ.Renderer) {
-        const originalOnRender = WZ.Renderer.onRender;
-        WZ.Renderer.onRender = (alpha, dt) => {
-            atmosphere.update(dt);
-            if (originalOnRender) {
-                originalOnRender(alpha, dt);
+            return config;
+        }
+
+        getPreset(presetId) {
+            return ATMOSPHERE_CONFIGS[presetId] || null;
+        }
+
+        getAvailablePresets() {
+            return Object.keys(ATMOSPHERE_CONFIGS);
+        }
+
+        /**
+         * 每幀更新大氣過渡、太陽陰影跟隨與環境微粒飄動
+         */
+        update(deltaTime, playerPosition) {
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+            this._elapsed = this._elapsed + dt;
+
+            if (this._combatPulse > 0) {
+                this._combatPulse = Math.max(0, this._combatPulse - dt * 1.8);
             }
-        };
-        Logger.info('Atmosphere 已成功掛載至主渲染循環');
-    } else {
-        // 延遲掛載邏輯
-        const checkInterval = setInterval(() => {
-            if (WZ.Renderer) {
-                clearInterval(checkInterval);
-                const originalOnRender = WZ.Renderer.onRender;
-                WZ.Renderer.onRender = (alpha, dt) => {
-                    atmosphere.update(dt);
-                    if (originalOnRender) {
-                        originalOnRender(alpha, dt);
+
+            // 1. 平滑過渡光照數值
+            if (this.transitionProgress < 1.0) {
+                this.transitionProgress = Math.min(1.0, this.transitionProgress + dt / this.transitionDuration);
+                const fromCfg = ATMOSPHERE_CONFIGS[this.currentPresetId] || ATMOSPHERE_CONFIGS.overcast;
+                const toCfg = ATMOSPHERE_CONFIGS[this.targetPresetId] || ATMOSPHERE_CONFIGS.overcast;
+                const t = this.transitionProgress;
+                const smoothT = t * t * (3 - 2 * t);
+
+                this._currentFogDensity = lerp(fromCfg.fogDensity, toCfg.fogDensity, smoothT);
+                this._currentHemiIntensity = lerp(fromCfg.hemiIntensity, toCfg.hemiIntensity, smoothT);
+                this._currentSunIntensity = lerp(fromCfg.sunIntensity, toCfg.sunIntensity, smoothT);
+                this._currentRimIntensity = lerp(fromCfg.rimIntensity, toCfg.rimIntensity, smoothT);
+                this._currentExposure = lerp(fromCfg.exposure, toCfg.exposure, smoothT);
+                this._currentSunPos.x = lerp(fromCfg.sunPos.x, toCfg.sunPos.x, smoothT);
+                this._currentSunPos.y = lerp(fromCfg.sunPos.y, toCfg.sunPos.y, smoothT);
+                this._currentSunPos.z = lerp(fromCfg.sunPos.z, toCfg.sunPos.z, smoothT);
+
+                if (this.rendererCore) {
+                    if (this.rendererCore.scene && this.rendererCore.scene.fog) {
+                        this.rendererCore.scene.fog.density = this._currentFogDensity;
                     }
-                };
-                Logger.info('Atmosphere 延遲掛載成功');
+                    if (this.rendererCore.hemiLight) {
+                        this.rendererCore.hemiLight.intensity = this._currentHemiIntensity;
+                    }
+                    if (this.rendererCore.sunLight) {
+                        this.rendererCore.sunLight.intensity = this._currentSunIntensity;
+                    }
+                    if (this.rendererCore.rimLight) {
+                        this.rendererCore.rimLight.intensity = this._currentRimIntensity;
+                    }
+                    if (this.rendererCore.renderer) {
+                        this.rendererCore.renderer.toneMappingExposure = this._currentExposure + this._combatPulse * 0.12;
+                    }
+                }
+
+                if (this.transitionProgress >= 1.0) {
+                    this.currentPresetId = this.targetPresetId;
+                    if (this.rendererCore && typeof this.rendererCore.setAtmosphere === 'function') {
+                        this.rendererCore.setAtmosphere(this.currentPresetId);
+                    }
+                    if (this.dustMaterial) {
+                        this.dustMaterial.color.setHex(toCfg.dustColor);
+                        this.dustMaterial.opacity = toCfg.dustOpacity;
+                    }
+                }
+            } else if (this.rendererCore && this.rendererCore.renderer && this._combatPulse > 0.001) {
+                this.rendererCore.renderer.toneMappingExposure = this._currentExposure + this._combatPulse * 0.12;
             }
-        }, 100);
+
+            // 2. 讓太陽光源位置隨玩家位置微幅平移，維持近距離陰影解析度
+            if (playerPosition && this.rendererCore && this.rendererCore.sunLight) {
+                const shiftX = clamp(playerPosition.x * 0.35, -18, 18);
+                const shiftZ = clamp(playerPosition.z * 0.35, -18, 18);
+                this.rendererCore.sunLight.position.set(
+                    this._currentSunPos.x + shiftX,
+                    this._currentSunPos.y,
+                    this._currentSunPos.z + shiftZ
+                );
+            }
+
+            // 3. 更新戰場浮游微粒飄動
+            this._updateDustParticles(dt, playerPosition);
+        }
+
+        _updateDustParticles(dt, playerPosition) {
+            if (!this.dustGeometry || !this._dustPositions || !this._dustPhases) {
+                return;
+            }
+
+            const anchorX = playerPosition ? playerPosition.x * 0.4 : 0;
+            const anchorZ = playerPosition ? playerPosition.z * 0.4 : 0;
+            this._dustAnchor.x = anchorX;
+            this._dustAnchor.z = anchorZ;
+
+            const positions = this._dustPositions;
+            const phases = this._dustPhases;
+            const count = this.dustCount;
+
+            for (let i = 0; i < count; i = i + 1) {
+                const i3 = i * 3;
+                const phase = phases[i];
+
+                // 水平緩慢隨風漂移，垂直輕微起伏
+                positions[i3] += (0.28 + Math.sin(this._elapsed * 0.7 + phase) * 0.14) * dt;
+                positions[i3 + 1] += Math.cos(this._elapsed * 1.1 + phase) * 0.12 * dt;
+                positions[i3 + 2] += (0.16 + Math.cos(this._elapsed * 0.6 + phase) * 0.14) * dt;
+
+                // 若超出戰場範圍則折返至另一側
+                const relX = positions[i3] - anchorX;
+                const relZ = positions[i3 + 2] - anchorZ;
+                if (relX > 48) positions[i3] -= 96;
+                if (relX < -48) positions[i3] += 96;
+                if (relZ > 48) positions[i3 + 2] -= 96;
+                if (relZ < -48) positions[i3 + 2] += 96;
+
+                if (positions[i3 + 1] < 0.25) positions[i3 + 1] = 0.25;
+                if (positions[i3 + 1] > 10.5) positions[i3 + 1] = 10.5;
+            }
+
+            this.dustGeometry.attributes.position.needsUpdate = true;
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+
+            if (this.dustPoints && this.scene) {
+                this.scene.remove(this.dustPoints);
+            }
+            if (this.dustGeometry) {
+                this.dustGeometry.dispose();
+                this.dustGeometry = null;
+            }
+            if (this.dustMaterial) {
+                this.dustMaterial.dispose();
+                this.dustMaterial = null;
+            }
+            this.dustPoints = null;
+            this.initialized = false;
+        }
     }
 
-    Logger.success('js/08_lighting_atmosphere.js 已成功載入並掛載至 window.WZ.Atmosphere');
+    // ------------------------------------------------------------------------
+    // 3. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const lightingAtmosphereInstance = new LightingAtmosphere();
 
-}); // 結束工廠函數
+    const moduleExport = {
+        LightingAtmosphereClass: LightingAtmosphere,
+        instance: lightingAtmosphereInstance,
+        ATMOSPHERE_CONFIGS: ATMOSPHERE_CONFIGS
+    };
+
+    TacticalWarfare.LightingAtmosphere = lightingAtmosphereInstance;
+    TacticalWarfare.registerModule('08_lighting_atmosphere', moduleExport);
+})(window);
