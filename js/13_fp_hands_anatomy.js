@@ -1,729 +1,470 @@
 /**
- * =================================================================================
- * 專案名稱：CODWZM 戰區手遊 (Call of Duty: Warzone Mobile 復刻專案)
- * 檔案名稱：js/13_fp_hands_anatomy.js
- * 檔案說明：第一人稱戰術手模系統。使用頂點雕刻技術生成有機曲面手臂，
- *           並實作三節分段獨立五指 (每手 15 個關節)，支援多種戰術手勢插值。
- *           掛載於 window.WZ.FPHands。
- * 目標行數：1400 - 1900 行 (純 JavaScript)
- * =================================================================================
+ * ============================================================================
+ * 13_fp_hands_anatomy.js
+ * 第一人稱戰術雙手骨骼關節與握持姿態系統（First-Person Hands Anatomy）
+ * ============================================================================
+ * 職責：
+ * 1. 建構具層級關節（前臂 -> 手腕 -> 手掌 -> 食指／拇指／中無名指組）的左右手模型
+ * 2. 提供武器握持錨點（gripPoint / leftHandGripPoint / rightHandGripPoint）計算
+ * 3. 支援依武器類型（步槍／衝鋒／狙擊／手槍）、開鏡（ADS）、換彈與插板平滑插值關節角度
+ * 4. 支援扣板機食指微動與受擊／動作姿態回饋，供武器與動畫模組直接驅動
  */
-
-(function (global, factory) {
+(function (global) {
     'use strict';
 
-    if (!global.WZ) {
-        global.WZ = {};
+    const TacticalWarfare = global.TacticalWarfare;
+    if (!TacticalWarfare) {
+        throw new Error('13_fp_hands_anatomy.js 必須在 01_event_bus_state.js 之後載入');
     }
 
-    // 傳入 WZ 命名空間與 Logger
-    factory(global.WZ, global.WZ.Utils ? global.WZ.Utils.Logger : console);
+    const Events = TacticalWarfare.Events || {};
+    const EventBus = TacticalWarfare.EventBus;
 
-})(typeof window !== 'undefined' ? window : this, function (WZ, Logger) {
+    // ------------------------------------------------------------------------
+    // 1. 雙手外觀與關節姿態預設表
+    // ------------------------------------------------------------------------
+    const HAND_PALETTE = Object.freeze({
+        gloveColor: 0x262b32,
+        padColor: 0x3b424c,
+        skinColor: 0xc99672,
+        sleeveColor: 0x343d36
+    });
 
-    /* =========================================================================
-     * 第一部分：環境檢測與配置常數
-     * ========================================================================= */
+    const STANCE_POSES = Object.freeze({
+        rifle_hip: {
+            rightArm: { x: -0.18, y: 0.08, z: -0.12 },
+            rightWrist: { x: 0.12, y: -0.05, z: 0.05 },
+            rightIndex: { x: 0.35, y: 0, z: 0 },
+            rightGrip: { x: 0.85, y: 0, z: 0 },
+            leftArm: { x: 0.12, y: 0.24, z: 0.18 },
+            leftWrist: { x: -0.10, y: 0.18, z: -0.08 },
+            leftIndex: { x: 0.72, y: 0, z: 0 },
+            leftGrip: { x: 0.92, y: 0, z: 0 }
+        },
+        rifle_ads: {
+            rightArm: { x: -0.10, y: 0.02, z: -0.04 },
+            rightWrist: { x: 0.08, y: 0.0, z: 0.02 },
+            rightIndex: { x: 0.45, y: 0, z: 0 },
+            rightGrip: { x: 0.88, y: 0, z: 0 },
+            leftArm: { x: 0.06, y: 0.14, z: 0.10 },
+            leftWrist: { x: -0.06, y: 0.10, z: -0.04 },
+            leftIndex: { x: 0.75, y: 0, z: 0 },
+            leftGrip: { x: 0.95, y: 0, z: 0 }
+        },
+        pistol_hip: {
+            rightArm: { x: -0.14, y: 0.04, z: -0.08 },
+            rightWrist: { x: 0.15, y: -0.04, z: 0.04 },
+            rightIndex: { x: 0.32, y: 0, z: 0 },
+            rightGrip: { x: 0.88, y: 0, z: 0 },
+            leftArm: { x: -0.16, y: 0.22, z: 0.14 },
+            leftWrist: { x: 0.10, y: 0.26, z: -0.06 },
+            leftIndex: { x: 0.80, y: 0, z: 0 },
+            leftGrip: { x: 0.92, y: 0, z: 0 }
+        },
+        reload: {
+            rightArm: { x: -0.22, y: -0.08, z: -0.16 },
+            rightWrist: { x: 0.20, y: 0.12, z: 0.08 },
+            rightIndex: { x: 0.55, y: 0, z: 0 },
+            rightGrip: { x: 0.75, y: 0, z: 0 },
+            leftArm: { x: 0.34, y: -0.12, z: 0.28 },
+            leftWrist: { x: -0.28, y: -0.15, z: 0.12 },
+            leftIndex: { x: 0.65, y: 0, z: 0 },
+            leftGrip: { x: 0.70, y: 0, z: 0 }
+        },
+        plate: {
+            rightArm: { x: 0.25, y: -0.18, z: -0.22 },
+            rightWrist: { x: -0.15, y: 0.10, z: 0 },
+            rightIndex: { x: 0.5, y: 0, z: 0 },
+            rightGrip: { x: 0.8, y: 0, z: 0 },
+            leftArm: { x: 0.28, y: 0.18, z: 0.22 },
+            leftWrist: { x: -0.18, y: -0.10, z: 0 },
+            leftIndex: { x: 0.5, y: 0, z: 0 },
+            leftGrip: { x: 0.8, y: 0, z: 0 }
+        }
+    });
 
-    Logger.system('開始載入第一人稱手部解剖模型 (js/13_fp_hands_anatomy.js)...');
-
-    const THREE = global.THREE;
-    if (!THREE) {
-        Logger.error('找不到 Three.js，無法初始化第一人稱手模！');
-        return;
+    function clamp(val, minVal, maxVal) {
+        if (val < minVal) {
+            return minVal;
+        }
+        if (val > maxVal) {
+            return maxVal;
+        }
+        return val;
     }
 
-    const CONFIG = {
-        // 手部整體縮放與基礎位置 (相對於相機)
-        RIGHT_HAND_OFFSET: new THREE.Vector3(0.15, -0.15, -0.3),
-        LEFT_HAND_OFFSET: new THREE.Vector3(-0.15, -0.15, -0.35),
-
-        // 幾何體解析度
-        FOREARM_SEGMENTS: 16,
-        FOREARM_RINGS: 10,
-        
-        // 手指關節尺寸 (長度與半徑)
-        FINGER_LENGTH: [0.035, 0.025, 0.02], // 近節、中節、遠節
-        FINGER_RADIUS: [0.012, 0.011, 0.009], // 指根、指中、指尖
-        
-        // 手勢插值速度
-        GESTURE_LERP_SPEED: 12.0,
-
-        // 材質顏色
-        COLOR_SKIN: 0x8c6b5a,       // 皮膚色
-        COLOR_GLOVE: 0x1a1a1a,      // 碳纖維黑
-        COLOR_SLEEVE: 0x2d3325,     // 迷彩軍綠
-        COLOR_WATCH: 0x333333,      // 手錶深灰
-        COLOR_SCREEN: 0x00f3ff      // 手錶發光螢幕
-
-    };
-
-    /* =========================================================================
-     * 第二部分：幾何體生成器 (Geometry Factory)
-     * 負責使用頂點變形等技術，創造出有機曲面的肌肉手臂與手套。
-     * ========================================================================= */
-
-    class AnatomyGeometry {
-        
-        /**
-         * 1. 建立有機曲面手臂 (從手肘到手腕)
-         * 使用變徑圓柱體配合正弦波與噪聲來模擬肌肉起伏。
-         */
-        static createOrganicForearm() {
-            // 基礎圓柱體，高度為 1
-            const geo = new THREE.CylinderGeometry(1, 1, 1, CONFIG.FOREARM_SEGMENTS, CONFIG.FOREARM_RINGS);
-            
-            // 頂點雕刻 (Vertex Sculpting)
-            const positionAttribute = geo.attributes.position;
-            const vertex = new THREE.Vector3();
-
-            for (let i = 0; i < positionAttribute.count; i++) {
-                vertex.fromBufferAttribute(positionAttribute, i);
-                
-                // 取得當前高度比例 (0 到 1)
-                const yRatio = vertex.y + 0.5; 
-                
-                // 基礎半徑 (手腕細，手肘粗)
-                // 使用平滑曲線模擬
-                let radius = 0.035 + Math.sin(yRatio * Math.PI) * 0.015; 
-                
-                // 肌肉群起伏 (在近手肘處增加半徑)
-                if (yRatio > 0.6) {
-                    const muscleBulge = Math.sin((yRatio - 0.6) / 0.4 * Math.PI) * 0.008;
-                    radius += muscleBulge;
-                }
-
-                // 尺骨莖突微凸 (手腕外側的骨頭)
-                if (yRatio < 0.2 && vertex.x > 0) {
-                    radius += 0.003;
-                }
-
-                // 非對稱變形 (模擬前臂切面非正圓)
-                const angle = Math.atan2(vertex.z, vertex.x);
-                const asymmetry = 1.0 + Math.sin(angle * 2) * 0.1; // 稍微橢圓
-                
-                // 應用到頂點
-                vertex.x = Math.cos(angle) * radius * asymmetry;
-                vertex.z = Math.sin(angle) * radius * asymmetry;
-                
-                // 高度設定為 0.25 (手臂長度)
-                vertex.y = (yRatio - 0.5) * 0.25;
-
-                positionAttribute.setXYZ(i, vertex.x, vertex.y, vertex.z);
-            }
-            
-            geo.computeVertexNormals();
-            return geo;
-        }
-
-        /**
-         * 2. 建立手掌幾何體 (帶倒角)
-         * 使用 BoxGeometry 細分後進行圓滑處理，模擬手背與大魚際肌。
-         */
-        static createPalmGeometry() {
-            const geo = new THREE.BoxGeometry(0.08, 0.04, 0.09, 4, 4, 4);
-            const positionAttribute = geo.attributes.position;
-            const vertex = new THREE.Vector3();
-
-            for (let i = 0; i < positionAttribute.count; i++) {
-                vertex.fromBufferAttribute(positionAttribute, i);
-                
-                // 讓邊緣圓滑 (將邊緣往中心靠攏)
-                vertex.x *= 0.9;
-                vertex.z *= 0.9;
-                
-                // 大魚際肌 (大拇指根部隆起)
-                if (vertex.x < 0 && vertex.z > 0) {
-                    vertex.y += 0.01;
-                }
-                // 手背拱起
-                if (vertex.y > 0) {
-                    vertex.y += 0.005;
-                }
-
-                positionAttribute.setXYZ(i, vertex.x, vertex.y, vertex.z);
-            }
-            geo.computeVertexNormals();
-            return geo;
-        }
-
-        /**
-         * 3. 建立指節幾何體 (變徑圓柱體模擬手指)
-         */
-        static createFingerSegment(length, radius, isFingertip = false) {
-            // 使用圓柱體，但頂部稍微加厚 (指腹)
-            const geo = new THREE.CylinderGeometry(radius, radius * 0.9, length, 8);
-            
-            if (isFingertip) {
-                // 指尖稍微圓滑
-                geo.translate(0, length / 2, 0);
-                const topGeo = new THREE.SphereGeometry(radius, 8, 8);
-                topGeo.scale(1, 1.2, 1);
-                return { segment: geo, tip: topGeo };
-            }
-            
-            geo.translate(0, -length / 2, 0); // 原點在頂部，向下延伸
-            return { segment: geo, tip: null };
-        }
-
-        /**
-         * 4. 建立戰術手錶
-         */
-        static createTacticalWatch() {
-            const group = new THREE.Group();
-
-            // 錶帶
-            const strapGeo = new THREE.TorusGeometry(0.04, 0.01, 8, 16);
-            const strapMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
-            const strap = new THREE.Mesh(strapGeo, strapMat);
-            strap.rotation.x = Math.PI / 2;
-            strap.scale.set(1, 0.7, 1);
-            group.add(strap);
-
-            // 錶盤
-            const faceGeo = new THREE.BoxGeometry(0.05, 0.015, 0.04);
-            const faceMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.2 });
-            const face = new THREE.Mesh(faceGeo, faceMat);
-            face.position.set(0, 0.01, 0.04);
-            group.add(face);
-
-            // 發光螢幕
-            const screenGeo = new THREE.PlaneGeometry(0.04, 0.03);
-            const screenMat = new THREE.MeshBasicMaterial({ color: CONFIG.COLOR_SCREEN });
-            const screen = new THREE.Mesh(screenGeo, screenMat);
-            screen.position.set(0, 0.018, 0.04);
-            screen.rotation.x = -Math.PI / 2;
-            group.add(screen);
-
-            return group;
-        }
-
-        /**
-         * 5. 建立袖口褶皺 (多層環形)
-         */
-        static createSleeveCuff() {
-            const group = new THREE.Group();
-            const sleeveMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLOR_SLEEVE, roughness: 0.9 });
-
-            // 多層環狀，模擬布料捲起
-            for (let i = 0; i < 4; i++) {
-                const ringGeo = new THREE.TorusGeometry(0.045 + i * 0.002, 0.008, 6, 12);
-                const ring = new THREE.Mesh(ringGeo, sleeveMat);
-                ring.rotation.x = Math.PI / 2;
-                ring.position.y = -0.12 + i * 0.015;
-                // 隨機旋轉，模擬布料不規則
-                ring.rotation.z = Math.random() * Math.PI;
-                group.add(ring);
-            }
-
-            return group;
-        }
+    function lerp(a, b, t) {
+        return a + (b - a) * t;
     }
 
-    /* =========================================================================
-     * 第三部分：手部骨骼控制器 (HandSkeleton)
-     * 負責組裝手掌與 15 個關節 (每根手指 3 節)，並處理手勢插值。
-     * ========================================================================= */
+    // ------------------------------------------------------------------------
+    // 2. 單手骨骼關節建構器
+    // ------------------------------------------------------------------------
+    function buildSingleHandRig(sideSign, materials) {
+        const THREE = global.THREE;
 
-    class HandSkeleton {
-        constructor(isLeftHand = false) {
-            this.isLeftHand = isLeftHand;
-            
-            // 根節點 (連接前臂)
-            this.root = new THREE.Group();
-            
-            // 存放所有指節的控制器
-            // 結構: { thumb: [joint1, joint2, joint3], index: [...], ... }
-            this.fingers = {
-                thumb: [],
-                index: [],
-                middle: [],
-                ring: [],
-                pinky: []
+        // 根節點（前臂起點）
+        const rootGroup = new THREE.Group();
+        rootGroup.name = sideSign < 0 ? 'LeftHandRig' : 'RightHandRig';
+
+        // 戰術袖口與前臂
+        const sleeveGeo = new THREE.CylinderGeometry(0.052, 0.044, 0.28, 12);
+        sleeveGeo.rotateX(Math.PI / 2);
+        const sleeveMesh = new THREE.Mesh(sleeveGeo, materials.sleeve);
+        sleeveMesh.position.set(0, 0, 0.14);
+        rootGroup.add(sleeveMesh);
+
+        const forearmGeo = new THREE.CylinderGeometry(0.043, 0.037, 0.12, 12);
+        forearmGeo.rotateX(Math.PI / 2);
+        const forearmMesh = new THREE.Mesh(forearmGeo, materials.glove);
+        forearmMesh.position.set(0, 0, -0.02);
+        rootGroup.add(forearmMesh);
+
+        // 手腕關節（位於前臂末端 z = -0.08）
+        const wristJoint = new THREE.Group();
+        wristJoint.position.set(0, 0, -0.08);
+        rootGroup.add(wristJoint);
+
+        // 手掌本體
+        const palmGeo = new THREE.BoxGeometry(0.076, 0.026, 0.086);
+        const palmMesh = new THREE.Mesh(palmGeo, materials.glove);
+        palmMesh.position.set(0, 0, -0.043);
+        wristJoint.add(palmMesh);
+
+        // 指節護甲片
+        const knuckleGeo = new THREE.BoxGeometry(0.072, 0.012, 0.022);
+        const knuckleMesh = new THREE.Mesh(knuckleGeo, materials.pad);
+        knuckleMesh.position.set(0, 0.014, -0.074);
+        wristJoint.add(knuckleMesh);
+
+        // 拇指關節
+        const thumbJoint = new THREE.Group();
+        thumbJoint.position.set(-sideSign * 0.042, -0.004, -0.045);
+        wristJoint.add(thumbJoint);
+
+        const thumbGeo = new THREE.BoxGeometry(0.020, 0.020, 0.052);
+        const thumbMesh = new THREE.Mesh(thumbGeo, materials.glove);
+        thumbMesh.position.set(0, 0, -0.024);
+        thumbJoint.add(thumbMesh);
+
+        // 食指關節（可獨立扣動板機）
+        const indexJoint = new THREE.Group();
+        indexJoint.position.set(-sideSign * 0.028, -0.002, -0.086);
+        wristJoint.add(indexJoint);
+
+        const indexGeo = new THREE.BoxGeometry(0.016, 0.016, 0.044);
+        const indexMesh = new THREE.Mesh(indexGeo, materials.glove);
+        indexMesh.position.set(0, 0, -0.022);
+        indexJoint.add(indexMesh);
+
+        // 中指／無名指／小指握持群組
+        const gripJoint = new THREE.Group();
+        gripJoint.position.set(0, -0.004, -0.086);
+        wristJoint.add(gripJoint);
+
+        const gripGeo = new THREE.BoxGeometry(0.068, 0.017, 0.042);
+        const gripMesh = new THREE.Mesh(gripGeo, materials.glove);
+        gripMesh.position.set(0, 0, -0.021);
+        gripJoint.add(gripMesh);
+
+        return {
+            root: rootGroup,
+            wrist: wristJoint,
+            thumb: thumbJoint,
+            index: indexJoint,
+            grip: gripJoint
+        };
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. FpHandsAnatomy 主類別
+    // ------------------------------------------------------------------------
+    class FpHandsAnatomy {
+        constructor() {
+            this.initialized = false;
+            this.parentGroup = null;
+            this.handsGroup = null;
+
+            this._materials = null;
+            this.leftHand = null;
+            this.rightHand = null;
+
+            this.currentPoseKey = 'rifle_hip';
+            this.triggerPull = 0; // 0 ~ 1
+            this._targetTriggerPull = 0;
+            this._poseBlend = {
+                rx: -0.18, ry: 0.08, rz: -0.12,
+                rwx: 0.12, rwy: -0.05, rwz: 0.05,
+                rix: 0.35, rgx: 0.85,
+                lx: 0.12, ly: 0.24, lz: 0.18,
+                lwx: -0.10, lwy: 0.18, lwz: -0.08,
+                lix: 0.72, lgx: 0.92
             };
 
-            // 當前手勢的目標角度
-            this.targetAngles = {};
-            // 當前實際角度 (用於插值)
-            this.currentAngles = {};
-
-            this._buildSkeleton();
-            this._initGestureAngles();
-        }
-
-        _buildSkeleton() {
-            // 材質
-            const gloveMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLOR_GLOVE, roughness: 0.7, metalness: 0.3 });
-            const skinMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLOR_SKIN, roughness: 0.8 });
-            
-            // 1. 建立手掌
-            const palmGeo = AnatomyGeometry.createPalmGeometry();
-            const palmMesh = new THREE.Mesh(palmGeo, gloveMat);
-            this.root.add(palmMesh);
-            
-            // 手掌基準位置 (讓手指能從正確的位置長出來)
-            const palmBaseY = -0.02; 
-
-            // 2. 建立五指
-            // 手指的基底座標 (X軸偏移, Z軸偏移)
-            const fingerPositions = [
-                { name: 'index', x: this.isLeftHand ? -0.03 : 0.03, z: -0.04 },
-                { name: 'middle', x: this.isLeftHand ? -0.01 : 0.01, z: -0.045 },
-                { name: 'ring', x: this.isLeftHand ? 0.01 : -0.01, z: -0.04 },
-                { name: 'pinky', x: this.isLeftHand ? 0.03 : -0.03, z: -0.03 }
-            ];
-
-            // 建立食指、中指、無名指、小指
-            fingerPositions.forEach(fp => {
-                const chain = this._createFingerChain(fp.name, fp.x, palmBaseY, fp.z, gloveMat);
-                this.root.add(chain[0]); // 加入根關節
-                this.fingers[fp.name] = chain;
-            });
-
-            // 建立大拇指 (位置不同，角度不同)
-            const thumbChain = this._createThumb(gloveMat);
-            this.root.add(thumbChain[0]);
-            this.fingers.thumb = thumbChain;
-
-            // 3. 加上露指手套的指尖 (露出皮膚)
-            // 這裡簡化為將遠節的手指材質換成皮膚
-            ['thumb', 'index', 'middle', 'ring', 'pinky'].forEach(f => {
-                const distalJoint = this.fingers[f][2];
-                if (distalJoint && distalJoint.children[0]) {
-                    distalJoint.children[0].material = skinMat;
-                }
-            });
-        }
-
-        _createFingerChain(name, x, y, z, mat) {
-            const joints = [];
-            let parent = null;
-
-            // 3 個指節
-            for (let i = 0; i < 3; i++) {
-                const joint = new THREE.Group();
-                const length = CONFIG.FINGER_LENGTH[i];
-                const radius = CONFIG.FINGER_RADIUS[i];
-                
-                const { segment, tip } = AnatomyGeometry.createFingerSegment(length, radius, i === 2);
-                const mesh = new THREE.Mesh(segment, mat);
-                joint.add(mesh);
-                
-                if (tip) {
-                    const tipMesh = new THREE.Mesh(tip, mat);
-                    tipMesh.position.y = -length;
-                    joint.add(tipMesh);
-                }
-
-                if (i === 0) {
-                    // 第一指節 (根部) 的位置
-                    joint.position.set(x, y, z);
-                } else {
-                    // 後續指節連接到前一節的末端
-                    joint.position.y = -CONFIG.FINGER_LENGTH[i-1];
-                    parent.add(joint);
-                }
-
-                joints.push(joint);
-                parent = joint;
-            }
-
-            return joints;
-        }
-
-        _createThumb(mat) {
-            const joints = [];
-            let parent = null;
-
-            // 大拇指只有 2 節明顯的骨骼 (近節與遠節)，但為了統一，我們做 3 節
-            for (let i = 0; i < 3; i++) {
-                const joint = new THREE.Group();
-                const length = CONFIG.FINGER_LENGTH[i] * 0.8; // 大拇指較短
-                const radius = CONFIG.FINGER_RADIUS[i] * 1.2; // 大拇指較粗
-                
-                const { segment, tip } = AnatomyGeometry.createFingerSegment(length, radius, i === 2);
-                const mesh = new THREE.Mesh(segment, mat);
-                joint.add(mesh);
-                
-                if (tip) {
-                    const tipMesh = new THREE.Mesh(tip, mat);
-                    tipMesh.position.y = -length;
-                    joint.add(tipMesh);
-                }
-
-                if (i === 0) {
-                    // 大拇指根部位置 (側邊)
-                    joint.position.set(this.isLeftHand ? 0.04 : -0.04, -0.02, 0.02);
-                    // 預設向外張開
-                    joint.rotation.z = this.isLeftHand ? -0.8 : 0.8;
-                    joint.rotation.x = -0.4;
-                } else {
-                    joint.position.y = -CONFIG.FINGER_LENGTH[i-1] * 0.8;
-                    parent.add(joint);
-                }
-
-                joints.push(joint);
-                parent = joint;
-            }
-
-            return joints;
-        }
-
-        _initGestureAngles() {
-            // 初始化手勢狀態
-            // X軸旋轉 = 彎曲 (負值為彎曲)
-            // Y軸旋轉 = 張開 (左右)
-            // Z軸旋轉 = 扭轉
-            const defaultBend = -0.2;
-            
-            ['thumb', 'index', 'middle', 'ring', 'pinky'].forEach(f => {
-                this.targetAngles[f] = [
-                    { x: defaultBend, y: 0, z: 0 },
-                    { x: defaultBend, y: 0, z: 0 },
-                    { x: defaultBend, y: 0, z: 0 }
-                ];
-                this.currentAngles[f] = [
-                    { x: defaultBend, y: 0, z: 0 },
-                    { x: defaultBend, y: 0, z: 0 },
-                    { x: defaultBend, y: 0, z: 0 }
-                ];
-            });
+            this._unsubscribers = [];
         }
 
         /**
-         * 設定目標手勢
-         * @param {Object} gestureData 目標角度資料
+         * 初始化雙手骨骼模型與事件監聽
          */
-        setGesture(gestureData) {
-            for (const finger in gestureData) {
-                if (this.targetAngles[finger]) {
-                    for (let i = 0; i < 3; i++) {
-                        this.targetAngles[finger][i].x = gestureData[finger][i].x;
-                        this.targetAngles[finger][i].y = gestureData[finger][i].y;
-                    }
-                }
+        init(options) {
+            const THREE = global.THREE;
+            if (!THREE) {
+                throw new Error('13_fp_hands_anatomy.js 需要 THREE 全域物件');
             }
+
+            const opts = options || {};
+            this.parentGroup = opts.parentGroup ||
+                (TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getWeaponCamera()) ||
+                null;
+
+            if (!this.parentGroup) {
+                throw new Error('13_fp_hands_anatomy.js 找不到有效的武器相機或父節點');
+            }
+
+            this.clear();
+
+            this._materials = {
+                glove: new THREE.MeshStandardMaterial({
+                    color: HAND_PALETTE.gloveColor,
+                    roughness: 0.72,
+                    metalness: 0.15
+                }),
+                pad: new THREE.MeshStandardMaterial({
+                    color: HAND_PALETTE.padColor,
+                    roughness: 0.55,
+                    metalness: 0.35
+                }),
+                skin: new THREE.MeshStandardMaterial({
+                    color: HAND_PALETTE.skinColor,
+                    roughness: 0.65,
+                    metalness: 0.05
+                }),
+                sleeve: new THREE.MeshStandardMaterial({
+                    color: HAND_PALETTE.sleeveColor,
+                    roughness: 0.86,
+                    metalness: 0.05
+                })
+            };
+
+            this.handsGroup = new THREE.Group();
+            this.handsGroup.name = 'FirstPersonHandsAnatomyGroup';
+            this.parentGroup.add(this.handsGroup);
+
+            this.leftHand = buildSingleHandRig(-1, this._materials);
+            this.leftHand.root.position.set(-0.24, -0.24, -0.32);
+            this.handsGroup.add(this.leftHand.root);
+
+            this.rightHand = buildSingleHandRig(1, this._materials);
+            this.rightHand.root.position.set(0.24, -0.24, -0.28);
+            this.handsGroup.add(this.rightHand.root);
+
+            this.setPose('rifle_hip', true);
+
+            if (!this.initialized) {
+                this._bindEvents();
+                this.initialized = true;
+            }
+
+            return this;
         }
 
-        /**
-         * 每幀更新手指角度 (插值)
-         */
-        update(dt) {
-            const speed = CONFIG.GESTURE_LERP_SPEED * dt;
-
-            for (const finger in this.fingers) {
-                for (let i = 0; i < 3; i++) {
-                    const joint = this.fingers[finger][i];
-                    const target = this.targetAngles[finger][i];
-                    const current = this.currentAngles[finger][i];
-
-                    // 線性插值逼近目標角度
-                    current.x += (target.x - current.x) * speed;
-                    current.y += (target.y - current.y) * speed;
-
-                    // 應用到關節
-                    joint.rotation.x = current.x;
-                    joint.rotation.y = current.y;
-                }
-            }
-        }
-    }
-
-    /* =========================================================================
-     * 第四部分：手勢預設資料庫 (GestureLibrary)
-     * 定義各種戰術動作的手部姿勢。
-     * ========================================================================= */
-
-    const GestureLibrary = {
-        // 1. 握持步槍 (右手握把，左手托護木)
-        HOLD_RIFLE: {
-            right: {
-                thumb: [{x: -0.2, y: 0.3}, {x: -0.3, y: 0}, {x: -0.2, y: 0}],
-                index: [{x: -0.4, y: 0}, {x: -0.6, y: 0}, {x: -0.4, y: 0}],
-                middle: [{x: -1.2, y: 0}, {x: -1.3, y: 0}, {x: -1.0, y: 0}],
-                ring: [{x: -1.2, y: 0}, {x: -1.3, y: 0}, {x: -1.0, y: 0}],
-                pinky: [{x: -1.2, y: 0}, {x: -1.3, y: 0}, {x: -1.0, y: 0}]
-            },
-            left: {
-                thumb: [{x: -0.4, y: -0.3}, {x: -0.3, y: 0}, {x: -0.2, y: 0}],
-                index: [{x: -0.8, y: 0}, {x: -1.0, y: 0}, {x: -0.6, y: 0}],
-                middle: [{x: -0.8, y: 0}, {x: -1.0, y: 0}, {x: -0.6, y: 0}],
-                ring: [{x: -0.8, y: 0}, {x: -1.0, y: 0}, {x: -0.6, y: 0}],
-                pinky: [{x: -0.8, y: 0}, {x: -1.0, y: 0}, {x: -0.6, y: 0}]
-            }
-        },
-
-        // 2. 扣動扳機 (右手食指彎曲)
-        TRIGGER_PULL: {
-            right: {
-                index: [{x: -0.2, y: 0}, {x: -1.5, y: 0}, {x: -1.2, y: 0}]
-            }
-        },
-
-        // 3. 左手張開抓彈匣 (換彈第一階段)
-        GRAB_MAGAZINE: {
-            left: {
-                thumb: [{x: -0.5, y: -0.5}, {x: -0.4, y: 0}, {x: -0.3, y: 0}],
-                index: [{x: -0.4, y: -0.2}, {x: -0.5, y: 0}, {x: -0.4, y: 0}],
-                middle: [{x: -0.4, y: -0.2}, {x: -0.5, y: 0}, {x: -0.4, y: 0}],
-                ring: [{x: -0.4, y: -0.2}, {x: -0.5, y: 0}, {x: -0.4, y: 0}],
-                pinky: [{x: -0.4, y: -0.2}, {x: -0.5, y: 0}, {x: -0.4, y: 0}]
-            }
-        },
-
-        // 4. 左手併攏拍擊釋放鈕 (換彈第三階段)
-        SLAP_BOLT: {
-            left: {
-                thumb: [{x: -0.8, y: 0}, {x: -0.6, y: 0}, {x: -0.4, y: 0}],
-                index: [{x: -0.1, y: 0}, {x: -0.1, y: 0}, {x: -0.1, y: 0}], // 打直
-                middle: [{x: -0.1, y: 0}, {x: -0.1, y: 0}, {x: -0.1, y: 0}],
-                ring: [{x: -0.1, y: 0}, {x: -0.1, y: 0}, {x: -0.1, y: 0}],
-                pinky: [{x: -0.1, y: 0}, {x: -0.1, y: 0}, {x: -0.1, y: 0}]
-            }
-        },
-
-        // 5. 戰術衝刺擺臂 (左手握拳)
-        TAC_SPRINT_ARM: {
-            left: {
-                thumb: [{x: -1.0, y: 0.2}, {x: -0.8, y: 0}, {x: -0.5, y: 0}],
-                index: [{x: -1.5, y: 0}, {x: -1.5, y: 0}, {x: -1.2, y: 0}],
-                middle: [{x: -1.5, y: 0}, {x: -1.5, y: 0}, {x: -1.2, y: 0}],
-                ring: [{x: -1.5, y: 0}, {x: -1.5, y: 0}, {x: -1.2, y: 0}],
-                pinky: [{x: -1.5, y: 0}, {x: -1.5, y: 0}, {x: -1.2, y: 0}]
-            }
-        }
-    };
-
-    /* =========================================================================
-     * 第五部分：第一人稱手部總管 (FPHandsManager)
-     * ========================================================================= */
-
-    class FPHandsManager {
-        constructor() {
-            this.camera = null;
-            this.rootGroup = null;
-            
-            this.rightHandModel = null;
-            this.leftHandModel = null;
-
-            this.rightSkeleton = null;
-            this.leftSkeleton = null;
-
-            // 當前的基礎手勢狀態
-            this.currentState = 'HOLD_RIFLE';
-        }
-
-        init(camera) {
-            if (!camera) {
-                Logger.error('初始化失敗：找不到相機物件');
+        _bindEvents() {
+            if (!EventBus || !Events) {
                 return;
             }
-            this.camera = camera;
 
-            // 建立根群組，掛載在相機下
-            this.rootGroup = new THREE.Group();
-            this.camera.add(this.rootGroup);
+            if (Events.WEAPON_FIRE) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.WEAPON_FIRE, () => {
+                        this._targetTriggerPull = 1.0;
+                    })
+                );
+            }
 
-            // 1. 初始化右手
-            this._buildRightHand();
+            if (Events.WEAPON_RELOAD_START) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.WEAPON_RELOAD_START, () => {
+                        this.setPose('reload', false);
+                    })
+                );
+            }
 
-            // 2. 初始化左手
-            this._buildLeftHand();
+            if (Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL) {
+                const finishEvt = Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL;
+                this._unsubscribers.push(
+                    EventBus.on(finishEvt, () => {
+                        this.setPose('rifle_hip', false);
+                    })
+                );
+            }
 
-            // 3. 設定初始手勢
-            this._applyGesture('HOLD_RIFLE');
+            if (Events.PLAYER_PLATE_START) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.PLAYER_PLATE_START, () => {
+                        this.setPose('plate', false);
+                    })
+                );
+            }
 
-            // 4. 綁定事件
-            this._setupEvents();
-
-            Logger.success('第一人稱手部解剖模型初始化完畢');
-        }
-
-        _buildRightHand() {
-            // 建立模型群組
-            this.rightHandModel = new THREE.Group();
-            this.rightHandModel.position.copy(CONFIG.RIGHT_HAND_OFFSET);
-            
-            // 前臂
-            const forearmGeo = AnatomyGeometry.createOrganicForearm();
-            const forearmMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLOR_SKIN, roughness: 0.8 });
-            const forearmMesh = new THREE.Mesh(forearmGeo, forearmMat);
-            forearmMesh.position.y = -0.12; // 往下延伸
-            forearmMesh.rotation.x = Math.PI / 2; // 朝向鏡頭前方
-            this.rightHandModel.add(forearmMesh);
-
-            // 建立骨骼
-            this.rightSkeleton = new HandSkeleton(false);
-            // 旋轉手掌使其面向正確方向
-            this.rightSkeleton.root.rotation.x = -Math.PI / 2;
-            this.rightSkeleton.root.rotation.z = Math.PI / 6; 
-            this.rightHandModel.add(this.rightSkeleton.root);
-
-            this.rootGroup.add(this.rightHandModel);
-        }
-
-        _buildLeftHand() {
-            // 建立模型群組
-            this.leftHandModel = new THREE.Group();
-            this.leftHandModel.position.copy(CONFIG.LEFT_HAND_OFFSET);
-            
-            // 前臂
-            const forearmGeo = AnatomyGeometry.createOrganicForearm();
-            const forearmMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLOR_SKIN, roughness: 0.8 });
-            const forearmMesh = new THREE.Mesh(forearmGeo, forearmMat);
-            forearmMesh.position.y = -0.12;
-            forearmMesh.rotation.x = Math.PI / 2;
-            this.leftHandModel.add(forearmMesh);
-
-            // 袖口
-            const cuff = AnatomyGeometry.createSleeveCuff();
-            cuff.position.y = -0.15;
-            this.leftHandModel.add(cuff);
-
-            // 戰術手錶
-            const watch = AnatomyGeometry.createTacticalWatch();
-            watch.position.set(0.03, -0.12, 0.02);
-            watch.rotation.y = Math.PI / 2;
-            this.leftHandModel.add(watch);
-
-            // 建立骨骼
-            this.leftSkeleton = new HandSkeleton(true);
-            this.leftSkeleton.root.rotation.x = -Math.PI / 2;
-            this.leftSkeleton.root.rotation.z = -Math.PI / 6;
-            this.leftHandModel.add(this.leftSkeleton.root);
-
-            this.rootGroup.add(this.leftHandModel);
-        }
-
-        _setupEvents() {
-            if (!WZ.bus) return;
-
-            // 監聽開火事件 (右手食指扣扳機)
-            WZ.bus.on('WEAPON_FIRED', () => {
-                // 觸發扣扳機手勢
-                this._triggerFingerPull();
-            });
-
-            // 監聽換彈事件
-            WZ.bus.on('ARMOR_RELOAD_START', () => {
-                // 換彈時左手抓彈匣
-                this._applyGesture('GRAB_MAGAZINE');
-            });
-
-            WZ.bus.on('ARMOR_RELOAD_COMPLETE', () => {
-                // 換彈完成，回到握槍
-                this._applyGesture('HOLD_RIFLE');
-            });
-
-            // 監聽戰術衝刺
-            WZ.bus.on('TAC_SPRINT_TOGGLED', (isActive) => {
-                if (isActive) {
-                    this._applyGesture('TAC_SPRINT_ARM');
-                } else {
-                    this._applyGesture('HOLD_RIFLE');
-                }
-            });
-
-            Logger.info('手部模型事件綁定完成');
+            if (Events.PLAYER_PLATE_FINISH || Events.PLAYER_PLATE_CANCEL) {
+                const plateEnd = Events.PLAYER_PLATE_FINISH || Events.PLAYER_PLATE_CANCEL;
+                this._unsubscribers.push(
+                    EventBus.on(plateEnd, () => {
+                        this.setPose('rifle_hip', false);
+                    })
+                );
+            }
         }
 
         /**
-         * 切換整體手勢
+         * 切換手部姿態（rifle_hip / rifle_ads / pistol_hip / reload / plate）
          */
-        _applyGesture(gestureName) {
-            this.currentState = gestureName;
+        setPose(poseKey, instant) {
+            const target = STANCE_POSES[poseKey] || STANCE_POSES.rifle_hip;
+            this.currentPoseKey = STANCE_POSES[poseKey] ? poseKey : 'rifle_hip';
 
-            if (gestureName === 'HOLD_RIFLE') {
-                this.rightSkeleton.setGesture(GestureLibrary.HOLD_RIFLE.right);
-                this.leftSkeleton.setGesture(GestureLibrary.HOLD_RIFLE.left);
-            } else if (gestureName === 'GRAB_MAGAZINE') {
-                this.leftSkeleton.setGesture(GestureLibrary.GRAB_MAGAZINE.left);
-            } else if (gestureName === 'TAC_SPRINT_ARM') {
-                this.leftSkeleton.setGesture(GestureLibrary.TAC_SPRINT_ARM.left);
+            if (instant) {
+                this._poseBlend.rx = target.rightArm.x;
+                this._poseBlend.ry = target.rightArm.y;
+                this._poseBlend.rz = target.rightArm.z;
+                this._poseBlend.rwx = target.rightWrist.x;
+                this._poseBlend.rwy = target.rightWrist.y;
+                this._poseBlend.rwz = target.rightWrist.z;
+                this._poseBlend.rix = target.rightIndex.x;
+                this._poseBlend.rgx = target.rightGrip.x;
+
+                this._poseBlend.lx = target.leftArm.x;
+                this._poseBlend.ly = target.leftArm.y;
+                this._poseBlend.lz = target.leftArm.z;
+                this._poseBlend.lwx = target.leftWrist.x;
+                this._poseBlend.lwy = target.leftWrist.y;
+                this._poseBlend.lwz = target.leftWrist.z;
+                this._poseBlend.lix = target.leftIndex.x;
+                this._poseBlend.lgx = target.leftGrip.x;
             }
-            
-            Logger.event(`手部手勢切換: ${gestureName}`);
         }
 
         /**
-         * 觸發扣扳機動畫
+         * 依武器類型與開鏡進度更新目標姿態
          */
-        _triggerFingerPull() {
-            // 設定食指目標角度為扣下
-            this.rightSkeleton.targetAngles.index[1].x = -1.5;
-            this.rightSkeleton.targetAngles.index[2].x = -1.2;
-
-            // 短暫延遲後恢復
-            clearTimeout(this._triggerTimeout);
-            this._triggerTimeout = setTimeout(() => {
-                if (this.currentState === 'HOLD_RIFLE') {
-                    this.rightSkeleton.targetAngles.index[1].x = -0.6;
-                    this.rightSkeleton.targetAngles.index[2].x = -0.4;
-                }
-            }, 100);
+        syncWeaponContext(weaponId, isAiming, isReloading, isPlating) {
+            if (isPlating) {
+                this.setPose('plate', false);
+                return;
+            }
+            if (isReloading) {
+                this.setPose('reload', false);
+                return;
+            }
+            if (weaponId === 'X16') {
+                this.setPose('pistol_hip', false);
+                return;
+            }
+            this.setPose(isAiming ? 'rifle_ads' : 'rifle_hip', false);
         }
 
         /**
-         * 每幀更新
+         * 每幀更新關節插值與扣板機指節回彈
          */
-        update(dt) {
-            // 更新左右手骨骼的插值
-            if (this.rightSkeleton) this.rightSkeleton.update(dt);
-            if (this.leftSkeleton) this.leftSkeleton.update(dt);
+        update(deltaTime, motionOffset) {
+            const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+            const target = STANCE_POSES[this.currentPoseKey] || STANCE_POSES.rifle_hip;
+            const alpha = 1 - Math.exp(-14 * dt);
+
+            this._poseBlend.rx = lerp(this._poseBlend.rx, target.rightArm.x, alpha);
+            this._poseBlend.ry = lerp(this._poseBlend.ry, target.rightArm.y, alpha);
+            this._poseBlend.rz = lerp(this._poseBlend.rz, target.rightArm.z, alpha);
+            this._poseBlend.rwx = lerp(this._poseBlend.rwx, target.rightWrist.x, alpha);
+            this._poseBlend.rwy = lerp(this._poseBlend.rwy, target.rightWrist.y, alpha);
+            this._poseBlend.rwz = lerp(this._poseBlend.rwz, target.rightWrist.z, alpha);
+            this._poseBlend.rix = lerp(this._poseBlend.rix, target.rightIndex.x, alpha);
+            this._poseBlend.rgx = lerp(this._poseBlend.rgx, target.rightGrip.x, alpha);
+
+            this._poseBlend.lx = lerp(this._poseBlend.lx, target.leftArm.x, alpha);
+            this._poseBlend.ly = lerp(this._poseBlend.ly, target.leftArm.y, alpha);
+            this._poseBlend.lz = lerp(this._poseBlend.lz, target.leftArm.z, alpha);
+            this._poseBlend.lwx = lerp(this._poseBlend.lwx, target.leftWrist.x, alpha);
+            this._poseBlend.lwy = lerp(this._poseBlend.lwy, target.leftWrist.y, alpha);
+            this._poseBlend.lwz = lerp(this._poseBlend.lwz, target.leftWrist.z, alpha);
+            this._poseBlend.lix = lerp(this._poseBlend.lix, target.leftIndex.x, alpha);
+            this._poseBlend.lgx = lerp(this._poseBlend.lgx, target.leftGrip.x, alpha);
+
+            // 扣板機平滑回彈
+            this.triggerPull = lerp(this.triggerPull, this._targetTriggerPull, 1 - Math.exp(-26 * dt));
+            this._targetTriggerPull = Math.max(0, this._targetTriggerPull - 18 * dt);
+
+            const swayX = motionOffset && typeof motionOffset.x === 'number' ? motionOffset.x : 0;
+            const swayY = motionOffset && typeof motionOffset.y === 'number' ? motionOffset.y : 0;
+
+            if (this.handsGroup) {
+                this.handsGroup.position.set(swayX, swayY, 0);
+            }
+
+            if (this.rightHand) {
+                this.rightHand.root.rotation.set(this._poseBlend.rx, this._poseBlend.ry, this._poseBlend.rz);
+                this.rightHand.wrist.rotation.set(this._poseBlend.rwx, this._poseBlend.rwy, this._poseBlend.rwz);
+                this.rightHand.index.rotation.x = this._poseBlend.rix + this.triggerPull * 0.42;
+                this.rightHand.grip.rotation.x = this._poseBlend.rgx;
+            }
+
+            if (this.leftHand) {
+                this.leftHand.root.rotation.set(this._poseBlend.lx, this._poseBlend.ly, this._poseBlend.lz);
+                this.leftHand.wrist.rotation.set(this._poseBlend.lwx, this._poseBlend.lwy, this._poseBlend.lwz);
+                this.leftHand.index.rotation.x = this._poseBlend.lix;
+                this.leftHand.grip.rotation.x = this._poseBlend.lgx;
+            }
         }
-    }
 
-    /* =========================================================================
-     * 第六部分：導出與初始化
-     * ========================================================================= */
-
-    // 1. 實例化
-    const fpHands = new FPHandsManager();
-
-    // 2. 掛載到 WZ 命名空間
-    WZ.FPHands = fpHands;
-
-    // 3. 監聽 RENDERER_READY 事件，自動初始化
-    if (WZ.bus) {
-        WZ.bus.on('RENDERER_READY', (data) => {
-            Logger.system('接收到渲染器就緒事件，準備初始化第一人稱手模...');
-            
-            if (data.camera) {
-                fpHands.init(data.camera);
-                WZ.bus.emit('FP_HANDS_READY');
-            } else {
-                Logger.error('渲染器就緒事件中缺少相機物件');
+        setVisible(visible) {
+            if (this.handsGroup) {
+                this.handsGroup.visible = Boolean(visible);
             }
-        });
-    }
+        }
 
-    // 4. 將更新掛載到主渲染循環中
-    if (WZ.Renderer) {
-        const originalOnRender = WZ.Renderer.onRender;
-        WZ.Renderer.onRender = (alpha, dt) => {
-            fpHands.update(dt);
-            if (originalOnRender) {
-                originalOnRender(alpha, dt);
+        clear() {
+            if (this.handsGroup && this.handsGroup.parent) {
+                this.handsGroup.parent.remove(this.handsGroup);
             }
-        };
-        Logger.info('FPHands 已成功掛載至主渲染循環');
-    } else {
-        // 延遲掛載
-        const checkInterval = setInterval(() => {
-            if (WZ.Renderer) {
-                clearInterval(checkInterval);
-                const originalOnRender = WZ.Renderer.onRender;
-                WZ.Renderer.onRender = (alpha, dt) => {
-                    fpHands.update(dt);
-                    if (originalOnRender) {
-                        originalOnRender(alpha, dt);
+            this.handsGroup = null;
+            this.leftHand = null;
+            this.rightHand = null;
+
+            if (this._materials) {
+                const keys = Object.keys(this._materials);
+                for (let i = 0; i < keys.length; i = i + 1) {
+                    const mat = this._materials[keys[i]];
+                    if (mat && typeof mat.dispose === 'function') {
+                        mat.dispose();
                     }
-                };
-                Logger.info('FPHands 延遲掛載成功');
+                }
+                this._materials = null;
             }
-        }, 100);
+        }
+
+        dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+            this.clear();
+            this.initialized = false;
+        }
     }
 
-    Logger.success('js/13_fp_hands_anatomy.js 已成功載入並掛載至 window.WZ.FPHands');
+    // ------------------------------------------------------------------------
+    // 4. 建立單例並註冊至全域命名空間
+    // ------------------------------------------------------------------------
+    const fpHandsAnatomyInstance = new FpHandsAnatomy();
 
-}); // 結束工廠函數
+    const moduleExport = {
+        FpHandsAnatomyClass: FpHandsAnatomy,
+        instance: fpHandsAnatomyInstance,
+        STANCE_POSES: STANCE_POSES
+    };
+
+    TacticalWarfare.FpHandsAnatomy = fpHandsAnatomyInstance;
+    TacticalWarfare.registerModule('13_fp_hands_anatomy', moduleExport);
+})(window);
