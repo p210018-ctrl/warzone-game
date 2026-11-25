@@ -187,7 +187,6 @@
                 });
             }
 
-            // [37] 補齊敵軍受擊盒與燃料桶爆炸物查詢接線
             if (TacticalWarfare.PhysicsCollision && typeof TacticalWarfare.PhysicsCollision.setProviders === 'function') {
                 TacticalWarfare.PhysicsCollision.setProviders({
                     getEnemyHitboxes: () => {
