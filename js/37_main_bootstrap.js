@@ -187,6 +187,75 @@
                 });
             }
 
+            // [37] 補齊敵軍受擊盒與燃料桶爆炸物查詢接線
+            if (TacticalWarfare.PhysicsCollision && typeof TacticalWarfare.PhysicsCollision.setProviders === 'function') {
+                TacticalWarfare.PhysicsCollision.setProviders({
+                    getEnemyHitboxes: () => {
+                        const out = [];
+                        const meshMgr = TacticalWarfare.EnemySoldierMesh;
+                        if (!meshMgr || typeof meshMgr.getAllSoldiers !== 'function') return out;
+                        const soldiers = meshMgr.getAllSoldiers();
+                        for (let i = 0; i < soldiers.length; i = i + 1) {
+                            const s = soldiers[i];
+                            if (!s || !s.alive) continue;
+                            const vol = typeof s.getHitVolumes === 'function' ? s.getHitVolumes() : null;
+                            const pos = vol && vol.position ? vol.position : s.position;
+                            if (!pos) continue;
+                            const head = vol && vol.head ? vol.head : { x: pos.x, y: pos.y + 1.56, z: pos.z, radius: 0.22 };
+                            const torso = vol && vol.torso ? vol.torso : { minY: pos.y + 0.1, maxY: pos.y + 1.42, radius: 0.48 };
+                            const r = Math.max(torso.radius || 0.48, 0.46);
+                            out.push({
+                                zone: 'head',
+                                active: true,
+                                enemy: s,
+                                center: { x: head.x, y: head.y, z: head.z },
+                                radius: Math.max(head.radius || 0.17, 0.20)
+                            });
+                            out.push({
+                                zone: 'torso',
+                                active: true,
+                                shape: 'box',
+                                enemy: s,
+                                box: {
+                                    minX: pos.x - r,
+                                    maxX: pos.x + r,
+                                    minY: torso.minY,
+                                    maxY: torso.maxY,
+                                    minZ: pos.z - r,
+                                    maxZ: pos.z + r
+                                }
+                            });
+                        }
+                        return out;
+                    },
+                    getExplosives: () => {
+                        const out = [];
+                        const expMod = TacticalWarfare.MapExplosivesPickups || TacticalWarfare.MapPropsCovers;
+                        if (!expMod) return out;
+                        let list = null;
+                        if (typeof expMod.getBarrels === 'function') list = expMod.getBarrels();
+                        else if (typeof expMod.getExplosives === 'function') list = expMod.getExplosives();
+                        else if (Array.isArray(expMod.barrels)) list = expMod.barrels;
+                        else if (Array.isArray(expMod.explosives)) list = expMod.explosives;
+                        if (!Array.isArray(list)) return out;
+                        for (let i = 0; i < list.length; i = i + 1) {
+                            const b = list[i];
+                            if (!b || b.exploded || b.destroyed) continue;
+                            const pos = b.position || (b.mesh && b.mesh.position);
+                            if (!pos) continue;
+                            out.push({
+                                id: b.id,
+                                exploded: false,
+                                position: { x: pos.x, y: (pos.y || 0) + 0.55, z: pos.z },
+                                hitRadius: b.hitRadius || b.radius || 0.65,
+                                raw: b
+                            });
+                        }
+                        return out;
+                    }
+                });
+            }
+
             if (TacticalWarfare.RagdollPhysics && typeof TacticalWarfare.RagdollPhysics.init === 'function') {
                 TacticalWarfare.RagdollPhysics.init({
                     soldierManager: TacticalWarfare.EnemySoldierMesh,
@@ -397,7 +466,6 @@
                     alive: true
                 };
 
-                // [37] 每幀推進敵軍戰術移動、碰撞滑行與防重疊分離
                 if (TacticalWarfare.EnemyWarzoneLocomotion && typeof TacticalWarfare.EnemyWarzoneLocomotion.update === 'function') {
                     TacticalWarfare.EnemyWarzoneLocomotion.update(dt, playerCtx);
                 }
