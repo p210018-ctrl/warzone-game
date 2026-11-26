@@ -56,6 +56,7 @@
             this._isAiming = false;
             this._isSprinting = false;
             this._reloadProgress = 0;
+            this._reloadDuration = 1.65;
             this._isReloading = false;
 
             this._recoilPosZ = 0;
@@ -305,13 +306,17 @@
                 );
             }
 
-            if (Events.WEAPON_RELOAD_START) {
+            const reloadStartEvts = [Events.WEAPON_RELOAD_START, Events.RELOAD_START].filter(Boolean);
+            for (let i = 0; i < reloadStartEvts.length; i = i + 1) {
                 this._unsubscribers.push(
-                    EventBus.on(Events.WEAPON_RELOAD_START, (payload) => {
+                    EventBus.on(reloadStartEvts[i], (payload) => {
                         if (!this._isVisible) return;
                         if (payload && payload.weaponId && payload.weaponId !== M4_URGI_SPECS.id) return;
                         this._isReloading = true;
                         this._reloadProgress = 0;
+                        this._reloadDuration = payload && typeof payload.duration === 'number' && payload.duration > 0
+                            ? payload.duration
+                            : 1.65;
                     })
                 );
             }
@@ -326,10 +331,14 @@
                 );
             }
 
-            if (Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL) {
-                const endEvt = Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL;
+            const reloadEndEvts = [
+                Events.WEAPON_RELOAD_FINISH,
+                Events.WEAPON_RELOAD_CANCEL,
+                Events.RELOAD_COMPLETE
+            ].filter(Boolean);
+            for (let i = 0; i < reloadEndEvts.length; i = i + 1) {
                 this._unsubscribers.push(
-                    EventBus.on(endEvt, () => {
+                    EventBus.on(reloadEndEvts[i], () => {
                         this._isReloading = false;
                         this._reloadProgress = 0;
                     })
@@ -357,6 +366,15 @@
             this._isVisible = Boolean(visible);
             if (this.rootGroup) {
                 this.rootGroup.visible = this._isVisible;
+            }
+            if (!this._isVisible) {
+                this._isReloading = false;
+                this._reloadProgress = 0;
+                this._flashTimer = 0;
+                if (this.muzzleFlashMesh && this.muzzleFlashMat) {
+                    this.muzzleFlashMesh.visible = false;
+                    this.muzzleFlashMat.opacity = 0;
+                }
             }
         }
 
@@ -393,6 +411,10 @@
             this.rootGroup.visible = true;
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const alpha = 1 - Math.exp(-16 * dt);
+
+            if (this._isReloading) {
+                this._reloadProgress = Math.min(1, this._reloadProgress + dt / Math.max(0.2, this._reloadDuration));
+            }
 
             let targetPos = M4_URGI_SPECS.hipPosition;
             let targetRotX = 0;
