@@ -135,8 +135,8 @@
 
             this.recoilOffset = { pitch: 0, yaw: 0 };
             this._isFiringHeld = false;
-            this._touchFiring = false;
-            this._activeTouchIds = new Set();
+            this._buttonFiring = false;
+            this._activeFireTouchIds = new Set();
             this._semiTriggered = false;
 
             this.isReloading = false;
@@ -151,8 +151,8 @@
             this._fireCooldown = 0;
             this._spreadBonus = 0;
             this._isFiringHeld = false;
-            this._touchFiring = false;
-            this._activeTouchIds.clear();
+            this._buttonFiring = false;
+            this._activeFireTouchIds.clear();
             this._semiTriggered = false;
             this.isReloading = false;
             this._reloadTimer = 0;
@@ -198,13 +198,7 @@
 
         _isFireControl(target) {
             if (!target || !target.closest) return false;
-            const el = target.closest('[data-action="fire"], [data-fire], .fire-btn, #fire-btn, [aria-label*="fire" i], [aria-label*="開火"]');
-            return Boolean(el);
-        }
-
-        _isMoveJoystick(target) {
-            if (!target || !target.closest) return false;
-            const el = target.closest('[data-joystick="move"], [data-action="move"], .move-stick, #move-stick, .joystick-left');
+            const el = target.closest('[data-action="fire"], [data-fire], [data-btn="fire"], .fire-btn, #fire-btn, .btn-fire, [aria-label*="fire" i], [aria-label*="開火"]');
             return Boolean(el);
         }
 
@@ -219,7 +213,12 @@
                     this.startReload(this.activeWeaponId);
                     return;
                 }
-                if (target && target.closest && target.closest('button, input, select, textarea, [data-rt]') && !this._isFireControl(target)) {
+                if (this._isFireControl(target)) {
+                    this._buttonFiring = true;
+                    this._semiTriggered = false;
+                    return;
+                }
+                if (target && target.closest && target.closest('button, input, select, textarea, [data-rt]')) {
                     return;
                 }
                 this._isFiringHeld = true;
@@ -229,6 +228,7 @@
             const onMouseUp = (ev) => {
                 if (ev.button !== 0) return;
                 this._isFiringHeld = false;
+                this._buttonFiring = false;
                 this._semiTriggered = false;
             };
 
@@ -241,41 +241,40 @@
                     return;
                 }
 
-                if (this._isMoveJoystick(target)) {
+                // 僅當觸控落在開火按鍵上時才記錄開火，避免碰觸畫面其他地方誤開火
+                if (!this._isFireControl(target)) {
                     return;
                 }
 
-                let added = false;
                 for (let i = 0; i < ev.changedTouches.length; i = i + 1) {
                     const t = ev.changedTouches[i];
                     if (!t) continue;
                     const id = typeof t.identifier === 'number' ? t.identifier : i;
-                    this._activeTouchIds.add(id);
-                    added = true;
+                    this._activeFireTouchIds.add(id);
                 }
 
-                if (added) {
-                    if (!this._touchFiring) {
+                if (this._activeFireTouchIds.size > 0) {
+                    if (!this._buttonFiring) {
                         this._semiTriggered = false;
                     }
-                    this._touchFiring = true;
+                    this._buttonFiring = true;
                 }
             };
 
             const onTouchEndOrCancel = (ev) => {
-                if (ev && ev.changedTouches && this._activeTouchIds.size > 0) {
+                if (ev && ev.changedTouches && this._activeFireTouchIds.size > 0) {
                     for (let i = 0; i < ev.changedTouches.length; i = i + 1) {
                         const t = ev.changedTouches[i];
                         if (!t) continue;
                         const id = typeof t.identifier === 'number' ? t.identifier : i;
-                        this._activeTouchIds.delete(id);
+                        this._activeFireTouchIds.delete(id);
                     }
                 }
 
                 const remaining = ev && ev.touches ? ev.touches.length : 0;
-                if (remaining === 0 || this._activeTouchIds.size === 0) {
-                    this._activeTouchIds.clear();
-                    this._touchFiring = false;
+                if (remaining === 0 || this._activeFireTouchIds.size === 0) {
+                    this._activeFireTouchIds.clear();
+                    this._buttonFiring = false;
                     this._semiTriggered = false;
                 }
             };
@@ -351,10 +350,10 @@
                 this._unsubscribers.push(
                     EventBus.on(startEvt, (payload) => {
                         if (payload && typeof payload.active === 'boolean') {
-                            this._touchFiring = payload.active;
+                            this._buttonFiring = payload.active;
                             if (!payload.active) this._semiTriggered = false;
                         } else {
-                            this._touchFiring = true;
+                            this._buttonFiring = true;
                             this._semiTriggered = false;
                         }
                     })
@@ -365,7 +364,7 @@
                 const stopEvt = Events.FIRE_STOP || Events.WEAPON_FIRE_STOP;
                 this._unsubscribers.push(
                     EventBus.on(stopEvt, () => {
-                        this._touchFiring = false;
+                        this._buttonFiring = false;
                         this._isFiringHeld = false;
                         this._semiTriggered = false;
                     })
@@ -416,7 +415,7 @@
             if (this.isReloading) return false;
 
             const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || null;
-            let inputFiring = Boolean(this._isFiringHeld || this._touchFiring);
+            let inputFiring = Boolean(this._isFiringHeld || this._buttonFiring);
 
             if (ctrl) {
                 if (typeof ctrl.isFiring === 'function') {
