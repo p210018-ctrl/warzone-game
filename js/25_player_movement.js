@@ -170,6 +170,12 @@
             this.stamina = 100;
             this._slideTimer = 0;
             this._slideCooldownTimer = 0;
+            this._crouchPressedPrev = false;
+
+            const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController;
+            if (ctrl && typeof ctrl.setCrouchToggled === 'function') {
+                ctrl.setCrouchToggled(false);
+            }
 
             this._syncState(0);
         }
@@ -206,7 +212,6 @@
 
             const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController;
             if (ctrl) {
-                // 優先讀取 03_multitouch_controller 結構
                 if (ctrl.moveVector && ctrl.lookDelta && ctrl.actions) {
                     const dx = typeof ctrl.lookDelta.dx === 'number' ? ctrl.lookDelta.dx : 0;
                     const dy = typeof ctrl.lookDelta.dy === 'number' ? ctrl.lookDelta.dy : 0;
@@ -287,6 +292,7 @@
                 this._slideCooldownTimer = Math.max(0, this._slideCooldownTimer - dt);
             }
 
+            const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController;
             const crouchDown = Boolean(inp.crouch);
             const crouchJustPressed = crouchDown && !this._crouchPressedPrev;
             this._crouchPressedPrev = crouchDown;
@@ -300,8 +306,14 @@
                     this._slideCooldownTimer = MOVEMENT_CONFIG.slideCooldown;
                     this._slideDirX = wishX / wishLen;
                     this._slideDirZ = wishZ / wishLen;
+                } else if (this.isCrouching || this.isSliding) {
+                    this.isCrouching = false;
+                    this.isSliding = false;
+                    if (ctrl && typeof ctrl.setCrouchToggled === 'function') {
+                        ctrl.setCrouchToggled(false);
+                    }
                 } else {
-                    this.isCrouching = !this.isCrouching;
+                    this.isCrouching = true;
                     this.isSliding = false;
                 }
             }
@@ -331,6 +343,9 @@
                 if (this._slideTimer <= 0) {
                     this.isSliding = false;
                     this.isCrouching = false;
+                    if (ctrl && typeof ctrl.setCrouchToggled === 'function') {
+                        ctrl.setCrouchToggled(false);
+                    }
                 }
             } else {
                 let targetSpeed = MOVEMENT_CONFIG.walkSpeed;
@@ -352,6 +367,9 @@
             }
 
             if (Boolean(inp.jump) && this.isGrounded && !this.isSliding) {
+                if (this.isCrouching && ctrl && typeof ctrl.setCrouchToggled === 'function') {
+                    ctrl.setCrouchToggled(false);
+                }
                 this.isCrouching = false;
                 this.isGrounded = false;
                 this.velocity.y = MOVEMENT_CONFIG.jumpVelocity;
