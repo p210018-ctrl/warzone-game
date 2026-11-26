@@ -27,11 +27,13 @@
     // ------------------------------------------------------------------------
     const LOCOMOTION_ANIM_CONFIG = Object.freeze({
         walkFreq: 9.5,
-        sprintFreq: 14.5,
+        sprintFreq: 14.0,
         walkAmpX: 0.0085,
         walkAmpY: 0.0095,
-        sprintAmpX: 0.015,
-        sprintAmpY: 0.017,
+        sprintAmpX: 0.011,
+        sprintAmpY: 0.012,
+        sprintHandsScale: 0.92,
+        normalHandsScale: 1.15,
         adsBobScale: 0.22,
         crouchBobScale: 0.65,
         slideTiltRoll: 0.14
@@ -225,15 +227,18 @@
             const targetBobY = Math.abs(Math.sin(this._phase)) * ampY * weight;
             const targetRoll = this.isSliding
                 ? LOCOMOTION_ANIM_CONFIG.slideTiltRoll
-                : (Math.sin(this._phase * 0.5) * 0.012 * weight);
+                : (Math.sin(this._phase * 0.5) * 0.01 * weight);
 
             const smooth = 1 - Math.exp(-15 * dt);
             this.bobOffset.x = lerp(this.bobOffset.x, targetBobX, smooth);
             this.bobOffset.y = lerp(this.bobOffset.y, targetBobY, smooth);
             this.bobOffset.roll = lerp(this.bobOffset.roll, targetRoll, smooth);
 
-            this.handsOffset.x = this.bobOffset.x * 1.15;
-            this.handsOffset.y = this.bobOffset.y * 1.15;
+            const handsScale = this.isSprinting
+                ? LOCOMOTION_ANIM_CONFIG.sprintHandsScale
+                : LOCOMOTION_ANIM_CONFIG.normalHandsScale;
+            this.handsOffset.x = this.bobOffset.x * handsScale;
+            this.handsOffset.y = this.bobOffset.y * handsScale;
 
             // 同步雙手姿態與關節更新
             if (this.hands) {
