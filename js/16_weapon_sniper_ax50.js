@@ -20,7 +20,7 @@
         displayName: 'AX-50 Marksman',
         hipPosition: { x: 0.19, y: -0.172, z: -0.36 },
         adsPosition: { x: 0.0, y: -0.135, z: -0.24 },
-        sprintPosition: { x: 0.24, y: -0.20, z: -0.32 },
+        sprintPosition: { x: 0.205, y: -0.188, z: -0.36 },
         muzzleLocalOffset: { x: 0.0, y: 0.024, z: -0.78 },
         recoilKickZ: 0.072,
         recoilKickY: 0.024,
@@ -407,9 +407,9 @@
                 targetRotZ = -0.25;
             } else if (this._isSprinting && !this._isAiming) {
                 targetPos = AX50_SPECS.sprintPosition;
-                targetRotX = -0.28;
-                targetRotY = 0.45;
-                targetRotZ = -0.20;
+                targetRotX = -0.09;
+                targetRotY = 0.14;
+                targetRotZ = -0.08;
             } else if (this._isAiming) {
                 targetPos = AX50_SPECS.adsPosition;
             }
