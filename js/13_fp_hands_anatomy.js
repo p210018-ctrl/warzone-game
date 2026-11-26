@@ -17,11 +17,11 @@
     const GameState = TacticalWarfare.GameState;
 
     const HAND_PALETTE = Object.freeze({
-        gloveColor: 0x252930,
-        glovePalmColor: 0x181b20,
-        gloveAccentColor: 0x3b352c,
-        padColor: 0x4c5461,
-        skinColor: 0xc8906a,
+        gloveColor: 0x22262e,
+        glovePalmColor: 0x16191e,
+        gloveAccentColor: 0x3b362d,
+        padColor: 0x4e5766,
+        skinColor: 0xc9916b,
         sleeveColor: 0x4c473b,
         cuffColor: 0x171a1f,
         watchFaceColor: 0x10141a
@@ -37,29 +37,29 @@
     const WEAPON_GRIP_CONFIG = Object.freeze({
         M4A1: {
             rightOffset: { x: 0.024, y: -0.066, z: 0.095 },
-            leftHip: { x: -0.045, y: -0.056, z: -0.220 },
-            leftAds: { x: -0.036, y: -0.078, z: -0.275 },
+            leftHip: { x: -0.046, y: -0.058, z: -0.225 },
+            leftAds: { x: -0.038, y: -0.082, z: -0.285 },
             reloadMagOffset: { x: -0.030, y: -0.015, z: -0.085 },
             reloadPullY: -0.115
         },
         MP5: {
             rightOffset: { x: 0.022, y: -0.060, z: 0.085 },
-            leftHip: { x: -0.040, y: -0.052, z: -0.195 },
-            leftAds: { x: -0.032, y: -0.072, z: -0.255 },
+            leftHip: { x: -0.042, y: -0.054, z: -0.200 },
+            leftAds: { x: -0.034, y: -0.076, z: -0.265 },
             reloadMagOffset: { x: -0.025, y: -0.015, z: -0.082 },
             reloadPullY: -0.110
         },
         AX50: {
             rightOffset: { x: 0.030, y: -0.070, z: 0.115 },
-            leftHip: { x: -0.055, y: -0.064, z: -0.295 },
-            leftAds: { x: -0.042, y: -0.082, z: -0.335 },
+            leftHip: { x: -0.056, y: -0.066, z: -0.300 },
+            leftAds: { x: -0.044, y: -0.086, z: -0.345 },
             reloadMagOffset: { x: -0.030, y: -0.018, z: -0.105 },
             reloadPullY: -0.120
         },
         X16: {
             rightOffset: { x: 0.020, y: -0.054, z: 0.065 },
-            leftHip: { x: -0.030, y: -0.054, z: -0.055 },
-            leftAds: { x: -0.028, y: -0.068, z: -0.125 },
+            leftHip: { x: -0.032, y: -0.056, z: -0.060 },
+            leftAds: { x: -0.030, y: -0.072, z: -0.135 },
             reloadMagOffset: { x: -0.020, y: -0.015, z: -0.030 },
             reloadPullY: -0.095
         }
@@ -69,20 +69,20 @@
         rifle_hip: {
             rightArm: { x: -0.10, y: -0.10, z: -0.04 },
             rightWrist: { x: 0.08, y: 0.04, z: 0.02 },
-            rightIndex: { x: 0.35, y: 0, z: 0 },
-            rightGrip: { x: 0.85, y: 0, z: 0 },
-            leftArm: { x: -0.20, y: -0.18, z: -0.36 },
-            leftWrist: { x: 0.18, y: 0.09, z: -0.12 },
-            leftIndex: { x: 0.95, y: 0, z: 0 },
-            leftGrip: { x: 1.05, y: 0, z: 0 }
+            rightIndex: { x: 0.36, y: 0, z: 0 },
+            rightGrip: { x: 0.88, y: 0, z: 0 },
+            leftArm: { x: -0.18, y: -0.14, z: -0.26 },
+            leftWrist: { x: 0.16, y: 0.08, z: -0.09 },
+            leftIndex: { x: 0.96, y: 0, z: 0 },
+            leftGrip: { x: 1.06, y: 0, z: 0 }
         },
         rifle_ads: {
             rightArm: { x: -0.06, y: -0.04, z: -0.02 },
             rightWrist: { x: 0.05, y: 0.02, z: 0.01 },
             rightIndex: { x: 0.38, y: 0, z: 0 },
-            rightGrip: { x: 0.88, y: 0, z: 0 },
-            leftArm: { x: -0.12, y: -0.08, z: -0.16 },
-            leftWrist: { x: 0.14, y: 0.05, z: -0.06 },
+            rightGrip: { x: 0.90, y: 0, z: 0 },
+            leftArm: { x: -0.10, y: -0.06, z: -0.12 },
+            leftWrist: { x: 0.12, y: 0.04, z: -0.04 },
             leftIndex: { x: 0.98, y: 0, z: 0 },
             leftGrip: { x: 1.08, y: 0, z: 0 }
         },
@@ -90,9 +90,9 @@
             rightArm: { x: -0.08, y: -0.06, z: -0.03 },
             rightWrist: { x: 0.10, y: 0.04, z: 0.02 },
             rightIndex: { x: 0.32, y: 0, z: 0 },
-            rightGrip: { x: 0.85, y: 0, z: 0 },
-            leftArm: { x: -0.15, y: -0.12, z: -0.24 },
-            leftWrist: { x: 0.16, y: 0.07, z: -0.08 },
+            rightGrip: { x: 0.86, y: 0, z: 0 },
+            leftArm: { x: -0.14, y: -0.10, z: -0.18 },
+            leftWrist: { x: 0.14, y: 0.06, z: -0.06 },
             leftIndex: { x: 0.92, y: 0, z: 0 },
             leftGrip: { x: 1.02, y: 0, z: 0 }
         },
@@ -101,7 +101,7 @@
             rightWrist: { x: 0.14, y: 0.08, z: 0.04 },
             rightIndex: { x: 0.45, y: 0, z: 0 },
             rightGrip: { x: 0.82, y: 0, z: 0 },
-            leftArm: { x: 0.06, y: -0.12, z: -0.26 },
+            leftArm: { x: 0.06, y: -0.12, z: -0.24 },
             leftWrist: { x: -0.12, y: 0.06, z: -0.08 },
             leftIndex: { x: 0.72, y: 0, z: 0 },
             leftGrip: { x: 0.82, y: 0, z: 0 }
@@ -134,10 +134,10 @@
     }
 
     // ------------------------------------------------------------------------
-    // 塑形幾何輔助：讓方塊或圓柱有自然弧度與指節收束
+    // 解剖級塑形幾何輔助
     // ------------------------------------------------------------------------
     function createRoundedSegmentGeometry(THREE, width, height, length, taperEnd) {
-        const geo = new THREE.BoxGeometry(width, height, length, 4, 3, 4);
+        const geo = new THREE.BoxGeometry(width, height, length, 5, 4, 5);
         const pos = geo.attributes.position;
         const halfL = length * 0.5;
         const halfW = width * 0.5;
@@ -148,16 +148,14 @@
             let y = pos.getY(i);
             let z = pos.getZ(i);
 
-            // 沿截面做圓角收縮，消除生硬稜角
             const nx = halfW > 0 ? x / halfW : 0;
             const ny = halfH > 0 ? y / halfH : 0;
-            const cornerRound = 1.0 - 0.16 * (nx * nx) * (ny * ny);
-            x *= cornerRound;
-            y *= cornerRound;
+            const cornerRound = 1.0 - 0.22 * (nx * nx) * (ny * ny) - 0.10 * (nx * nx + ny * ny) * 0.5;
+            x *= Math.max(0.65, cornerRound);
+            y *= Math.max(0.65, cornerRound);
 
-            // 指節向指尖微收束
             const t = clamp((halfL - z) / Math.max(0.0001, length), 0, 1);
-            const endScale = lerp(1.0, taperEnd || 0.84, t);
+            const endScale = lerp(1.0, taperEnd || 0.82, t);
             x *= endScale;
             y *= endScale;
 
@@ -168,7 +166,7 @@
     }
 
     function createSculptedPalmGeometry(THREE, width, thickness, length) {
-        const geo = new THREE.BoxGeometry(width, thickness, length, 6, 4, 6);
+        const geo = new THREE.BoxGeometry(width, thickness, length, 8, 5, 8);
         const pos = geo.attributes.position;
         const halfW = width * 0.5;
         const halfH = thickness * 0.5;
@@ -183,11 +181,70 @@
             const ny = halfH > 0 ? y / halfH : 0;
             const nz = halfL > 0 ? z / halfL : 0;
 
-            // 掌背微拱、掌心微凹，側緣圓潤
-            const archY = Math.cos(nx * Math.PI * 0.5) * 0.0022;
-            const roundEdge = 1.0 - 0.18 * Math.pow(Math.abs(nx), 2.4) - 0.12 * (nz * nz);
+            const archY = Math.cos(nx * Math.PI * 0.5) * 0.0028;
+            const roundEdge = 1.0 - 0.22 * Math.pow(Math.abs(nx), 2.2) - 0.14 * (nz * nz);
             x *= roundEdge;
-            y = y * (1.0 - 0.15 * Math.pow(Math.abs(ny), 2.0)) + (ny > 0 ? archY : -archY * 0.35);
+            y = y * (1.0 - 0.18 * Math.pow(Math.abs(ny), 2.0)) + (ny > 0 ? archY : -archY * 0.45);
+
+            pos.setXYZ(i, x, y, z);
+        }
+        geo.computeVertexNormals();
+        return geo;
+    }
+
+    function createSculptedSleeveGeometry(THREE, radiusRear, radiusFront, length, sideSign) {
+        // 改用分段塑形而非單一均勻圓柱：加入多向布料褶皺與袖口聚攏折疊
+        const geo = new THREE.CylinderGeometry(radiusRear, radiusFront, length, 28, 28, false);
+        geo.rotateX(Math.PI / 2);
+
+        const pos = geo.attributes.position;
+        const halfL = length * 0.5;
+
+        for (let i = 0; i < pos.count; i = i + 1) {
+            let x = pos.getX(i);
+            let y = pos.getY(i);
+            let z = pos.getZ(i);
+
+            const t = clamp((z + halfL) / length, 0, 1); // 0=袖口端(-Z), 1=後方端(+Z)
+            const angle = Math.atan2(y, x);
+
+            // 非週期布料折疊（肘部與袖口附近更明顯，避免橫條紋圓柱感）
+            const crease1 = Math.sin(t * 11.5 + Math.cos(angle * 2.0 + sideSign * 0.7) * 1.65) * 0.032;
+            const crease2 = Math.cos(t * 19.0 - Math.sin(angle * 3.0 - sideSign * 0.4) * 1.35) * 0.018;
+            const crease3 = Math.sin(t * 7.2 + angle * 1.0 + sideSign * 1.1) * 0.020;
+
+            // 袖口處微收束、往後自然展開，並在下方做微垂墜
+            const cuffPinch = 1.0 - 0.06 * Math.exp(-Math.pow((t - 0.06) / 0.07, 2));
+            const flare = lerp(0.94, 1.10, Math.pow(t, 0.85));
+            const foldScale = (flare * cuffPinch) + (crease1 + crease2 + crease3) * (0.25 + 0.75 * Math.sin(t * Math.PI));
+
+            x *= foldScale;
+            y = y * foldScale - Math.sin(t * Math.PI) * 0.0025;
+
+            pos.setXYZ(i, x, y, z);
+        }
+        geo.computeVertexNormals();
+        return geo;
+    }
+
+    function createForearmMuscleGeometry(THREE, radiusRear, radiusWrist, length, sideSign) {
+        const geo = new THREE.CylinderGeometry(radiusRear, radiusWrist, length, 20, 14, false);
+        geo.rotateX(Math.PI / 2);
+        const pos = geo.attributes.position;
+        const halfL = length * 0.5;
+
+        for (let i = 0; i < pos.count; i = i + 1) {
+            let x = pos.getX(i);
+            let y = pos.getY(i);
+            let z = pos.getZ(i);
+
+            const t = clamp((z + halfL) / length, 0, 1);
+            const angle = Math.atan2(y, x);
+
+            // 前臂側肌群與手套護套微起伏
+            const muscle = 1.0 + Math.sin(angle * 2.0 + sideSign * 0.5) * 0.06 * Math.sin(t * Math.PI);
+            x *= muscle;
+            y *= muscle * 0.96;
 
             pos.setXYZ(i, x, y, z);
         }
@@ -211,9 +268,9 @@
         const bCtx = bumpCanvas.getContext('2d');
 
         const bgGrad = cCtx.createLinearGradient(0, 0, size, size);
-        bgGrad.addColorStop(0, '#555043');
-        bgGrad.addColorStop(0.5, '#4b463b');
-        bgGrad.addColorStop(1, '#3e3a30');
+        bgGrad.addColorStop(0, '#575245');
+        bgGrad.addColorStop(0.5, '#4c473b');
+        bgGrad.addColorStop(1, '#3d392f');
         cCtx.fillStyle = bgGrad;
         cCtx.fillRect(0, 0, size, size);
 
@@ -221,11 +278,12 @@
         bCtx.fillRect(0, 0, size, size);
 
         const foldSeeds = [
-            { y: 30, slant: 0.22, amp: 5.0, w: 6.5 },
-            { y: 72, slant: -0.16, amp: 4.2, w: 5.0 },
-            { y: 118, slant: 0.28, amp: 6.0, w: 7.5 },
-            { y: 164, slant: -0.20, amp: 4.6, w: 5.5 },
-            { y: 208, slant: 0.15, amp: 5.0, w: 6.5 }
+            { y: 24, slant: 0.25, amp: 6.0, w: 7.0 },
+            { y: 64, slant: -0.19, amp: 4.5, w: 5.5 },
+            { y: 108, slant: 0.32, amp: 7.0, w: 8.5 },
+            { y: 152, slant: -0.24, amp: 5.2, w: 6.0 },
+            { y: 196, slant: 0.18, amp: 5.5, w: 7.0 },
+            { y: 230, slant: -0.15, amp: 4.0, w: 5.0 }
         ];
 
         for (let f = 0; f < foldSeeds.length; f = f + 1) {
@@ -246,23 +304,23 @@
                     bCtx.lineTo(x, py);
                 }
             }
-            cCtx.strokeStyle = 'rgba(24, 21, 16, 0.26)';
+            cCtx.strokeStyle = 'rgba(22, 19, 15, 0.30)';
             cCtx.lineWidth = seed.w;
             cCtx.lineCap = 'round';
             cCtx.stroke();
 
-            bCtx.strokeStyle = 'rgba(46, 46, 46, 0.42)';
+            bCtx.strokeStyle = 'rgba(42, 42, 42, 0.48)';
             bCtx.lineWidth = seed.w;
             bCtx.lineCap = 'round';
             bCtx.stroke();
         }
 
-        for (let i = 0; i < 1600; i = i + 1) {
+        for (let i = 0; i < 1800; i = i + 1) {
             const x = (i * 97) % size;
             const y = (i * 151) % size;
-            cCtx.fillStyle = i % 2 === 0 ? 'rgba(255, 250, 240, 0.022)' : 'rgba(15, 14, 12, 0.032)';
+            cCtx.fillStyle = i % 2 === 0 ? 'rgba(255, 250, 240, 0.025)' : 'rgba(15, 14, 12, 0.035)';
             cCtx.fillRect(x, y, 2, 1);
-            bCtx.fillStyle = i % 2 === 0 ? 'rgba(155, 155, 155, 0.12)' : 'rgba(100, 100, 100, 0.12)';
+            bCtx.fillStyle = i % 2 === 0 ? 'rgba(160, 160, 160, 0.14)' : 'rgba(95, 95, 95, 0.14)';
             bCtx.fillRect(x, y, 2, 1);
         }
 
@@ -291,7 +349,7 @@
         bumpCanvas.height = size;
         const bCtx = bumpCanvas.getContext('2d');
 
-        cCtx.fillStyle = '#242830';
+        cCtx.fillStyle = '#22262e';
         cCtx.fillRect(0, 0, size, size);
 
         bCtx.fillStyle = '#808080';
@@ -300,10 +358,10 @@
         for (let y = 6; y < size; y = y + 10) {
             for (let x = 6; x < size; x = x + 10) {
                 const alt = ((x + y) / 10) % 2 === 0;
-                cCtx.fillStyle = alt ? 'rgba(255,255,255,0.03)' : 'rgba(8,10,13,0.12)';
+                cCtx.fillStyle = alt ? 'rgba(255,255,255,0.032)' : 'rgba(8,10,13,0.14)';
                 cCtx.fillRect(x, y, 3, 3);
 
-                bCtx.fillStyle = alt ? 'rgba(175,175,175,0.22)' : 'rgba(75,75,75,0.22)';
+                bCtx.fillStyle = alt ? 'rgba(180,180,180,0.24)' : 'rgba(70,70,70,0.24)';
                 bCtx.fillRect(x, y, 3, 3);
             }
         }
@@ -394,7 +452,6 @@
         proxMesh.position.set(0, 0, -proxLen * 0.5);
         rootJoint.add(proxMesh);
 
-        // 第一指節關節球
         const pipPivot = new THREE.Group();
         pipPivot.position.set(0, -thick * 0.03, -proxLen);
         pipPivot.rotation.x = curlBase * 0.55;
@@ -412,7 +469,6 @@
         midMesh.position.set(0, 0, -midLen * 0.5);
         pipPivot.add(midMesh);
 
-        // 第二指節關節與指尖
         const dipPivot = new THREE.Group();
         dipPivot.position.set(0, -thick * 0.025, -midLen);
         dipPivot.rotation.x = curlBase * 0.45;
@@ -440,7 +496,7 @@
     }
 
     // ------------------------------------------------------------------------
-    // 建立單手解剖 rig：非對稱皺褶衣袖、袖口、手腕、手錶、掌體與三節五指
+    // 建立單手解剖 rig：非均勻皺褶袖管、袖口收束、前臂肌群、手錶、掌骨與三節五指
     // ------------------------------------------------------------------------
     function buildSingleHandRig(sideSign, materials, geometries) {
         const THREE = global.THREE;
@@ -448,43 +504,23 @@
         const rootGroup = new THREE.Group();
         rootGroup.name = sideSign < 0 ? 'LeftHandRig' : 'RightHandRig';
 
-        // 1. 立體非對稱皺褶衣袖
-        const sleeveLen = 0.24;
-        const sleeveGeo = new THREE.CylinderGeometry(0.034, 0.025, sleeveLen, 20, 18, false);
-        sleeveGeo.rotateX(Math.PI / 2);
-
-        const posAttr = sleeveGeo.attributes.position;
-        for (let i = 0; i < posAttr.count; i = i + 1) {
-            const vx = posAttr.getX(i);
-            const vy = posAttr.getY(i);
-            const vz = posAttr.getZ(i);
-            const t = clamp((vz + sleeveLen * 0.5) / sleeveLen, 0, 1);
-            const theta = Math.atan2(vy, vx);
-
-            const foldA = Math.sin(t * 14.0 + Math.cos(theta * 2.0) * 1.4 + sideSign * 0.6) * 0.022;
-            const foldB = Math.cos(t * 23.0 - Math.sin(theta * 3.0) * 1.1) * 0.012;
-            const taper = lerp(0.95, 1.08, t);
-            const scaleR = taper + (foldA + foldB) * (0.35 + 0.65 * Math.sin(t * Math.PI));
-
-            posAttr.setX(i, vx * scaleR);
-            posAttr.setY(i, vy * scaleR);
-        }
-        sleeveGeo.computeVertexNormals();
+        // 1. 分段立體皺褶衣袖（主袖段 + 後段微垂墜布褶段）
+        const sleeveLen = 0.21;
+        const sleeveGeo = createSculptedSleeveGeometry(THREE, 0.035, 0.025, sleeveLen, sideSign);
         geometries.push(sleeveGeo);
-
         const sleeveMesh = new THREE.Mesh(sleeveGeo, materials.sleeve);
         sleeveMesh.position.set(0, 0, sleeveLen * 0.5);
         rootGroup.add(sleeveMesh);
 
-        // 2. 袖口收束帶與手腕皮膚過渡
-        const cuffGeo = new THREE.CylinderGeometry(0.025, 0.024, 0.014, 18);
+        // 2. 袖口收束帶、布邊折疊與手腕皮膚過渡
+        const cuffGeo = new THREE.CylinderGeometry(0.0255, 0.024, 0.015, 20);
         cuffGeo.rotateX(Math.PI / 2);
         geometries.push(cuffGeo);
         const cuffMesh = new THREE.Mesh(cuffGeo, materials.cuff);
         cuffMesh.position.set(0, 0, 0.002);
         rootGroup.add(cuffMesh);
 
-        const skinWristGeo = new THREE.CylinderGeometry(0.0225, 0.0215, 0.014, 16);
+        const skinWristGeo = new THREE.CylinderGeometry(0.0225, 0.0215, 0.014, 18);
         skinWristGeo.rotateX(Math.PI / 2);
         geometries.push(skinWristGeo);
         const skinWristMesh = new THREE.Mesh(skinWristGeo, materials.skin);
@@ -493,7 +529,7 @@
 
         // 3. 左手戰術手錶
         if (sideSign < 0) {
-            const watchBandGeo = new THREE.CylinderGeometry(0.0235, 0.0235, 0.018, 18);
+            const watchBandGeo = new THREE.CylinderGeometry(0.0235, 0.0235, 0.018, 20);
             watchBandGeo.rotateX(Math.PI / 2);
             geometries.push(watchBandGeo);
             const watchBandMesh = new THREE.Mesh(watchBandGeo, materials.cuff);
@@ -514,9 +550,8 @@
             rootGroup.add(watchFaceMesh);
         }
 
-        // 4. 前臂手套段
-        const forearmGeo = new THREE.CylinderGeometry(0.023, 0.020, 0.075, 16);
-        forearmGeo.rotateX(Math.PI / 2);
+        // 4. 前臂手套段（塑形肌群與腕部收束）
+        const forearmGeo = createForearmMuscleGeometry(THREE, 0.0235, 0.020, 0.075, sideSign);
         geometries.push(forearmGeo);
         const forearmMesh = new THREE.Mesh(forearmGeo, materials.glove);
         forearmMesh.position.set(0, -0.001, -0.032);
@@ -539,7 +574,6 @@
         palmInnerMesh.position.set(0, -0.005, -0.025);
         wristJoint.add(palmInnerMesh);
 
-        // 指節護塊與掌背筋腱條
         const knuckleArmorGeo = createRoundedSegmentGeometry(THREE, 0.043, 0.0075, 0.013, 0.94);
         geometries.push(knuckleArmorGeo);
         const knuckleArmorMesh = new THREE.Mesh(knuckleArmorGeo, materials.pad);
@@ -554,18 +588,18 @@
             wristJoint.add(tendonMesh);
         }
 
-        // 6. 拇指（三節式，從掌側扣向槍身）
+        // 6. 拇指（三節式）
         const thumbSeg = createThreeJointFinger(THREE, materials, 0.032, 0.011, 0.42, true, geometries);
         thumbSeg.joint.position.set(-sideSign * 0.023, -0.002, -0.020);
         thumbSeg.joint.rotation.y = sideSign * 0.58;
         wristJoint.add(thumbSeg.joint);
 
-        // 7. 食指（三節式，可隨 triggerPull 連動）
+        // 7. 食指（三節式）
         const indexSeg = createThreeJointFinger(THREE, materials, 0.031, 0.0096, 0.32, true, geometries);
         indexSeg.joint.position.set(-sideSign * 0.016, -0.002, -0.050);
         wristJoint.add(indexSeg.joint);
 
-        // 8. 中指、無名指、小指（各自三節式並依自然長度遞減）
+        // 8. 中指、無名指、小指（三節式）
         const gripJoint = new THREE.Group();
         gripJoint.position.set(0, -0.002, -0.050);
         wristJoint.add(gripJoint);
@@ -627,10 +661,10 @@
             this._poseBlend = {
                 rx: -0.10, ry: -0.10, rz: -0.04,
                 rwx: 0.08, rwy: 0.04, rwz: 0.02,
-                rix: 0.35, rgx: 0.85,
-                lx: -0.20, ly: -0.18, lz: -0.36,
-                lwx: 0.18, lwy: 0.09, lwz: -0.12,
-                lix: 0.95, lgx: 1.05
+                rix: 0.36, rgx: 0.88,
+                lx: -0.18, ly: -0.14, lz: -0.26,
+                lwx: 0.16, lwy: 0.08, lwz: -0.09,
+                lix: 0.96, lgx: 1.06
             };
 
             this._unsubscribers = [];
@@ -733,7 +767,7 @@
                     color: HAND_PALETTE.sleeveColor,
                     map: fabricTex.map,
                     bumpMap: fabricTex.bumpMap,
-                    bumpScale: 0.014,
+                    bumpScale: 0.015,
                     roughness: 0.86,
                     metalness: 0.04
                 }),
