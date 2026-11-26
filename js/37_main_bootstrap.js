@@ -840,12 +840,21 @@
                     TacticalWarfare.FpReloadInspect.update(dt);
                 }
 
+                const isSprinting = Boolean(
+                    (inputCtrl && typeof inputCtrl.isActionActive === 'function' && inputCtrl.isActionActive('sprint')) ||
+                    (moveRes && moveRes.isSprinting)
+                );
                 const bobOffsetArg = moveRes && moveRes.bobOffset ? moveRes.bobOffset : null;
                 const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera);
                 if (handsCtrl) {
                     this._setHandsVisible(true);
                     if (typeof handsCtrl.update === 'function') {
-                        handsCtrl.update(dt, bobOffsetArg);
+                        handsCtrl.update(dt, {
+                            bobOffset: bobOffsetArg,
+                            isAiming: isAiming,
+                            isSprinting: isSprinting,
+                            weaponId: currentWeaponId
+                        });
                     } else if (typeof TacticalWarfare.updateTacticalHandsController === 'function') {
                         TacticalWarfare.updateTacticalHandsController(dt, resolvedView.scene, camera);
                     }
@@ -855,10 +864,6 @@
                     TacticalWarfare.WeaponController.update(dt, moveRes);
                 }
 
-                const isSprinting = Boolean(
-                    (inputCtrl && typeof inputCtrl.isActionActive === 'function' && inputCtrl.isActionActive('sprint')) ||
-                    (moveRes && moveRes.isSprinting)
-                );
                 const bobArg = moveRes && moveRes.bobOffset ? moveRes.bobOffset : null;
                 const weaponEntries = this._getWeaponEntries();
                 for (let i = 0; i < weaponEntries.length; i = i + 1) {
@@ -943,6 +948,9 @@
         dispose() {
             this.stopLoop();
             this._clearGrenades();
+            if (typeof TacticalWarfare.disposeTacticalHandsController === 'function') {
+                TacticalWarfare.disposeTacticalHandsController();
+            }
             for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
                 if (typeof this._unsubscribers[i] === 'function') {
                     this._unsubscribers[i]();
