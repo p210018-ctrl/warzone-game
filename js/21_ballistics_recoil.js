@@ -135,8 +135,6 @@
 
             this.recoilOffset = { pitch: 0, yaw: 0 };
             this._isFiringHeld = false;
-            this._buttonFiring = false;
-            this._activeFireTouchIds = new Set();
             this._semiTriggered = false;
 
             this.isReloading = false;
@@ -147,12 +145,11 @@
             this._domListeners = [];
         }
 
+        // [21] 統一重設射擊與換彈執行期旗標
         _resetRuntimeFlags() {
             this._fireCooldown = 0;
             this._spreadBonus = 0;
             this._isFiringHeld = false;
-            this._buttonFiring = false;
-            this._activeFireTouchIds.clear();
             this._semiTriggered = false;
             this.isReloading = false;
             this._reloadTimer = 0;
@@ -190,18 +187,7 @@
             return this;
         }
 
-        _isReloadControl(target) {
-            if (!target || !target.closest) return false;
-            const el = target.closest('[data-action="reload"], [data-reload], .reload-btn, #reload-btn, [aria-label*="reload" i], [aria-label*="換彈"]');
-            return Boolean(el);
-        }
-
-        _isFireControl(target) {
-            if (!target || !target.closest) return false;
-            const el = target.closest('[data-action="fire"], [data-fire], [data-btn="fire"], .fire-btn, #fire-btn, .btn-fire, [aria-label*="fire" i], [aria-label*="開火"]');
-            return Boolean(el);
-        }
-
+        // [21] 僅保留桌面滑鼠左鍵、鍵盤 R 換彈與視窗失焦歸零，不再以全域 touchstart 攔截螢幕觸控
         _bindInputListeners() {
             const doc = global.document;
             if (!doc) return;
@@ -209,15 +195,6 @@
             const onMouseDown = (ev) => {
                 if (ev.button !== 0) return;
                 const target = ev.target;
-                if (this._isReloadControl(target)) {
-                    this.startReload(this.activeWeaponId);
-                    return;
-                }
-                if (this._isFireControl(target)) {
-                    this._buttonFiring = true;
-                    this._semiTriggered = false;
-                    return;
-                }
                 if (target && target.closest && target.closest('button, input, select, textarea, [data-rt]')) {
                     return;
                 }
@@ -228,55 +205,7 @@
             const onMouseUp = (ev) => {
                 if (ev.button !== 0) return;
                 this._isFiringHeld = false;
-                this._buttonFiring = false;
                 this._semiTriggered = false;
-            };
-
-            const onTouchStart = (ev) => {
-                if (!ev || !ev.changedTouches) return;
-                const target = ev.target;
-
-                if (this._isReloadControl(target)) {
-                    this.startReload(this.activeWeaponId);
-                    return;
-                }
-
-                // 僅當觸控落在開火按鍵上時才記錄開火，避免碰觸畫面其他地方誤開火
-                if (!this._isFireControl(target)) {
-                    return;
-                }
-
-                for (let i = 0; i < ev.changedTouches.length; i = i + 1) {
-                    const t = ev.changedTouches[i];
-                    if (!t) continue;
-                    const id = typeof t.identifier === 'number' ? t.identifier : i;
-                    this._activeFireTouchIds.add(id);
-                }
-
-                if (this._activeFireTouchIds.size > 0) {
-                    if (!this._buttonFiring) {
-                        this._semiTriggered = false;
-                    }
-                    this._buttonFiring = true;
-                }
-            };
-
-            const onTouchEndOrCancel = (ev) => {
-                if (ev && ev.changedTouches && this._activeFireTouchIds.size > 0) {
-                    for (let i = 0; i < ev.changedTouches.length; i = i + 1) {
-                        const t = ev.changedTouches[i];
-                        if (!t) continue;
-                        const id = typeof t.identifier === 'number' ? t.identifier : i;
-                        this._activeFireTouchIds.delete(id);
-                    }
-                }
-
-                const remaining = ev && ev.touches ? ev.touches.length : 0;
-                if (remaining === 0 || this._activeFireTouchIds.size === 0) {
-                    this._activeFireTouchIds.clear();
-                    this._buttonFiring = false;
-                    this._semiTriggered = false;
-                }
             };
 
             const onKeyDown = (ev) => {
@@ -290,29 +219,15 @@
                 this._resetRuntimeFlags();
             };
 
-            const onPageShowOrHide = () => {
-                this._resetRuntimeFlags();
-            };
-
             doc.addEventListener('mousedown', onMouseDown);
             global.addEventListener('mouseup', onMouseUp);
-            doc.addEventListener('touchstart', onTouchStart, { passive: true });
-            doc.addEventListener('touchend', onTouchEndOrCancel, { passive: true });
-            doc.addEventListener('touchcancel', onTouchEndOrCancel, { passive: true });
             global.addEventListener('keydown', onKeyDown);
             global.addEventListener('blur', onWindowBlur);
-            global.addEventListener('pageshow', onPageShowOrHide);
-            global.addEventListener('pagehide', onPageShowOrHide);
 
             this._domListeners.push({ target: doc, name: 'mousedown', fn: onMouseDown });
             this._domListeners.push({ target: global, name: 'mouseup', fn: onMouseUp });
-            this._domListeners.push({ target: doc, name: 'touchstart', fn: onTouchStart });
-            this._domListeners.push({ target: doc, name: 'touchend', fn: onTouchEndOrCancel });
-            this._domListeners.push({ target: doc, name: 'touchcancel', fn: onTouchEndOrCancel });
             this._domListeners.push({ target: global, name: 'keydown', fn: onKeyDown });
             this._domListeners.push({ target: global, name: 'blur', fn: onWindowBlur });
-            this._domListeners.push({ target: global, name: 'pageshow', fn: onPageShowOrHide });
-            this._domListeners.push({ target: global, name: 'pagehide', fn: onPageShowOrHide });
         }
 
         _bindEvents() {
@@ -341,32 +256,6 @@
                     EventBus.on(reloadEvt, (payload) => {
                         const wId = payload && (payload.weaponId || payload.id);
                         this.startReload(wId || this.activeWeaponId);
-                    })
-                );
-            }
-
-            if (Events.FIRE_START || Events.WEAPON_FIRE_START || Events.TOUCH_FIRE) {
-                const startEvt = Events.FIRE_START || Events.WEAPON_FIRE_START || Events.TOUCH_FIRE;
-                this._unsubscribers.push(
-                    EventBus.on(startEvt, (payload) => {
-                        if (payload && typeof payload.active === 'boolean') {
-                            this._buttonFiring = payload.active;
-                            if (!payload.active) this._semiTriggered = false;
-                        } else {
-                            this._buttonFiring = true;
-                            this._semiTriggered = false;
-                        }
-                    })
-                );
-            }
-
-            if (Events.FIRE_STOP || Events.WEAPON_FIRE_STOP) {
-                const stopEvt = Events.FIRE_STOP || Events.WEAPON_FIRE_STOP;
-                this._unsubscribers.push(
-                    EventBus.on(stopEvt, () => {
-                        this._buttonFiring = false;
-                        this._isFiringHeld = false;
-                        this._semiTriggered = false;
                     })
                 );
             }
@@ -415,7 +304,7 @@
             if (this.isReloading) return false;
 
             const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || null;
-            let inputFiring = Boolean(this._isFiringHeld || this._buttonFiring);
+            let inputFiring = Boolean(this._isFiringHeld);
 
             if (ctrl) {
                 if (typeof ctrl.isFiring === 'function') {
@@ -433,16 +322,11 @@
                 if (
                     GameState.get('weapons.isFiring', false) ||
                     GameState.get('input.fire', false) ||
-                    GameState.get('input.isFiring', false) ||
-                    GameState.get('controls.fire', false)
+                    GameState.get('input.isFiring', false)
                 ) {
                     inputFiring = true;
                 }
-                if (
-                    GameState.get('weapons.reloadRequested', false) ||
-                    GameState.get('input.reload', false) ||
-                    GameState.get('controls.reload', false)
-                ) {
+                if (GameState.get('weapons.reloadRequested', false) || GameState.get('input.reload', false)) {
                     this.startReload(this.activeWeaponId);
                     return false;
                 }
