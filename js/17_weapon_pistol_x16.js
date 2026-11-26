@@ -19,8 +19,8 @@
         id: 'X16',
         displayName: 'X16 Sidearm',
         hipPosition: { x: 0.145, y: -0.142, z: -0.28 },
-        adsPosition: { x: 0.0, y: -0.105, z: -0.22 },
-        sprintPosition: { x: 0.16, y: -0.165, z: -0.24 },
+        adsPosition: { x: 0.0, y: -0.042, z: -0.28 },
+        sprintPosition: { x: 0.155, y: -0.155, z: -0.28 },
         muzzleLocalOffset: { x: 0.0, y: 0.012, z: -0.24 },
         recoilKickZ: 0.024,
         recoilKickY: 0.011,
@@ -366,9 +366,9 @@
                 targetRotZ = -0.18;
             } else if (this._isSprinting && !this._isAiming) {
                 targetPos = X16_SPECS.sprintPosition;
-                targetRotX = -0.22;
-                targetRotY = 0.34;
-                targetRotZ = -0.14;
+                targetRotX = -0.07;
+                targetRotY = 0.11;
+                targetRotZ = -0.06;
             } else if (this._isAiming) {
                 targetPos = X16_SPECS.adsPosition;
             }
