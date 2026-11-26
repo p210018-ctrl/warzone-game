@@ -19,7 +19,7 @@
         id: 'MP5',
         displayName: 'MP5 Tactical',
         hipPosition: { x: 0.165, y: -0.158, z: -0.32 },
-        adsPosition: { x: 0.0, y: -0.122, z: -0.26 },
+        adsPosition: { x: 0.0, y: -0.054, z: -0.32 },
         sprintPosition: { x: 0.18, y: -0.172, z: -0.32 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.46 },
         recoilKickZ: 0.026,
