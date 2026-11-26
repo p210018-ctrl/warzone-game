@@ -329,6 +329,7 @@
             this._setGamePhase('combat');
             this.paused = false;
 
+            // [37] 每次進入或重新開始戰局時重設彈道與觸控開火旗標，避免殘留狀態
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil._resetRuntimeFlags === 'function') {
                 TacticalWarfare.BallisticsRecoil._resetRuntimeFlags();
             }
@@ -457,7 +458,7 @@
                     TacticalWarfare.WeaponM4Urgi.update(dt, moveRes && moveRes.bobOffset ? moveRes.bobOffset : null);
                 }
 
-                // [37] 確保觸控輸入狀態與彈道迴圈同步更新
+                // [37] 確保彈道迴圈在戰鬥階段正常推進
                 if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.update === 'function') {
                     const isAiming = Boolean(GameState && typeof GameState.get === 'function' && GameState.get('weapons.isAiming', false));
                     const isMoving = Boolean(moveRes && moveRes.speedRatio > 0.08);
