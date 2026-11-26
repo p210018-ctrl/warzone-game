@@ -419,32 +419,44 @@
             this.setPose(isAiming ? 'rifle_ads' : 'rifle_hip', false);
         }
 
-        _computeGripTargets(weaponInfo, isAiming) {
+        // [13] 整合槍身位移、後座力踢動與槍身旋轉，讓雙手真正跟著槍械聯動
+        _computeWeaponMotionState(weaponInfo, isAiming) {
             const wMod = weaponInfo && weaponInfo.mod ? weaponInfo.mod : null;
             const wId = weaponInfo && weaponInfo.id ? weaponInfo.id : 'M4A1';
             const root = wMod && wMod.rootGroup ? wMod.rootGroup : null;
+            const body = wMod && wMod.weaponBodyGroup ? wMod.weaponBodyGroup : null;
             const mag = wMod && wMod.magazineMesh ? wMod.magazineMesh : null;
 
-            const gunX = root ? root.position.x : (isAiming ? 0 : 0.175);
-            const gunY = root ? root.position.y : (isAiming ? -0.128 : -0.165);
-            const gunZ = root ? root.position.z : (isAiming ? -0.28 : -0.34);
+            const bodyPosY = body ? body.position.y : 0;
+            const bodyPosZ = body ? body.position.z : 0;
+            const bodyRotX = body ? body.rotation.x : 0;
+            const bodyRotZ = body ? body.rotation.z : 0;
 
-            // 右手貼近槍身握把後方偏下
+            const rootRotX = root ? root.rotation.x : 0;
+            const rootRotY = root ? root.rotation.y : 0;
+            const rootRotZ = root ? root.rotation.z : 0;
+
+            const gunX = (root ? root.position.x : (isAiming ? 0 : 0.175)) + (body ? body.position.x : 0);
+            const gunY = (root ? root.position.y : (isAiming ? -0.128 : -0.165)) + bodyPosY;
+            const gunZ = (root ? root.position.z : (isAiming ? -0.28 : -0.34)) + bodyPosZ;
+
+            // 後座力對雙手的直接踢動偏移
+            const recoilKickY = Math.max(0, bodyPosY) * 1.35 + Math.max(0, bodyRotX) * 0.22;
+            const recoilKickZ = Math.max(0, bodyPosZ) * 1.25;
+
             const rightTarget = {
-                x: gunX + 0.025,
-                y: gunY - 0.085,
-                z: gunZ + 0.075
+                x: gunX + 0.025 + bodyRotZ * 0.08,
+                y: gunY - 0.085 + recoilKickY,
+                z: gunZ + 0.075 + recoilKickZ
             };
 
-            // 左手預設扶住護木 / 前握把
             const foregripZOffset = wId === 'X16' ? -0.06 : (wId === 'AX50' ? -0.24 : -0.17);
             const leftTarget = {
-                x: gunX - (isAiming ? 0.035 : 0.055),
-                y: gunY - 0.045,
-                z: gunZ + foregripZOffset
+                x: gunX - (isAiming ? 0.035 : 0.055) + bodyRotZ * 0.12,
+                y: gunY - 0.045 + recoilKickY,
+                z: gunZ + foregripZOffset + recoilKickZ
             };
 
-            // 換彈時左手轉向彈匣位置，做「抓取下拉 → 上推裝填 → 回到護木」
             if (this._isReloading) {
                 const p = clamp(this._reloadProgress, 0, 1);
                 const magLocalX = mag ? mag.position.x : 0;
@@ -474,15 +486,21 @@
                 } else {
                     const t = (p - 0.76) / 0.24;
                     const homeX = gunX - (isAiming ? 0.035 : 0.055);
-                    const homeY = gunY - 0.045;
-                    const homeZ = gunZ + foregripZOffset;
+                    const homeY = gunY - 0.045 + recoilKickY;
+                    const homeZ = gunZ + foregripZOffset + recoilKickZ;
                     leftTarget.x = lerp(magX, homeX, t);
                     leftTarget.y = lerp(seatedY, homeY, t);
                     leftTarget.z = lerp(magZ, homeZ, t);
                 }
             }
 
-            return { right: rightTarget, left: leftTarget };
+            return {
+                right: rightTarget,
+                left: leftTarget,
+                gunPitch: rootRotX + bodyRotX * 0.75,
+                gunYaw: rootRotY * 0.45,
+                gunRoll: rootRotZ + bodyRotZ * 0.85
+            };
         }
 
         update(deltaTime, motionOffset) {
@@ -526,7 +544,7 @@
 
             const target = STANCE_POSES[this.currentPoseKey] || STANCE_POSES.rifle_hip;
             const rotAlpha = 1 - Math.exp(-16 * dt);
-            const posAlpha = 1 - Math.exp(-22 * dt);
+            const posAlpha = 1 - Math.exp(-26 * dt);
 
             this._poseBlend.rx = lerp(this._poseBlend.rx, target.rightArm.x, rotAlpha);
             this._poseBlend.ry = lerp(this._poseBlend.ry, target.rightArm.y, rotAlpha);
@@ -550,31 +568,47 @@
             this._targetTriggerPull = Math.max(0, this._targetTriggerPull - 18 * dt);
 
             const weaponInfo = this._getActiveWeaponMod();
-            const gripTargets = this._computeGripTargets(weaponInfo, Boolean(w.isAiming));
+            const motion = this._computeWeaponMotionState(weaponInfo, Boolean(w.isAiming));
 
-            this._rightPos.x = lerp(this._rightPos.x, gripTargets.right.x, posAlpha);
-            this._rightPos.y = lerp(this._rightPos.y, gripTargets.right.y, posAlpha);
-            this._rightPos.z = lerp(this._rightPos.z, gripTargets.right.z, posAlpha);
+            this._rightPos.x = lerp(this._rightPos.x, motion.right.x, posAlpha);
+            this._rightPos.y = lerp(this._rightPos.y, motion.right.y, posAlpha);
+            this._rightPos.z = lerp(this._rightPos.z, motion.right.z, posAlpha);
 
-            this._leftPos.x = lerp(this._leftPos.x, gripTargets.left.x, posAlpha);
-            this._leftPos.y = lerp(this._leftPos.y, gripTargets.left.y, posAlpha);
-            this._leftPos.z = lerp(this._leftPos.z, gripTargets.left.z, posAlpha);
+            this._leftPos.x = lerp(this._leftPos.x, motion.left.x, posAlpha);
+            this._leftPos.y = lerp(this._leftPos.y, motion.left.y, posAlpha);
+            this._leftPos.z = lerp(this._leftPos.z, motion.left.z, posAlpha);
 
             this.handsGroup.visible = true;
             this.handsGroup.position.set(0, 0, 0);
 
             if (this.rightHand) {
                 this.rightHand.root.position.set(this._rightPos.x, this._rightPos.y, this._rightPos.z);
-                this.rightHand.root.rotation.set(this._poseBlend.rx, this._poseBlend.ry, this._poseBlend.rz);
-                this.rightHand.wrist.rotation.set(this._poseBlend.rwx, this._poseBlend.rwy, this._poseBlend.rwz);
+                this.rightHand.root.rotation.set(
+                    this._poseBlend.rx + motion.gunPitch * 0.65,
+                    this._poseBlend.ry + motion.gunYaw * 0.5,
+                    this._poseBlend.rz + motion.gunRoll * 0.65
+                );
+                this.rightHand.wrist.rotation.set(
+                    this._poseBlend.rwx + motion.gunPitch * 0.35,
+                    this._poseBlend.rwy,
+                    this._poseBlend.rwz + motion.gunRoll * 0.35
+                );
                 this.rightHand.index.rotation.x = this._poseBlend.rix + this.triggerPull * 0.42;
                 this.rightHand.grip.rotation.x = this._poseBlend.rgx;
             }
 
             if (this.leftHand) {
                 this.leftHand.root.position.set(this._leftPos.x, this._leftPos.y, this._leftPos.z);
-                this.leftHand.root.rotation.set(this._poseBlend.lx, this._poseBlend.ly, this._poseBlend.lz);
-                this.leftHand.wrist.rotation.set(this._poseBlend.lwx, this._poseBlend.lwy, this._poseBlend.lwz);
+                this.leftHand.root.rotation.set(
+                    this._poseBlend.lx + motion.gunPitch * 0.55,
+                    this._poseBlend.ly + motion.gunYaw * 0.4,
+                    this._poseBlend.lz + motion.gunRoll * 0.55
+                );
+                this.leftHand.wrist.rotation.set(
+                    this._poseBlend.lwx + motion.gunPitch * 0.25,
+                    this._poseBlend.lwy,
+                    this._poseBlend.lwz + motion.gunRoll * 0.25
+                );
                 this.leftHand.index.rotation.x = this._poseBlend.lix;
                 this.leftHand.grip.rotation.x = this._poseBlend.lgx;
             }
