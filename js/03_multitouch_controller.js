@@ -632,6 +632,16 @@
             this._lookTouchId = null;
         }
 
+        setCrouchToggled(active) {
+            const nextVal = Boolean(active);
+            this._touchCrouchToggled = nextVal;
+            this._desktopCrouchToggled = nextVal;
+            if (this.buttons && this.buttons.crouch) {
+                this.buttons.crouch.classList.toggle('toggled', nextVal);
+            }
+            this._recomputeCombinedState();
+        }
+
         _onButtonTouchStart(event) {
             if (!this.enabled) return;
             event.preventDefault();
@@ -661,9 +671,9 @@
                     btn.classList.toggle('toggled', this._touchAdsToggled);
                     this._emitInputAction('ads', this._touchAdsToggled);
                 } else if (action === 'crouchToggle') {
-                    this._touchCrouchToggled = !this._touchCrouchToggled;
-                    btn.classList.toggle('toggled', this._touchCrouchToggled);
-                    this._emitInputAction('crouch', this._touchCrouchToggled);
+                    const nextCrouch = !this._touchCrouchToggled;
+                    this.setCrouchToggled(nextCrouch);
+                    this._emitInputAction('crouch', nextCrouch);
                 } else if (action === 'jump') {
                     this.pressedQueue.jump = true;
                     this._emitInputAction('jump', true);
