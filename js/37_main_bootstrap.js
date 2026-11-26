@@ -217,6 +217,15 @@
                 }
             }
 
+            if (TacticalWarfare.FpReloadInspect && typeof TacticalWarfare.FpReloadInspect.init === 'function') {
+                TacticalWarfare.FpReloadInspect.init({
+                    weaponM4: TacticalWarfare.WeaponM4Urgi,
+                    weaponMp5: TacticalWarfare.WeaponSmgMp5,
+                    weaponAx50: TacticalWarfare.WeaponSniperAx50,
+                    weaponX16: TacticalWarfare.WeaponPistolX16
+                });
+            }
+
             if (TacticalWarfare.VfxParticleEngine && typeof TacticalWarfare.VfxParticleEngine.init === 'function') {
                 TacticalWarfare.VfxParticleEngine.init({ scene: scene });
             }
@@ -764,6 +773,10 @@
                             camera.updateProjectionMatrix();
                         }
                     }
+                }
+
+                if (TacticalWarfare.FpReloadInspect && typeof TacticalWarfare.FpReloadInspect.update === 'function') {
+                    TacticalWarfare.FpReloadInspect.update(dt);
                 }
 
                 if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.update === 'function') {
