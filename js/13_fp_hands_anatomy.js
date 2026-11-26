@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱戰術雙手骨架、雙關節解算與槍械握持對齊模組（重寫對齊版）
+ * 第一人稱戰術雙手骨架、雙關節解算與槍械握持對齊模組（對齊原版架構）
  * ============================================================================
  */
 (function (globalScope) {
@@ -35,7 +35,16 @@
             : fallbackNumber;
     }
 
-    // 對應 14_weapon_m4_urgi.js 的握把與護木局部座標
+    function normalizeWeaponCode(rawCode) {
+        if (!rawCode || typeof rawCode !== 'string') return 'M4A1';
+        const upper = rawCode.toUpperCase();
+        if (upper.indexOf('X16') !== -1) return 'X16';
+        if (upper.indexOf('MP5') !== -1) return 'MP5';
+        if (upper.indexOf('AX50') !== -1) return 'AX50';
+        return 'M4A1';
+    }
+
+    // 對應 14~17 武器模組的握把與護木局部座標
     const WeaponGripAlignmentTable = Object.freeze({
         M4A1: Object.freeze({
             rightHandHip: Object.freeze({ x: 0.172, y: -0.245, z: -0.345 }),
@@ -104,9 +113,48 @@
         })
     });
 
-    function createLightweightTacticalMaterials(ThreeModule, materialBucket) {
+    function createCamoCanvasTexture(ThreeModule, textureBucket) {
+        if (!ThreeModule || typeof document === 'undefined') return null;
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        let seed = 1876;
+        const nextRand = () => {
+            seed = (seed * 1664525 + 1013904223) >>> 0;
+            return seed / 4294967296;
+        };
+
+        const palette = ['#222423', '#3a3d3b', '#525552', '#6a6d69'];
+        const cell = 8;
+        for (let y = 0; y < size; y += cell) {
+            for (let x = 0; x < size; x += cell) {
+                ctx.fillStyle = palette[Math.floor(nextRand() * palette.length)];
+                ctx.fillRect(x, y, cell, cell);
+            }
+        }
+
+        const tex = new ThreeModule.CanvasTexture(canvas);
+        if (ThreeModule.SRGBColorSpace) {
+            tex.colorSpace = ThreeModule.SRGBColorSpace;
+        }
+        tex.wrapS = ThreeModule.RepeatWrapping;
+        tex.wrapT = ThreeModule.RepeatWrapping;
+        tex.repeat.set(2, 2);
+        tex.needsUpdate = true;
+        textureBucket.push(tex);
+        return tex;
+    }
+
+    function createLightweightTacticalMaterials(ThreeModule, materialBucket, textureBucket) {
+        const camoTex = createCamoCanvasTexture(ThreeModule, textureBucket);
+
         const sleeveMat = new ThreeModule.MeshStandardMaterial({
-            color: 0x262b30,
+            map: camoTex || null,
+            color: camoTex ? 0xffffff : 0x262b30,
             roughness: 0.76,
             metalness: 0.10
         });
@@ -497,6 +545,8 @@
 
             this.createdGeometries = [];
             this.createdMaterials = [];
+            this.createdTextures = [];
+            this._unsubscribers = [];
 
             this.currentPoseKey = 'rifle_hip';
             this.activeWeaponCode = 'M4A1';
@@ -534,8 +584,24 @@
             this.initializeRigAndListeners();
         }
 
+        _subscribeEvent(eventName, handler) {
+            if (!EventBusInstance || !eventName) return;
+            if (typeof EventBusInstance.on === 'function') {
+                const unsub = EventBusInstance.on(eventName, handler);
+                if (typeof unsub === 'function') {
+                    this._unsubscribers.push(unsub);
+                } else if (typeof EventBusInstance.off === 'function') {
+                    this._unsubscribers.push(() => EventBusInstance.off(eventName, handler));
+                }
+            }
+        }
+
         initializeRigAndListeners() {
-            const mats = createLightweightTacticalMaterials(this.ThreeModule, this.createdMaterials);
+            const mats = createLightweightTacticalMaterials(
+                this.ThreeModule,
+                this.createdMaterials,
+                this.createdTextures
+            );
             const geos = createSharedLightweightGeometries(this.ThreeModule, this.createdGeometries);
 
             const rigRootGroup = new this.ThreeModule.Group();
@@ -593,7 +659,7 @@
                 return;
             }
 
-            EventBusInstance.on(GameEventsTable.WEAPON_FIRED || 'weapon:fired', (payload) => {
+            this._subscribeEvent(GameEventsTable.WEAPON_FIRED || 'weapon:fired', (payload) => {
                 const kickStrength = payload && typeof payload.recoil === 'number'
                     ? clampNumericValue(payload.recoil, 0.2, 1.4)
                     : 0.7;
@@ -601,12 +667,14 @@
                 this.triggerPullAmount = 1.0;
             });
 
-            EventBusInstance.on(GameEventsTable.WEAPON_SWITCHED || 'weapon:switched', (payload) => {
-                const incoming = payload && payload.weaponKey ? String(payload.weaponKey).toUpperCase() : 'M4A1';
-                this.activeWeaponCode = incoming.indexOf('X16') !== -1 ? 'X16' : 'M4A1';
+            this._subscribeEvent(GameEventsTable.WEAPON_SWITCHED || GameEventsTable.WEAPON_EQUIP || 'weapon:switched', (payload) => {
+                const rawCode = payload && (payload.weaponKey || payload.weaponId || payload.id);
+                if (rawCode) {
+                    this.activeWeaponCode = normalizeWeaponCode(String(rawCode));
+                }
             });
 
-            EventBusInstance.on(GameEventsTable.RELOAD_STARTED || 'reload:started', (payload) => {
+            this._subscribeEvent(GameEventsTable.RELOAD_STARTED || 'reload:started', (payload) => {
                 this.isReloadingActive = true;
                 this.reloadElapsedSeconds = 0.0;
                 if (payload && typeof payload.duration === 'number' && payload.duration > 0.2) {
@@ -614,7 +682,7 @@
                 }
             });
 
-            EventBusInstance.on(GameEventsTable.PLATE_STARTED || 'plate:started', (payload) => {
+            this._subscribeEvent(GameEventsTable.PLATE_STARTED || 'plate:started', (payload) => {
                 this.isPlatingActive = true;
                 this.plateElapsedSeconds = 0.0;
                 if (payload && typeof payload.duration === 'number' && payload.duration > 0.2) {
@@ -623,25 +691,49 @@
             });
         }
 
-        synchronizeStateFromGameStore(deltaSeconds) {
+        synchronizeStateFromGameStore(deltaSeconds, overrideState) {
+            let stateWeaponId = '';
+            let isAimingNow = false;
+            let stateReloading = false;
+
             if (GameStateStore) {
-                const stateWeaponId = GameStateStore.currentWeapon || GameStateStore.weaponKey || '';
-                if (typeof stateWeaponId === 'string' && stateWeaponId.length > 0) {
-                    this.activeWeaponCode = stateWeaponId.toUpperCase().indexOf('X16') !== -1 ? 'X16' : 'M4A1';
+                if (typeof GameStateStore.get === 'function') {
+                    stateWeaponId = GameStateStore.get('weapons.activeId', '') || GameStateStore.get('currentWeapon', '');
+                    isAimingNow = Boolean(GameStateStore.get('weapons.isAiming', false) || GameStateStore.get('isAiming', false));
+                    stateReloading = Boolean(GameStateStore.get('weapons.isReloading', false) || GameStateStore.get('isReloading', false));
+                } else {
+                    stateWeaponId = GameStateStore.currentWeapon || GameStateStore.weaponKey || '';
+                    isAimingNow = Boolean(GameStateStore.isAiming || GameStateStore.adsActive);
+                    stateReloading = Boolean(GameStateStore.isReloading);
                 }
+            }
 
-                const isAimingNow = Boolean(GameStateStore.isAiming || GameStateStore.adsActive);
-                const targetAdsBlend = isAimingNow ? 1.0 : 0.0;
-                this.aimDownSightBlend = linearInterpolateValue(
-                    this.aimDownSightBlend,
-                    targetAdsBlend,
-                    clampNumericValue(deltaSeconds * 12.0, 0.0, 1.0)
-                );
-
-                if (GameStateStore.isReloading && !this.isReloadingActive) {
-                    this.isReloadingActive = true;
-                    this.reloadElapsedSeconds = 0.0;
+            if (overrideState && typeof overrideState === 'object') {
+                if (typeof overrideState.weaponId === 'string' && overrideState.weaponId.length > 0) {
+                    stateWeaponId = overrideState.weaponId;
                 }
+                if (typeof overrideState.isAiming === 'boolean') {
+                    isAimingNow = overrideState.isAiming;
+                }
+                if (typeof overrideState.isReloading === 'boolean') {
+                    stateReloading = overrideState.isReloading;
+                }
+            }
+
+            if (typeof stateWeaponId === 'string' && stateWeaponId.length > 0) {
+                this.activeWeaponCode = normalizeWeaponCode(stateWeaponId);
+            }
+
+            const targetAdsBlend = isAimingNow ? 1.0 : 0.0;
+            this.aimDownSightBlend = linearInterpolateValue(
+                this.aimDownSightBlend,
+                targetAdsBlend,
+                clampNumericValue(deltaSeconds * 12.0, 0.0, 1.0)
+            );
+
+            if (stateReloading && !this.isReloadingActive) {
+                this.isReloadingActive = true;
+                this.reloadElapsedSeconds = 0.0;
             }
 
             if (this.isReloadingActive) {
@@ -736,15 +828,15 @@
             );
         }
 
-        update(rawDeltaSeconds, bobOffsetOrScene) {
+        update(rawDeltaSeconds, bobOffsetOrSceneOrCtx) {
             if (!this.sceneInstance || !this.cameraInstance || !this.dualArmRig) {
                 return;
             }
 
-            if (bobOffsetOrScene && bobOffsetOrScene.isScene) {
-                if (this.sceneInstance !== bobOffsetOrScene) {
+            if (bobOffsetOrSceneOrCtx && bobOffsetOrSceneOrCtx.isScene) {
+                if (this.sceneInstance !== bobOffsetOrSceneOrCtx) {
                     this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
-                    this.sceneInstance = bobOffsetOrScene;
+                    this.sceneInstance = bobOffsetOrSceneOrCtx;
                     this.sceneInstance.add(this.dualArmRig.rigRootGroup);
                 }
             }
@@ -761,18 +853,21 @@
                 0.05
             );
 
-            const bobOffset = bobOffsetOrScene && !bobOffsetOrScene.isScene && typeof bobOffsetOrScene === 'object'
-                ? bobOffsetOrScene
-                : null;
+            const isCtxObj = bobOffsetOrSceneOrCtx && !bobOffsetOrSceneOrCtx.isScene && typeof bobOffsetOrSceneOrCtx === 'object';
+            const bobOffset = isCtxObj && bobOffsetOrSceneOrCtx.bobOffset
+                ? bobOffsetOrSceneOrCtx.bobOffset
+                : (isCtxObj && typeof bobOffsetOrSceneOrCtx.x === 'number' ? bobOffsetOrSceneOrCtx : null);
+
             const bobX = readSafeCoordinateAxis(bobOffset, 'x', 0.0);
             const bobY = readSafeCoordinateAxis(bobOffset, 'y', 0.0);
             const bobZ = readSafeCoordinateAxis(bobOffset, 'z', 0.0);
+            const sprintDropY = isCtxObj && bobOffsetOrSceneOrCtx.isSprinting && !bobOffsetOrSceneOrCtx.isAiming ? -0.022 : 0.0;
 
             this.elapsedTimeSeconds += deltaSeconds;
             this.recoilKickAmount = Math.max(0.0, this.recoilKickAmount - deltaSeconds * 5.2);
             this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - deltaSeconds * 8.5);
 
-            this.synchronizeStateFromGameStore(deltaSeconds);
+            this.synchronizeStateFromGameStore(deltaSeconds, isCtxObj ? bobOffsetOrSceneOrCtx : null);
 
             const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode] || WeaponGripAlignmentTable.M4A1;
             const currentPose = StancePoseDefinitions[this.currentPoseKey] || StancePoseDefinitions.rifle_hip;
@@ -781,7 +876,6 @@
             const upperArmLength = 0.20;
             const forearmAndWristLength = 0.21;
 
-            // 肩部 anchors 放在鏡頭下方偏側邊，讓大臂與小臂往槍身方向收攏
             this.transformLocalCameraOffsetToWorld(0.24, -0.27, -0.05, vectors.rightShoulderWorld);
             this.transformLocalCameraOffsetToWorld(-0.14, -0.27, -0.06, vectors.leftShoulderWorld);
 
@@ -789,7 +883,6 @@
             const recoilBackZ = this.recoilKickAmount * 0.025;
             const recoilLiftY = this.recoilKickAmount * 0.012;
 
-            // 右手扣住握把
             const rightWristLocalX = linearInterpolateValue(
                 weaponAlignment.rightHandHip.x,
                 weaponAlignment.rightHandAds.x,
@@ -799,7 +892,7 @@
                 weaponAlignment.rightHandHip.y,
                 weaponAlignment.rightHandAds.y,
                 adsFactor
-            ) + recoilLiftY + bobY;
+            ) + recoilLiftY + bobY + sprintDropY;
             const rightWristLocalZ = linearInterpolateValue(
                 weaponAlignment.rightHandHip.z,
                 weaponAlignment.rightHandAds.z,
@@ -813,7 +906,6 @@
                 vectors.rightTargetWristWorld
             );
 
-            // 左手托住並扣住護木下方
             let leftWristLocalX = linearInterpolateValue(
                 weaponAlignment.leftHandHip.x,
                 weaponAlignment.leftHandAds.x,
@@ -823,7 +915,7 @@
                 weaponAlignment.leftHandHip.y,
                 weaponAlignment.leftHandAds.y,
                 adsFactor
-            ) + recoilLiftY * 0.8 + bobY;
+            ) + recoilLiftY * 0.8 + bobY + sprintDropY;
             let leftWristLocalZ = linearInterpolateValue(
                 weaponAlignment.leftHandHip.z,
                 weaponAlignment.leftHandAds.z,
@@ -911,6 +1003,13 @@
         }
 
         dispose() {
+            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+                if (typeof this._unsubscribers[i] === 'function') {
+                    this._unsubscribers[i]();
+                }
+            }
+            this._unsubscribers = [];
+
             for (let i = 0; i < this.createdGeometries.length; i = i + 1) {
                 const geo = this.createdGeometries[i];
                 if (geo && typeof geo.dispose === 'function') {
@@ -926,6 +1025,14 @@
                 }
             }
             this.createdMaterials = [];
+
+            for (let i = 0; i < this.createdTextures.length; i = i + 1) {
+                const tex = this.createdTextures[i];
+                if (tex && typeof tex.dispose === 'function') {
+                    tex.dispose();
+                }
+            }
+            this.createdTextures = [];
 
             if (this.sceneInstance && this.dualArmRig && this.dualArmRig.rigRootGroup) {
                 this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
@@ -1029,7 +1136,9 @@
 
     if (EventBusInstance && typeof EventBusInstance.on === 'function') {
         const onStart = () => {
-            createOrReplaceTacticalHandsController();
+            if (!activeControllerInstance) {
+                createOrReplaceTacticalHandsController();
+            }
         };
         EventBusInstance.on(GameEventsTable.ROUND_START || 'round:start', onStart);
         EventBusInstance.on(GameEventsTable.MATCH_START || 'match:start', onStart);
