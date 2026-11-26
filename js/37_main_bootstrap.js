@@ -840,6 +840,11 @@
                     TacticalWarfare.FpReloadInspect.update(dt);
                 }
 
+                const isReloading = Boolean(
+                    (TacticalWarfare.FpReloadInspect && (TacticalWarfare.FpReloadInspect.isReloading || TacticalWarfare.FpReloadInspect.active)) ||
+                    (GameState && typeof GameState.get === 'function' && (GameState.get('weapons.isReloading', false) || GameState.get('isReloading', false)))
+                );
+
                 const isSprinting = Boolean(
                     (inputCtrl && typeof inputCtrl.isActionActive === 'function' && inputCtrl.isActionActive('sprint')) ||
                     (moveRes && moveRes.isSprinting)
@@ -853,6 +858,7 @@
                             bobOffset: bobOffsetArg,
                             isAiming: isAiming,
                             isSprinting: isSprinting,
+                            isReloading: isReloading,
                             weaponId: currentWeaponId
                         });
                     } else if (typeof TacticalWarfare.updateTacticalHandsController === 'function') {
