@@ -24,6 +24,7 @@
     ]);
 
     function clamp(val, minVal, maxVal) {
+        if (typeof val !== 'number' || Number.isNaN(val)) return minVal;
         if (val < minVal) return minVal;
         if (val > maxVal) return maxVal;
         return val;
@@ -75,10 +76,11 @@
         }
 
         _ensureHandsController(scene, camera, weaponCamera) {
+            const fallbackView = this._resolveSceneAndCamera();
             const resolved = {
-                scene: scene || this._resolveSceneAndCamera().scene,
-                camera: camera || this._resolveSceneAndCamera().camera,
-                weaponCamera: weaponCamera || this._resolveSceneAndCamera().weaponCamera
+                scene: scene || fallbackView.scene,
+                camera: camera || fallbackView.camera,
+                weaponCamera: weaponCamera || fallbackView.weaponCamera
             };
 
             let handsCtrl = TacticalWarfare.FpHandsAnatomy || TacticalWarfare.fpHandsAnatomy || null;
@@ -754,12 +756,21 @@
                 if (!this.running) return;
                 this._rafId = global.requestAnimationFrame(tick);
 
-                const rawDt = (nowMs - this._lastTimeMs) * 0.001;
-                this._lastTimeMs = nowMs;
-                const dt = clamp(rawDt > 0 ? rawDt : 0.016, 0.0001, 0.1);
+                try {
+                    const currentMs = typeof nowMs === 'number' && !Number.isNaN(nowMs)
+                        ? nowMs
+                        : (typeof global.performance !== 'undefined' && typeof global.performance.now === 'function'
+                            ? global.performance.now()
+                            : Date.now());
+                    const rawDt = (currentMs - this._lastTimeMs) * 0.001;
+                    this._lastTimeMs = currentMs;
+                    const dt = clamp(rawDt > 0 ? rawDt : 0.016, 0.0001, 0.1);
 
-                if (!this.paused) {
-                    this.step(dt);
+                    if (!this.paused) {
+                        this.step(dt);
+                    }
+                } catch (err) {
+                    // 防止單幀例外中斷 requestAnimationFrame 主迴圈
                 }
             };
 
