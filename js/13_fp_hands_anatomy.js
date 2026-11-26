@@ -14,6 +14,7 @@
 
     const Events = TacticalWarfare.Events || {};
     const EventBus = TacticalWarfare.EventBus;
+    const GameState = TacticalWarfare.GameState;
 
     const HAND_PALETTE = Object.freeze({
         gloveColor: 0x262b32,
@@ -54,12 +55,12 @@
             leftGrip: { x: 0.92, y: 0, z: 0 }
         },
         reload: {
-            rightArm: { x: -0.22, y: -0.08, z: -0.16 },
-            rightWrist: { x: 0.20, y: 0.12, z: 0.08 },
+            rightArm: { x: -0.24, y: -0.10, z: -0.18 },
+            rightWrist: { x: 0.22, y: 0.14, z: 0.10 },
             rightIndex: { x: 0.55, y: 0, z: 0 },
             rightGrip: { x: 0.75, y: 0, z: 0 },
-            leftArm: { x: 0.34, y: -0.12, z: 0.28 },
-            leftWrist: { x: -0.28, y: -0.15, z: 0.12 },
+            leftArm: { x: 0.42, y: -0.16, z: 0.32 },
+            leftWrist: { x: -0.32, y: -0.18, z: 0.14 },
             leftIndex: { x: 0.65, y: 0, z: 0 },
             leftGrip: { x: 0.70, y: 0, z: 0 }
         },
@@ -166,6 +167,12 @@
             this.currentPoseKey = 'rifle_hip';
             this.triggerPull = 0;
             this._targetTriggerPull = 0;
+
+            // [13] 換彈動態進度狀態
+            this._isReloading = false;
+            this._reloadProgress = 0;
+            this._reloadDuration = 1.65;
+
             this._poseBlend = {
                 rx: -0.18, ry: 0.08, rz: -0.12,
                 rwx: 0.12, rwy: -0.05, rwz: 0.05,
@@ -193,6 +200,14 @@
                 return rc.getScene();
             }
             return null;
+        }
+
+        _resolveIdlePose() {
+            const raw = GameState && GameState.raw ? GameState.raw : {};
+            const w = raw.weapons || {};
+            if (w.activeId === 'X16') return 'pistol_hip';
+            if (w.isAiming) return 'rifle_ads';
+            return 'rifle_hip';
         }
 
         init(options) {
@@ -252,6 +267,8 @@
             this.rightHand.root.position.set(0.24, -0.24, -0.28);
             this.handsGroup.add(this.rightHand.root);
 
+            this._isReloading = false;
+            this._reloadProgress = 0;
             this.setPose('rifle_hip', true);
 
             if (!this.initialized) {
@@ -274,19 +291,52 @@
                 );
             }
 
-            if (Events.WEAPON_RELOAD_START) {
+            // [13] 同時相容 WEAPON_RELOAD_START 與 RELOAD_START
+            const reloadStartEvts = [Events.WEAPON_RELOAD_START, Events.RELOAD_START].filter(Boolean);
+            for (let i = 0; i < reloadStartEvts.length; i = i + 1) {
                 this._unsubscribers.push(
-                    EventBus.on(Events.WEAPON_RELOAD_START, () => {
+                    EventBus.on(reloadStartEvts[i], (payload) => {
+                        this._isReloading = true;
+                        this._reloadProgress = 0;
+                        this._reloadDuration = payload && typeof payload.duration === 'number' && payload.duration > 0
+                            ? payload.duration
+                            : 1.65;
                         this.setPose('reload', false);
                     })
                 );
             }
 
-            if (Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL) {
-                const finishEvt = Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL;
+            if (Events.WEAPON_RELOAD_PROGRESS) {
                 this._unsubscribers.push(
-                    EventBus.on(finishEvt, () => {
-                        this.setPose('rifle_hip', false);
+                    EventBus.on(Events.WEAPON_RELOAD_PROGRESS, (payload) => {
+                        if (!payload) return;
+                        this._isReloading = true;
+                        this._reloadProgress = clamp(Number(payload.progress) || 0, 0, 1);
+                    })
+                );
+            }
+
+            const reloadFinishEvts = [
+                Events.WEAPON_RELOAD_FINISH,
+                Events.WEAPON_RELOAD_CANCEL,
+                Events.RELOAD_COMPLETE
+            ].filter(Boolean);
+            for (let i = 0; i < reloadFinishEvts.length; i = i + 1) {
+                this._unsubscribers.push(
+                    EventBus.on(reloadFinishEvts[i], () => {
+                        this._isReloading = false;
+                        this._reloadProgress = 0;
+                        this.setPose(this._resolveIdlePose(), false);
+                    })
+                );
+            }
+
+            if (Events.WEAPON_EQUIP) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.WEAPON_EQUIP, () => {
+                        this._isReloading = false;
+                        this._reloadProgress = 0;
+                        this.setPose(this._resolveIdlePose(), false);
                     })
                 );
             }
@@ -303,7 +353,7 @@
                 const plateEnd = Events.PLAYER_PLATE_FINISH || Events.PLAYER_PLATE_CANCEL;
                 this._unsubscribers.push(
                     EventBus.on(plateEnd, () => {
-                        this.setPose('rifle_hip', false);
+                        this.setPose(this._resolveIdlePose(), false);
                     })
                 );
             }
@@ -340,9 +390,12 @@
                 return;
             }
             if (isReloading) {
+                this._isReloading = true;
                 this.setPose('reload', false);
                 return;
             }
+            this._isReloading = false;
+            this._reloadProgress = 0;
             if (weaponId === 'X16') {
                 this.setPose('pistol_hip', false);
                 return;
@@ -357,8 +410,41 @@
             if (!this.handsGroup) return;
 
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
+
+            // [13] 同步 GameState 換彈狀態與推進換彈進度
+            const raw = GameState && GameState.raw ? GameState.raw : {};
+            const w = raw.weapons || {};
+            if (typeof w.isReloading === 'boolean') {
+                if (w.isReloading && !this._isReloading) {
+                    this._isReloading = true;
+                    this._reloadProgress = 0;
+                    this.setPose('reload', false);
+                } else if (!w.isReloading && this._isReloading) {
+                    this._isReloading = false;
+                    this._reloadProgress = 0;
+                    this.setPose(this._resolveIdlePose(), false);
+                }
+            }
+
+            if (this._isReloading) {
+                if (typeof w.reloadProgress === 'number' && w.reloadProgress > 0) {
+                    this._reloadProgress = clamp(w.reloadProgress, 0, 1);
+                } else {
+                    this._reloadProgress = clamp(
+                        this._reloadProgress + dt / Math.max(0.2, this._reloadDuration),
+                        0,
+                        1
+                    );
+                }
+                if (this.currentPoseKey !== 'reload') {
+                    this.setPose('reload', false);
+                }
+            } else if (this.currentPoseKey === 'reload') {
+                this.setPose(this._resolveIdlePose(), false);
+            }
+
             const target = STANCE_POSES[this.currentPoseKey] || STANCE_POSES.rifle_hip;
-            const alpha = 1 - Math.exp(-14 * dt);
+            const alpha = 1 - Math.exp(-15 * dt);
 
             this._poseBlend.rx = lerp(this._poseBlend.rx, target.rightArm.x, alpha);
             this._poseBlend.ry = lerp(this._poseBlend.ry, target.rightArm.y, alpha);
@@ -381,13 +467,35 @@
             this.triggerPull = lerp(this.triggerPull, this._targetTriggerPull, 1 - Math.exp(-26 * dt));
             this._targetTriggerPull = Math.max(0, this._targetTriggerPull - 18 * dt);
 
+            // [13] 換彈階段的雙手動態起伏（卸彈匣下拉 -> 裝填抬起 -> 回正）
+            let reloadLiftY = 0;
+            let leftDropY = 0;
+            let leftPitchOffset = 0;
+            if (this._isReloading) {
+                const p = this._reloadProgress;
+                const arc = Math.sin(p * Math.PI);
+                reloadLiftY = -0.028 * arc;
+                if (p < 0.45) {
+                    leftDropY = -(p / 0.45) * 0.085;
+                    leftPitchOffset = (p / 0.45) * 0.24;
+                } else if (p < 0.55) {
+                    leftDropY = -0.085;
+                    leftPitchOffset = 0.24;
+                } else {
+                    const rem = (1 - p) / 0.45;
+                    leftDropY = -rem * 0.085;
+                    leftPitchOffset = rem * 0.24;
+                }
+            }
+
             const swayX = motionOffset && typeof motionOffset.x === 'number' ? motionOffset.x : 0;
             const swayY = motionOffset && typeof motionOffset.y === 'number' ? motionOffset.y : 0;
 
             this.handsGroup.visible = true;
-            this.handsGroup.position.set(swayX, swayY, 0);
+            this.handsGroup.position.set(swayX, swayY + reloadLiftY, 0);
 
             if (this.rightHand) {
+                this.rightHand.root.position.set(0.24, -0.24 + reloadLiftY * 0.5, -0.28);
                 this.rightHand.root.rotation.set(this._poseBlend.rx, this._poseBlend.ry, this._poseBlend.rz);
                 this.rightHand.wrist.rotation.set(this._poseBlend.rwx, this._poseBlend.rwy, this._poseBlend.rwz);
                 this.rightHand.index.rotation.x = this._poseBlend.rix + this.triggerPull * 0.42;
@@ -395,7 +503,12 @@
             }
 
             if (this.leftHand) {
-                this.leftHand.root.rotation.set(this._poseBlend.lx, this._poseBlend.ly, this._poseBlend.lz);
+                this.leftHand.root.position.set(-0.24, -0.24 + leftDropY, -0.32);
+                this.leftHand.root.rotation.set(
+                    this._poseBlend.lx + leftPitchOffset,
+                    this._poseBlend.ly,
+                    this._poseBlend.lz
+                );
                 this.leftHand.wrist.rotation.set(this._poseBlend.lwx, this._poseBlend.lwy, this._poseBlend.lwz);
                 this.leftHand.index.rotation.x = this._poseBlend.lix;
                 this.leftHand.grip.rotation.x = this._poseBlend.lgx;
