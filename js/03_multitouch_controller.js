@@ -271,6 +271,7 @@
 
             this.pressedQueue = {
                 jump: false,
+                crouchToggle: false,
                 reload: false,
                 grenade: false,
                 melee: false,
@@ -671,9 +672,8 @@
                     btn.classList.toggle('toggled', this._touchAdsToggled);
                     this._emitInputAction('ads', this._touchAdsToggled);
                 } else if (action === 'crouchToggle') {
-                    const nextCrouch = !this._touchCrouchToggled;
-                    this.setCrouchToggled(nextCrouch);
-                    this._emitInputAction('crouch', nextCrouch);
+                    this.pressedQueue.crouchToggle = true;
+                    this._emitInputAction('crouchToggle', true);
                 } else if (action === 'jump') {
                     this.pressedQueue.jump = true;
                     this._emitInputAction('jump', true);
@@ -835,8 +835,8 @@
                     this.pressedQueue.interact = true;
                     this._emitInputAction('interact', true);
                 } else if (code === 'KeyC') {
-                    this._desktopCrouchToggled = !this._desktopCrouchToggled;
-                    this._emitInputAction('crouch', this._desktopCrouchToggled);
+                    this.pressedQueue.crouchToggle = true;
+                    this._emitInputAction('crouchToggle', true);
                 } else if (code === 'Digit1') {
                     this.pressedQueue.weaponSlot = 1;
                     this._emitInputAction('weaponSlot', 1);
