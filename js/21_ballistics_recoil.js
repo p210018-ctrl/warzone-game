@@ -145,7 +145,6 @@
             this._domListeners = [];
         }
 
-        // [21] 統一重設射擊與換彈執行期旗標
         _resetRuntimeFlags() {
             this._fireCooldown = 0;
             this._spreadBonus = 0;
@@ -187,7 +186,6 @@
             return this;
         }
 
-        // [21] 僅保留桌面滑鼠左鍵、鍵盤 R 換彈與視窗失焦歸零，不再以全域 touchstart 攔截螢幕觸控
         _bindInputListeners() {
             const doc = global.document;
             if (!doc) return;
@@ -195,7 +193,7 @@
             const onMouseDown = (ev) => {
                 if (ev.button !== 0) return;
                 const target = ev.target;
-                if (target && target.closest && target.closest('button, input, select, textarea, [data-rt]')) {
+                if (target && target.closest && target.closest('button, input, select, textarea, [data-rt], .tw-btn')) {
                     return;
                 }
                 this._isFiringHeld = true;
@@ -260,6 +258,17 @@
                 );
             }
 
+            // [21] 監聽 MultiTouchController 派發的 INPUT_ACTION（換彈等單次動作）
+            const inputActionEvt = Events.INPUT_ACTION || 'input:action';
+            this._unsubscribers.push(
+                EventBus.on(inputActionEvt, (payload) => {
+                    if (!payload) return;
+                    if (payload.action === 'reload' && payload.value) {
+                        this.startReload(this.activeWeaponId);
+                    }
+                })
+            );
+
             if (Events.PICKUP_COLLECTED) {
                 this._unsubscribers.push(
                     EventBus.on(Events.PICKUP_COLLECTED, (payload) => {
@@ -306,7 +315,14 @@
             const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || null;
             let inputFiring = Boolean(this._isFiringHeld);
 
+            // [21] 正確讀取 MultiTouchController 的 actions.fire / isActionActive('fire') 與 pressedQueue.reload
             if (ctrl) {
+                if (typeof ctrl.isActionActive === 'function') {
+                    inputFiring = inputFiring || Boolean(ctrl.isActionActive('fire'));
+                } else if (ctrl.actions && typeof ctrl.actions.fire === 'boolean') {
+                    inputFiring = inputFiring || ctrl.actions.fire;
+                }
+
                 if (typeof ctrl.isFiring === 'function') {
                     inputFiring = inputFiring || Boolean(ctrl.isFiring());
                 } else if (typeof ctrl.firing === 'boolean') {
@@ -315,6 +331,11 @@
                     inputFiring = inputFiring || ctrl.state.firing;
                 } else if (ctrl.buttons && typeof ctrl.buttons.fire === 'boolean') {
                     inputFiring = inputFiring || ctrl.buttons.fire;
+                }
+
+                if (typeof ctrl.consumeActionPress === 'function' && ctrl.consumeActionPress('reload')) {
+                    this.startReload(this.activeWeaponId);
+                    return false;
                 }
             }
 
