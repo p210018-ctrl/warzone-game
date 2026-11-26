@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱戰術雙手骨架、雙關節解算與槍械握持對齊模組（對齊原版架構）
+ * 第一人稱戰術雙手骨架、雙關節解算與槍械握持對齊模組（槍械即時連動版）
  * ============================================================================
  */
 (function (globalScope) {
@@ -44,7 +44,6 @@
         return 'M4A1';
     }
 
-    // 對應 14~17 武器模組的握把與護木局部座標
     const WeaponGripAlignmentTable = Object.freeze({
         M4A1: Object.freeze({
             rightHandHip: Object.freeze({ x: 0.172, y: -0.245, z: -0.345 }),
@@ -464,14 +463,15 @@
         }
     }
 
-    // 正向 rotation.x 讓 -Z 指尖往下方／內側扣住握把與護木
     function applyTacticalHandPoseToSide(
         sideRigObject,
         handSideSign,
         poseDefinition,
         triggerPullAmount,
         breathPhaseValue,
-        recoilKickValue
+        recoilKickValue,
+        weaponPitchOffset,
+        weaponRollOffset
     ) {
         if (
             !sideRigObject
@@ -531,10 +531,42 @@
         const rawWristBend = handSideSign > 0 ? safePose.rightWristBend : safePose.leftWristBend;
         wristRotation.x = readSafeCoordinateAxis(rawWristBend, 'x', 0.16)
             + Math.sin(breathPhaseValue) * 0.008
-            + recoilKickValue * 0.07;
+            + recoilKickValue * 0.07
+            + (weaponPitchOffset || 0);
         wristRotation.y = readSafeCoordinateAxis(rawWristBend, 'y', -handSideSign * 0.12)
             + Math.cos(breathPhaseValue * 0.7) * 0.006;
-        wristRotation.z = readSafeCoordinateAxis(rawWristBend, 'z', handSideSign * 0.08);
+        wristRotation.z = readSafeCoordinateAxis(rawWristBend, 'z', handSideSign * 0.08)
+            + (weaponRollOffset || 0);
+    }
+
+    function resolveActiveWeaponTransformDelta(weaponCode) {
+        const keyMap = {
+            M4A1: 'WeaponM4Urgi',
+            MP5: 'WeaponSmgMp5',
+            AX50: 'WeaponSniperAx50',
+            X16: 'WeaponPistolX16'
+        };
+        const modKey = keyMap[weaponCode] || 'WeaponM4Urgi';
+        const mod = TacticalWarfareNamespace[modKey];
+        if (!mod) return null;
+
+        const targetObj = mod.weaponGroup
+            || mod.rootGroup
+            || mod.modelGroup
+            || mod.gunGroup
+            || mod.mesh
+            || (mod.instance && (mod.instance.weaponGroup || mod.instance.rootGroup || mod.instance.mesh))
+            || null;
+
+        if (!targetObj || !targetObj.position) return null;
+
+        return {
+            dx: typeof targetObj.position.x === 'number' ? targetObj.position.x : 0,
+            dy: typeof targetObj.position.y === 'number' ? targetObj.position.y : 0,
+            dz: typeof targetObj.position.z === 'number' ? targetObj.position.z : 0,
+            rx: targetObj.rotation && typeof targetObj.rotation.x === 'number' ? targetObj.rotation.x : 0,
+            rz: targetObj.rotation && typeof targetObj.rotation.z === 'number' ? targetObj.rotation.z : 0
+        };
     }
 
     class FirstPersonTacticalHandsController {
@@ -871,13 +903,20 @@
 
             const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode] || WeaponGripAlignmentTable.M4A1;
             const currentPose = StancePoseDefinitions[this.currentPoseKey] || StancePoseDefinitions.rifle_hip;
+            const weaponDelta = resolveActiveWeaponTransformDelta(this.activeWeaponCode);
+
+            const gunOffsetX = weaponDelta ? clampNumericValue(weaponDelta.dx * 0.45, -0.08, 0.08) : 0.0;
+            const gunOffsetY = weaponDelta ? clampNumericValue(weaponDelta.dy * 0.45, -0.08, 0.08) : 0.0;
+            const gunOffsetZ = weaponDelta ? clampNumericValue(weaponDelta.dz * 0.45, -0.08, 0.08) : 0.0;
+            const gunPitch = weaponDelta ? clampNumericValue(weaponDelta.rx * 0.5, -0.35, 0.35) : 0.0;
+            const gunRoll = weaponDelta ? clampNumericValue(weaponDelta.rz * 0.5, -0.35, 0.35) : 0.0;
 
             const vectors = this.scratchVectors;
             const upperArmLength = 0.20;
             const forearmAndWristLength = 0.21;
 
-            this.transformLocalCameraOffsetToWorld(0.24, -0.27, -0.05, vectors.rightShoulderWorld);
-            this.transformLocalCameraOffsetToWorld(-0.14, -0.27, -0.06, vectors.leftShoulderWorld);
+            this.transformLocalCameraOffsetToWorld(0.24 + gunOffsetX * 0.5, -0.27 + gunOffsetY * 0.5, -0.05, vectors.rightShoulderWorld);
+            this.transformLocalCameraOffsetToWorld(-0.14 + gunOffsetX * 0.5, -0.27 + gunOffsetY * 0.5, -0.06, vectors.leftShoulderWorld);
 
             const adsFactor = this.aimDownSightBlend;
             const recoilBackZ = this.recoilKickAmount * 0.025;
@@ -887,17 +926,17 @@
                 weaponAlignment.rightHandHip.x,
                 weaponAlignment.rightHandAds.x,
                 adsFactor
-            ) + bobX;
+            ) + bobX + gunOffsetX;
             const rightWristLocalY = linearInterpolateValue(
                 weaponAlignment.rightHandHip.y,
                 weaponAlignment.rightHandAds.y,
                 adsFactor
-            ) + recoilLiftY + bobY + sprintDropY;
+            ) + recoilLiftY + bobY + sprintDropY + gunOffsetY;
             const rightWristLocalZ = linearInterpolateValue(
                 weaponAlignment.rightHandHip.z,
                 weaponAlignment.rightHandAds.z,
                 adsFactor
-            ) + recoilBackZ + bobZ;
+            ) + recoilBackZ + bobZ + gunOffsetZ;
 
             this.transformLocalCameraOffsetToWorld(
                 rightWristLocalX,
@@ -910,17 +949,17 @@
                 weaponAlignment.leftHandHip.x,
                 weaponAlignment.leftHandAds.x,
                 adsFactor
-            ) + bobX;
+            ) + bobX + gunOffsetX;
             let leftWristLocalY = linearInterpolateValue(
                 weaponAlignment.leftHandHip.y,
                 weaponAlignment.leftHandAds.y,
                 adsFactor
-            ) + recoilLiftY * 0.8 + bobY + sprintDropY;
+            ) + recoilLiftY * 0.8 + bobY + sprintDropY + gunOffsetY;
             let leftWristLocalZ = linearInterpolateValue(
                 weaponAlignment.leftHandHip.z,
                 weaponAlignment.leftHandAds.z,
                 adsFactor
-            ) + recoilBackZ + bobZ;
+            ) + recoilBackZ + bobZ + gunOffsetZ;
 
             if (this.isReloadingActive) {
                 const reloadProgress = clampNumericValue(
@@ -981,7 +1020,9 @@
                 currentPose,
                 this.triggerPullAmount,
                 this.elapsedTimeSeconds * 2.4,
-                this.recoilKickAmount
+                this.recoilKickAmount,
+                gunPitch,
+                gunRoll
             );
 
             applyTacticalHandPoseToSide(
@@ -990,7 +1031,9 @@
                 currentPose,
                 0.0,
                 this.elapsedTimeSeconds * 2.4 + 0.7,
-                this.recoilKickAmount
+                this.recoilKickAmount,
+                gunPitch,
+                gunRoll
             );
 
             this._rightPos.x = Number(rightWristLocalX.toFixed(3));
