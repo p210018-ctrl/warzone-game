@@ -3,11 +3,6 @@
  * 20_fp_reload_inspect.js
  * 第一人稱裝填流程、戰術中斷判定與武器檢視（Inspect）系統
  * ============================================================================
- * 職責：
- * 1. 管理各槍械裝填耗時（支援戰術換彈與空倉換彈倍率）與裝填進度推演
- * 2. 廣播 WEAPON_RELOAD_START / PROGRESS / FINISH / CANCEL 事件，驅動槍械與雙手動畫
- * 3. 支援戰術武器檢視（Inspect）動作（旋轉展示槍身細節、可被開火／換彈／切換武器打斷）
- * 4. 同步更新 GameState 武器裝填與檢視狀態，保持 UI 與戰鬥邏輯一致
  */
 (function (global) {
     'use strict';
@@ -21,9 +16,6 @@
     const EventBus = TacticalWarfare.EventBus;
     const GameState = TacticalWarfare.GameState;
 
-    // ------------------------------------------------------------------------
-    // 1. 武器換彈與檢視參數預設表
-    // ------------------------------------------------------------------------
     const RELOAD_INSPECT_CONFIG = Object.freeze({
         defaultReloadDuration: 1.65,
         emptyReloadMultiplier: 1.22,
@@ -50,9 +42,6 @@
         return a + (b - a) * t;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. FpReloadInspect 主類別
-    // ------------------------------------------------------------------------
     class FpReloadInspect {
         constructor() {
             this.initialized = false;
@@ -65,14 +54,12 @@
 
             this.activeWeaponId = 'M4A1';
 
-            // 裝填狀態
             this.isReloading = false;
             this.reloadTimer = 0;
             this.reloadDuration = RELOAD_INSPECT_CONFIG.defaultReloadDuration;
             this.reloadProgress = 0;
             this._onReloadComplete = null;
 
-            // 檢視狀態
             this.isInspecting = false;
             this.inspectTimer = 0;
             this.inspectDuration = RELOAD_INSPECT_CONFIG.inspectDuration;
@@ -82,9 +69,6 @@
             this._unsubscribers = [];
         }
 
-        /**
-         * 初始化換彈與武器檢視控制器
-         */
         init(options) {
             const opts = options || {};
             this.weapons.M4A1 = opts.weaponM4 || TacticalWarfare.WeaponM4Urgi || null;
@@ -109,7 +93,6 @@
                 return;
             }
 
-            // 武器切換時自動取消正在進行的裝填或檢視
             if (Events.WEAPON_EQUIP) {
                 this._unsubscribers.push(
                     EventBus.on(Events.WEAPON_EQUIP, (payload) => {
@@ -127,7 +110,35 @@
                 );
             }
 
-            // 開火時自動取消檢視動作
+            // [20] 接收外部發起的換彈開始事件，啟動換彈進度與槍模動畫
+            if (Events.RELOAD_START) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.RELOAD_START, (payload) => {
+                        const wId = (payload && payload.weaponId) ||
+                            (GameState && typeof GameState.get === 'function' && GameState.get('weapons.activeId', this.activeWeaponId)) ||
+                            this.activeWeaponId;
+                        this.startReload({
+                            weaponId: wId,
+                            duration: payload && typeof payload.duration === 'number' ? payload.duration : undefined
+                        });
+                    })
+                );
+            }
+
+            // [20] 監聽輸入動作（換彈 / 武器檢視）
+            const inputActionEvt = Events.INPUT_ACTION || 'input:action';
+            this._unsubscribers.push(
+                EventBus.on(inputActionEvt, (payload) => {
+                    if (!payload || !payload.value) return;
+                    if (payload.action === 'reload') {
+                        const wId = (GameState && typeof GameState.get === 'function' && GameState.get('weapons.activeId', this.activeWeaponId)) || this.activeWeaponId;
+                        this.startReload({ weaponId: wId });
+                    } else if (payload.action === 'inspect') {
+                        this.startInspect();
+                    }
+                })
+            );
+
             if (Events.WEAPON_FIRE) {
                 this._unsubscribers.push(
                     EventBus.on(Events.WEAPON_FIRE, () => {
@@ -138,7 +149,6 @@
                 );
             }
 
-            // 開始插板時自動取消檢視動作
             if (Events.PLAYER_PLATE_START) {
                 this._unsubscribers.push(
                     EventBus.on(Events.PLAYER_PLATE_START, () => {
@@ -166,10 +176,6 @@
             return isEmptyMag ? base * RELOAD_INSPECT_CONFIG.emptyReloadMultiplier : base;
         }
 
-        /**
-         * 啟動裝填流程
-         * @param {Object} opts - { weaponId, duration, isEmptyMag, onComplete }
-         */
         startReload(opts) {
             const cfg = opts || {};
             if (this.isReloading) {
@@ -203,9 +209,6 @@
             return true;
         }
 
-        /**
-         * 中斷目前裝填流程
-         */
         cancelReload(reason) {
             if (!this.isReloading) {
                 return;
@@ -226,9 +229,6 @@
             }
         }
 
-        /**
-         * 啟動武器檢視（Inspect）動作
-         */
         startInspect(durationSec) {
             if (this.isReloading || this.isInspecting) {
                 return false;
@@ -244,9 +244,6 @@
             return true;
         }
 
-        /**
-         * 取消武器檢視動作
-         */
         cancelInspect() {
             if (!this.isInspecting) {
                 return;
@@ -268,13 +265,9 @@
             }, true);
         }
 
-        /**
-         * 每幀更新裝填進度與武器檢視姿態
-         */
         update(deltaTime) {
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
 
-            // 1. 推演裝填流程
             if (this.isReloading) {
                 this.reloadTimer += dt;
                 this.reloadProgress = clamp(this.reloadTimer / Math.max(0.01, this.reloadDuration), 0, 1);
@@ -299,6 +292,10 @@
                         completeCb(completedWeaponId);
                     }
 
+                    if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.applyReloadComplete === 'function') {
+                        TacticalWarfare.BallisticsRecoil.applyReloadComplete(completedWeaponId);
+                    }
+
                     this.reloadProgress = 0;
                     this._syncState();
 
@@ -312,7 +309,6 @@
                 }
             }
 
-            // 2. 推演武器檢視姿態曲線
             let targetX = 0;
             let targetY = 0;
             let targetRotX = 0;
@@ -323,7 +319,6 @@
                 this.inspectTimer += dt;
                 this.inspectProgress = clamp(this.inspectTimer / Math.max(0.1, this.inspectDuration), 0, 1);
 
-                // 鐘形包絡線：起手與收尾平滑過渡至零
                 const env = Math.sin(this.inspectProgress * Math.PI);
                 targetX = -0.045 * env;
                 targetY = 0.025 * env;
@@ -369,9 +364,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const fpReloadInspectInstance = new FpReloadInspect();
 
     const moduleExport = {
