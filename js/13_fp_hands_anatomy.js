@@ -139,13 +139,14 @@
         const rootGroup = new THREE.Group();
         rootGroup.name = sideSign < 0 ? 'LeftHandRig' : 'RightHandRig';
 
-        const sleeveGeo = new THREE.CylinderGeometry(0.030, 0.025, 0.24, 12);
+        // 加長袖管（0.56）與前臂（0.13），讓後方一路延伸出畫面邊緣不懸空斷裂
+        const sleeveGeo = new THREE.CylinderGeometry(0.036, 0.026, 0.56, 12);
         sleeveGeo.rotateX(Math.PI / 2);
         const sleeveMesh = new THREE.Mesh(sleeveGeo, materials.sleeve);
-        sleeveMesh.position.set(0, 0, 0.12);
+        sleeveMesh.position.set(0, 0, 0.28);
         rootGroup.add(sleeveMesh);
 
-        const cuffGeo = new THREE.CylinderGeometry(0.026, 0.026, 0.012, 12);
+        const cuffGeo = new THREE.CylinderGeometry(0.027, 0.027, 0.014, 12);
         cuffGeo.rotateX(Math.PI / 2);
         const cuffMesh = new THREE.Mesh(cuffGeo, materials.cuff);
         cuffMesh.position.set(0, 0, 0.002);
@@ -155,65 +156,65 @@
             const watchBandGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.016, 12);
             watchBandGeo.rotateX(Math.PI / 2);
             const watchBandMesh = new THREE.Mesh(watchBandGeo, materials.cuff);
-            watchBandMesh.position.set(0, 0, -0.016);
+            watchBandMesh.position.set(0, 0, -0.020);
             rootGroup.add(watchBandMesh);
 
             const watchCaseGeo = new THREE.BoxGeometry(0.022, 0.010, 0.024);
             const watchCaseMesh = new THREE.Mesh(watchCaseGeo, materials.pad);
-            watchCaseMesh.position.set(0, 0.022, -0.016);
+            watchCaseMesh.position.set(0, 0.022, -0.020);
             rootGroup.add(watchCaseMesh);
 
             const watchFaceGeo = new THREE.BoxGeometry(0.015, 0.003, 0.016);
             const watchFaceMesh = new THREE.Mesh(watchFaceGeo, materials.watchFace);
-            watchFaceMesh.position.set(0, 0.027, -0.016);
+            watchFaceMesh.position.set(0, 0.027, -0.020);
             rootGroup.add(watchFaceMesh);
         }
 
-        const forearmGeo = new THREE.CylinderGeometry(0.025, 0.021, 0.085, 12);
+        const forearmGeo = new THREE.CylinderGeometry(0.026, 0.022, 0.13, 12);
         forearmGeo.rotateX(Math.PI / 2);
         const forearmMesh = new THREE.Mesh(forearmGeo, materials.glove);
-        forearmMesh.position.set(0, 0, -0.02);
+        forearmMesh.position.set(0, 0, -0.035);
         rootGroup.add(forearmMesh);
 
         const wristJoint = new THREE.Group();
-        wristJoint.position.set(0, 0, -0.06);
+        wristJoint.position.set(0, 0, -0.095);
         rootGroup.add(wristJoint);
 
-        const palmGeo = new THREE.BoxGeometry(0.046, 0.016, 0.054);
+        const palmGeo = new THREE.BoxGeometry(0.046, 0.016, 0.056);
         const palmMesh = new THREE.Mesh(palmGeo, materials.glove);
-        palmMesh.position.set(0, 0, -0.027);
+        palmMesh.position.set(0, 0, -0.028);
         wristJoint.add(palmMesh);
 
         const knuckleGeo = new THREE.BoxGeometry(0.044, 0.008, 0.014);
         const knuckleMesh = new THREE.Mesh(knuckleGeo, materials.pad);
-        knuckleMesh.position.set(0, 0.010, -0.046);
+        knuckleMesh.position.set(0, 0.010, -0.048);
         wristJoint.add(knuckleMesh);
 
         const thumbJoint = new THREE.Group();
-        thumbJoint.position.set(-sideSign * 0.025, -0.002, -0.024);
+        thumbJoint.position.set(-sideSign * 0.025, -0.002, -0.025);
         wristJoint.add(thumbJoint);
 
-        const thumbGeo = new THREE.BoxGeometry(0.012, 0.012, 0.030);
+        const thumbGeo = new THREE.BoxGeometry(0.012, 0.012, 0.032);
         const thumbMesh = new THREE.Mesh(thumbGeo, materials.glove);
-        thumbMesh.position.set(0, 0, -0.014);
+        thumbMesh.position.set(0, 0, -0.015);
         thumbJoint.add(thumbMesh);
 
         const indexJoint = new THREE.Group();
-        indexJoint.position.set(-sideSign * 0.016, -0.002, -0.052);
+        indexJoint.position.set(-sideSign * 0.016, -0.002, -0.054);
         wristJoint.add(indexJoint);
 
-        const indexGeo = new THREE.BoxGeometry(0.010, 0.010, 0.026);
+        const indexGeo = new THREE.BoxGeometry(0.010, 0.010, 0.028);
         const indexMesh = new THREE.Mesh(indexGeo, materials.glove);
-        indexMesh.position.set(0, 0, -0.013);
+        indexMesh.position.set(0, 0, -0.014);
         indexJoint.add(indexMesh);
 
         const gripJoint = new THREE.Group();
-        gripJoint.position.set(0, -0.002, -0.052);
+        gripJoint.position.set(0, -0.002, -0.054);
         wristJoint.add(gripJoint);
 
-        const gripGeo = new THREE.BoxGeometry(0.040, 0.010, 0.024);
+        const gripGeo = new THREE.BoxGeometry(0.040, 0.010, 0.026);
         const gripMesh = new THREE.Mesh(gripGeo, materials.glove);
-        gripMesh.position.set(0, 0, -0.012);
+        gripMesh.position.set(0, 0, -0.013);
         gripJoint.add(gripMesh);
 
         return {
