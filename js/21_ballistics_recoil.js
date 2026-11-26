@@ -16,6 +16,9 @@
     const EventBus = TacticalWarfare.EventBus;
     const GameState = TacticalWarfare.GameState;
 
+    // [21] 武器切換順序表
+    const WEAPON_LOADOUT_ORDER = Object.freeze(['M4A1', 'MP5', 'AX50', 'X16']);
+
     const BALLISTICS_WEAPON_SPECS = Object.freeze({
         M4A1: {
             id: 'M4A1',
@@ -157,6 +160,36 @@
             this.recoilOffset.yaw = 0;
         }
 
+        // [21] 切換至指定武器並同步 GameState 與 WEAPON_EQUIP 事件
+        equipWeapon(weaponId) {
+            const targetId = weaponId && BALLISTICS_WEAPON_SPECS[weaponId] ? weaponId : 'M4A1';
+            this.activeWeaponId = targetId;
+            this.isReloading = false;
+            this._reloadTimer = 0;
+            this._reloadWeaponId = null;
+            this._semiTriggered = false;
+            this._fireCooldown = Math.max(this._fireCooldown, 0.14);
+            this._syncAmmoToState();
+
+            if (EventBus && Events.WEAPON_EQUIP) {
+                EventBus.emit(Events.WEAPON_EQUIP, {
+                    weaponId: targetId,
+                    id: targetId,
+                    spec: BALLISTICS_WEAPON_SPECS[targetId]
+                });
+            }
+            return targetId;
+        }
+
+        // [21] 依方向切換下一把或上一把武器
+        cycleWeapon(step) {
+            const delta = typeof step === 'number' && step < 0 ? -1 : 1;
+            const currentIdx = WEAPON_LOADOUT_ORDER.indexOf(this.activeWeaponId);
+            const baseIdx = currentIdx >= 0 ? currentIdx : 0;
+            const nextIdx = (baseIdx + delta + WEAPON_LOADOUT_ORDER.length) % WEAPON_LOADOUT_ORDER.length;
+            return this.equipWeapon(WEAPON_LOADOUT_ORDER[nextIdx]);
+        }
+
         init(options) {
             const opts = options || {};
             this.physics = opts.physics || TacticalWarfare.PhysicsCollision || null;
@@ -235,7 +268,7 @@
                 this._unsubscribers.push(
                     EventBus.on(Events.WEAPON_EQUIP, (payload) => {
                         const wId = payload && (payload.weaponId || payload.id);
-                        if (wId && BALLISTICS_WEAPON_SPECS[wId]) {
+                        if (wId && BALLISTICS_WEAPON_SPECS[wId] && wId !== this.activeWeaponId) {
                             this.activeWeaponId = wId;
                             this.isReloading = false;
                             this._reloadTimer = 0;
@@ -258,13 +291,24 @@
                 );
             }
 
-            // [21] 監聽 MultiTouchController 派發的 INPUT_ACTION（換彈等單次動作）
+            // [21] 監聽切換武器、換彈與瞄準的 INPUT_ACTION 事件
             const inputActionEvt = Events.INPUT_ACTION || 'input:action';
             this._unsubscribers.push(
                 EventBus.on(inputActionEvt, (payload) => {
                     if (!payload) return;
                     if (payload.action === 'reload' && payload.value) {
                         this.startReload(this.activeWeaponId);
+                    } else if (payload.action === 'weaponNext' && payload.value) {
+                        this.cycleWeapon(1);
+                    } else if (payload.action === 'weaponPrev' && payload.value) {
+                        this.cycleWeapon(-1);
+                    } else if (payload.action === 'weaponSlot' && typeof payload.value === 'number') {
+                        const slotWeaponId = WEAPON_LOADOUT_ORDER[payload.value - 1];
+                        if (slotWeaponId) {
+                            this.equipWeapon(slotWeaponId);
+                        }
+                    } else if (payload.action === 'ads' && GameState && typeof GameState.patch === 'function') {
+                        GameState.patch('weapons', { isAiming: Boolean(payload.value) }, true);
                     }
                 })
             );
@@ -315,7 +359,6 @@
             const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || null;
             let inputFiring = Boolean(this._isFiringHeld);
 
-            // [21] 正確讀取 MultiTouchController 的 actions.fire / isActionActive('fire') 與 pressedQueue.reload
             if (ctrl) {
                 if (typeof ctrl.isActionActive === 'function') {
                     inputFiring = inputFiring || Boolean(ctrl.isActionActive('fire'));
@@ -333,9 +376,21 @@
                     inputFiring = inputFiring || ctrl.buttons.fire;
                 }
 
-                if (typeof ctrl.consumeActionPress === 'function' && ctrl.consumeActionPress('reload')) {
-                    this.startReload(this.activeWeaponId);
-                    return false;
+                if (typeof ctrl.consumeActionPress === 'function') {
+                    if (ctrl.consumeActionPress('reload')) {
+                        this.startReload(this.activeWeaponId);
+                        return false;
+                    }
+                    if (ctrl.consumeActionPress('weaponNext')) {
+                        this.cycleWeapon(1);
+                    } else if (ctrl.consumeActionPress('weaponPrev')) {
+                        this.cycleWeapon(-1);
+                    } else {
+                        const slotNum = ctrl.consumeActionPress('weaponSlot');
+                        if (slotNum && WEAPON_LOADOUT_ORDER[slotNum - 1]) {
+                            this.equipWeapon(WEAPON_LOADOUT_ORDER[slotNum - 1]);
+                        }
+                    }
                 }
             }
 
