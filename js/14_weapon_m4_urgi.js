@@ -19,7 +19,7 @@
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.175, y: -0.165, z: -0.34 },
-        adsPosition: { x: 0.0, y: -0.128, z: -0.28 },
+        adsPosition: { x: 0.0, y: -0.064, z: -0.34 },
         sprintPosition: { x: 0.19, y: -0.185, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.022, z: -0.56 },
         recoilKickZ: 0.036,
