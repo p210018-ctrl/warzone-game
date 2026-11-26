@@ -225,6 +225,13 @@
                         ctrl.pressedQueue.jump = false;
                     }
 
+                    const crouchToggleTriggered = typeof ctrl.consumeActionPress === 'function'
+                        ? Boolean(ctrl.consumeActionPress('crouchToggle'))
+                        : Boolean(ctrl.pressedQueue && ctrl.pressedQueue.crouchToggle);
+                    if (ctrl.pressedQueue) {
+                        ctrl.pressedQueue.crouchToggle = false;
+                    }
+
                     return {
                         moveX: typeof ctrl.moveVector.x === 'number' ? ctrl.moveVector.x : 0,
                         moveY: typeof ctrl.moveVector.y === 'number' ? ctrl.moveVector.y : 0,
@@ -232,6 +239,7 @@
                         lookDeltaY: dy,
                         sprint: Boolean(ctrl.actions.sprint),
                         crouch: Boolean(ctrl.actions.crouch),
+                        crouchToggleTriggered: crouchToggleTriggered,
                         jump: jumpTriggered
                     };
                 }
@@ -248,6 +256,7 @@
                 lookDeltaY: 0,
                 sprint: false,
                 crouch: false,
+                crouchToggleTriggered: false,
                 jump: false
             };
         }
@@ -294,11 +303,17 @@
 
             const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController;
             const crouchDown = Boolean(inp.crouch);
-            const crouchJustPressed = crouchDown && !this._crouchPressedPrev;
+            const crouchJustPressed = Boolean(inp.crouchToggleTriggered) || (crouchDown && !this._crouchPressedPrev);
             this._crouchPressedPrev = crouchDown;
 
             if (crouchJustPressed) {
-                if (this.isGrounded && this.isSprinting && wishLen > 0.25 && this._slideCooldownTimer <= 0 && !this.isSliding) {
+                if (this.isCrouching || this.isSliding) {
+                    this.isCrouching = false;
+                    this.isSliding = false;
+                    if (ctrl && typeof ctrl.setCrouchToggled === 'function') {
+                        ctrl.setCrouchToggled(false);
+                    }
+                } else if (this.isGrounded && this.isSprinting && wishLen > 0.25 && this._slideCooldownTimer <= 0) {
                     this.isSliding = true;
                     this.isCrouching = true;
                     this.isSprinting = false;
@@ -306,15 +321,15 @@
                     this._slideCooldownTimer = MOVEMENT_CONFIG.slideCooldown;
                     this._slideDirX = wishX / wishLen;
                     this._slideDirZ = wishZ / wishLen;
-                } else if (this.isCrouching || this.isSliding) {
-                    this.isCrouching = false;
-                    this.isSliding = false;
                     if (ctrl && typeof ctrl.setCrouchToggled === 'function') {
-                        ctrl.setCrouchToggled(false);
+                        ctrl.setCrouchToggled(true);
                     }
                 } else {
                     this.isCrouching = true;
                     this.isSliding = false;
+                    if (ctrl && typeof ctrl.setCrouchToggled === 'function') {
+                        ctrl.setCrouchToggled(true);
+                    }
                 }
             }
 
