@@ -19,7 +19,7 @@
         id: 'AX50',
         displayName: 'AX-50 Marksman',
         hipPosition: { x: 0.19, y: -0.172, z: -0.36 },
-        adsPosition: { x: 0.0, y: -0.135, z: -0.24 },
+        adsPosition: { x: 0.0, y: -0.064, z: -0.34 },
         sprintPosition: { x: 0.205, y: -0.188, z: -0.36 },
         muzzleLocalOffset: { x: 0.0, y: 0.024, z: -0.78 },
         recoilKickZ: 0.072,
