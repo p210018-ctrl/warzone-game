@@ -16,10 +16,22 @@
     const EventBus = TacticalWarfare.EventBus;
     const GameState = TacticalWarfare.GameState;
 
+    // [37] 四把槍模組對應表
+    const WEAPON_MODULES = Object.freeze([
+        { id: 'M4A1', key: 'WeaponM4Urgi' },
+        { id: 'MP5', key: 'WeaponSmgMp5' },
+        { id: 'AX50', key: 'WeaponSniperAx50' },
+        { id: 'X16', key: 'WeaponPistolX16' }
+    ]);
+
     function clamp(val, minVal, maxVal) {
         if (val < minVal) return minVal;
         if (val > maxVal) return maxVal;
         return val;
+    }
+
+    function lerp(a, b, t) {
+        return a + (b - a) * t;
     }
 
     class MainBootstrap {
@@ -31,6 +43,14 @@
             this._rafId = null;
             this._lastTimeMs = 0;
             this._unsubscribers = [];
+
+            // [37] 切槍、瞄準與手雷執行期狀態
+            this._activeWeaponId = 'M4A1';
+            this._isAiming = false;
+            this._baseFov = null;
+            this._grenadeCooldown = 0;
+            this._activeGrenades = [];
+            this._grenadeGroup = null;
         }
 
         _getInputController() {
@@ -45,6 +65,37 @@
                 GameState.patch({ phase: nextPhase }, true);
             } else if (GameState.raw) {
                 GameState.raw.phase = nextPhase;
+            }
+        }
+
+        // [37] 取得所有已載入的武器模組實例
+        _getWeaponEntries() {
+            const list = [];
+            for (let i = 0; i < WEAPON_MODULES.length; i = i + 1) {
+                const item = WEAPON_MODULES[i];
+                const mod = TacticalWarfare[item.key];
+                if (mod) {
+                    list.push({ id: item.id, key: item.key, mod: mod });
+                }
+            }
+            return list;
+        }
+
+        // [37] 同步目前裝備武器在四把槍模中的顯示狀態
+        _applyActiveWeaponVisibility(weaponId) {
+            const targetId = weaponId || this._activeWeaponId || 'M4A1';
+            this._activeWeaponId = targetId;
+
+            if (GameState && typeof GameState.patch === 'function') {
+                GameState.patch('weapons', { activeId: targetId }, true);
+            }
+
+            const entries = this._getWeaponEntries();
+            for (let i = 0; i < entries.length; i = i + 1) {
+                const entry = entries[i];
+                if (typeof entry.mod.setVisible === 'function') {
+                    entry.mod.setVisible(entry.id === targetId);
+                }
             }
         }
 
@@ -64,6 +115,16 @@
             const weaponCamera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getWeaponCamera === 'function'
                 ? TacticalWarfare.RendererCore.getWeaponCamera()
                 : null;
+
+            if (camera && typeof camera.fov === 'number' && this._baseFov === null) {
+                this._baseFov = camera.fov;
+            }
+
+            if (scene && global.THREE && !this._grenadeGroup) {
+                this._grenadeGroup = new global.THREE.Group();
+                this._grenadeGroup.name = 'ThrownGrenadesGroup';
+                scene.add(this._grenadeGroup);
+            }
 
             if (TacticalWarfare.PbrMaterials && typeof TacticalWarfare.PbrMaterials.init === 'function') {
                 TacticalWarfare.PbrMaterials.init({ scene: scene });
@@ -138,11 +199,18 @@
                 });
             }
 
-            if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.init === 'function') {
-                TacticalWarfare.WeaponM4Urgi.init({
-                    parentGroup: weaponCamera || camera,
-                    visible: true
-                });
+            // [37] 初始化所有已載入的武器模型（M4A1 / MP5 / AX50 / X16）
+            const initialActiveId = (GameState && typeof GameState.get === 'function' && GameState.get('weapons.activeId', 'M4A1')) || 'M4A1';
+            this._activeWeaponId = initialActiveId;
+            const weaponEntries = this._getWeaponEntries();
+            for (let i = 0; i < weaponEntries.length; i = i + 1) {
+                const entry = weaponEntries[i];
+                if (typeof entry.mod.init === 'function') {
+                    entry.mod.init({
+                        parentGroup: weaponCamera || camera,
+                        visible: entry.id === this._activeWeaponId
+                    });
+                }
             }
 
             if (TacticalWarfare.VfxParticleEngine && typeof TacticalWarfare.VfxParticleEngine.init === 'function') {
@@ -323,11 +391,224 @@
                     })
                 );
             }
+
+            // [37] 監聽武器裝備事件以切換顯示模型
+            if (Events.WEAPON_EQUIP) {
+                this._unsubscribers.push(
+                    EventBus.on(Events.WEAPON_EQUIP, (payload) => {
+                        const wId = payload && (payload.weaponId || payload.id);
+                        if (wId) {
+                            this._applyActiveWeaponVisibility(wId);
+                        }
+                    })
+                );
+            }
+
+            // [37] 監聽手雷輸入事件
+            const inputActionEvt = Events.INPUT_ACTION || 'input:action';
+            this._unsubscribers.push(
+                EventBus.on(inputActionEvt, (payload) => {
+                    if (!payload) return;
+                    if (payload.action === 'grenade' && payload.value) {
+                        this._throwGrenade();
+                    }
+                })
+            );
+        }
+
+        // [37] 投擲手雷並安排爆炸
+        _throwGrenade() {
+            if (this.paused || this._grenadeCooldown > 0) return;
+            const THREE = global.THREE;
+            const scene = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getScene === 'function'
+                ? TacticalWarfare.RendererCore.getScene()
+                : null;
+            const camera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
+                ? TacticalWarfare.RendererCore.getCamera()
+                : null;
+
+            if (!THREE || !scene) return;
+            if (!this._grenadeGroup) {
+                this._grenadeGroup = new THREE.Group();
+                this._grenadeGroup.name = 'ThrownGrenadesGroup';
+                scene.add(this._grenadeGroup);
+            }
+
+            const origin = new THREE.Vector3();
+            const forward = new THREE.Vector3(0, 0, -1);
+
+            if (camera) {
+                camera.updateMatrixWorld(true);
+                camera.getWorldPosition(origin);
+                camera.getWorldDirection(forward);
+            } else if (TacticalWarfare.PlayerMovement && TacticalWarfare.PlayerMovement.position) {
+                const p = TacticalWarfare.PlayerMovement.position;
+                origin.set(p.x || 0, (p.y || 0) + 1.5, p.z || 0);
+            } else {
+                origin.set(0, 1.5, 0);
+            }
+
+            forward.normalize();
+            const spawnPos = origin.clone().addScaledVector(forward, 0.75);
+            const velocity = forward.clone().multiplyScalar(16.5);
+            velocity.y += 4.2;
+
+            const geo = new THREE.SphereGeometry(0.085, 10, 10);
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0x3b4d2b,
+                roughness: 0.45,
+                metalness: 0.55
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(spawnPos);
+            mesh.castShadow = true;
+            this._grenadeGroup.add(mesh);
+
+            this._grenadeCooldown = 1.2;
+            this._activeGrenades.push({
+                mesh: mesh,
+                geo: geo,
+                mat: mat,
+                pos: spawnPos,
+                vel: velocity,
+                fuse: 1.8
+            });
+        }
+
+        // [37] 手雷物理移動與爆炸結算
+        _updateGrenades(dt) {
+            if (this._grenadeCooldown > 0) {
+                this._grenadeCooldown = Math.max(0, this._grenadeCooldown - dt);
+            }
+            if (!this._activeGrenades.length) return;
+
+            const groundMod = TacticalWarfare.MapTerrainGround;
+            const remaining = [];
+
+            for (let i = 0; i < this._activeGrenades.length; i = i + 1) {
+                const g = this._activeGrenades[i];
+                g.fuse -= dt;
+                g.vel.y -= 18.5 * dt;
+                g.pos.x += g.vel.x * dt;
+                g.pos.y += g.vel.y * dt;
+                g.pos.z += g.vel.z * dt;
+
+                const groundY = groundMod && typeof groundMod.getHeightAt === 'function'
+                    ? groundMod.getHeightAt(g.pos.x, g.pos.z)
+                    : 0;
+                const floorY = (typeof groundY === 'number' ? groundY : 0) + 0.085;
+
+                if (g.pos.y <= floorY) {
+                    g.pos.y = floorY;
+                    g.vel.y = Math.abs(g.vel.y) * 0.35;
+                    g.vel.x *= 0.68;
+                    g.vel.z *= 0.68;
+                }
+
+                if (g.mesh) {
+                    g.mesh.position.copy(g.pos);
+                    g.mesh.rotation.x += 8 * dt;
+                    g.mesh.rotation.z += 6 * dt;
+                }
+
+                if (g.fuse <= 0) {
+                    this._detonateGrenade(g.pos);
+                    if (this._grenadeGroup && g.mesh) {
+                        this._grenadeGroup.remove(g.mesh);
+                    }
+                    if (g.geo && typeof g.geo.dispose === 'function') g.geo.dispose();
+                    if (g.mat && typeof g.mat.dispose === 'function') g.mat.dispose();
+                } else {
+                    remaining.push(g);
+                }
+            }
+
+            this._activeGrenades = remaining;
+        }
+
+        // [37] 手雷爆炸特效、震動與範圍傷害
+        _detonateGrenade(pos) {
+            const blastRadius = 7.5;
+            const maxDamage = 140;
+
+            if (TacticalWarfare.VfxParticleEngine && typeof TacticalWarfare.VfxParticleEngine.spawnExplosion === 'function') {
+                TacticalWarfare.VfxParticleEngine.spawnExplosion(pos, blastRadius);
+            } else if (EventBus && Events.EXPLOSION) {
+                EventBus.emit(Events.EXPLOSION, { position: pos, radius: blastRadius });
+            }
+
+            if (TacticalWarfare.CameraRigShake && typeof TacticalWarfare.CameraRigShake.addShake === 'function') {
+                TacticalWarfare.CameraRigShake.addShake(0.45);
+            }
+
+            const meshMgr = TacticalWarfare.EnemySoldierMesh;
+            if (meshMgr && typeof meshMgr.getAllSoldiers === 'function') {
+                const soldiers = meshMgr.getAllSoldiers();
+                for (let i = 0; i < soldiers.length; i = i + 1) {
+                    const s = soldiers[i];
+                    if (!s || !s.alive || !s.position) continue;
+                    const dx = s.position.x - pos.x;
+                    const dy = (s.position.y + 1.0) - pos.y;
+                    const dz = s.position.z - pos.z;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist <= blastRadius) {
+                        const falloff = Math.max(0.15, 1 - dist / blastRadius);
+                        const dmg = Math.round(maxDamage * falloff);
+                        if (EventBus && Events.ENEMY_HIT) {
+                            EventBus.emit(Events.ENEMY_HIT, {
+                                enemy: s,
+                                enemyId: s.id,
+                                damage: dmg,
+                                isHeadshot: false,
+                                point: { x: s.position.x, y: s.position.y + 1.0, z: s.position.z },
+                                distance: dist,
+                                weaponId: 'GRENADE'
+                            });
+                        }
+                    }
+                }
+            }
+
+            const expMod = TacticalWarfare.MapExplosivesPickups || TacticalWarfare.MapPropsCovers;
+            if (expMod && typeof expMod.damageBarrel === 'function') {
+                let list = null;
+                if (typeof expMod.getBarrels === 'function') list = expMod.getBarrels();
+                else if (Array.isArray(expMod.barrels)) list = expMod.barrels;
+                if (Array.isArray(list)) {
+                    for (let i = 0; i < list.length; i = i + 1) {
+                        const b = list[i];
+                        if (!b || b.exploded || b.destroyed) continue;
+                        const bPos = b.position || (b.mesh && b.mesh.position);
+                        if (!bPos) continue;
+                        const dx = bPos.x - pos.x;
+                        const dy = bPos.y - pos.y;
+                        const dz = bPos.z - pos.z;
+                        if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= blastRadius) {
+                            expMod.damageBarrel(b, maxDamage);
+                        }
+                    }
+                }
+            }
+        }
+
+        // [37] 清理殘留手雷
+        _clearGrenades() {
+            for (let i = 0; i < this._activeGrenades.length; i = i + 1) {
+                const g = this._activeGrenades[i];
+                if (this._grenadeGroup && g.mesh) {
+                    this._grenadeGroup.remove(g.mesh);
+                }
+                if (g.geo && typeof g.geo.dispose === 'function') g.geo.dispose();
+                if (g.mat && typeof g.mat.dispose === 'function') g.mat.dispose();
+            }
+            this._activeGrenades = [];
+            this._grenadeCooldown = 0;
         }
 
         startCombat(waveNumber) {
             this._setGamePhase('combat');
             this.paused = false;
+            this._clearGrenades();
 
             // [37] 每次進入或重新開始戰局時重設彈道執行期旗標
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil._resetRuntimeFlags === 'function') {
@@ -349,9 +630,11 @@
             if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.setVisible === 'function') {
                 TacticalWarfare.FpHandsAnatomy.setVisible(true);
             }
-            if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.setVisible === 'function') {
-                TacticalWarfare.WeaponM4Urgi.setVisible(true);
-            }
+
+            // [37] 顯示目前裝備的武器模型並隱藏其餘槍模
+            const activeId = (TacticalWarfare.BallisticsRecoil && TacticalWarfare.BallisticsRecoil.activeWeaponId) || this._activeWeaponId || 'M4A1';
+            this._applyActiveWeaponVisibility(activeId);
+
             if (TacticalWarfare.UiLobby3d && typeof TacticalWarfare.UiLobby3d.setActive === 'function') {
                 TacticalWarfare.UiLobby3d.setActive(false);
             }
@@ -368,6 +651,7 @@
 
         returnToLobby() {
             this._setGamePhase('lobby');
+            this._clearGrenades();
 
             const inputCtrl = this._getInputController();
             if (inputCtrl) {
@@ -442,9 +726,54 @@
             if (isLobbyActive) {
                 TacticalWarfare.UiLobby3d.update(dt);
             } else if (phase === 'combat') {
+                const inputCtrl = this._getInputController();
+
+                // [37] 檢查手雷 pressedQueue
+                if (inputCtrl && typeof inputCtrl.consumeActionPress === 'function' && inputCtrl.consumeActionPress('grenade')) {
+                    this._throwGrenade();
+                }
+
+                // [37] 同步瞄準狀態（ADS）
+                let isAiming = Boolean(GameState && typeof GameState.get === 'function' && GameState.get('weapons.isAiming', false));
+                if (inputCtrl && typeof inputCtrl.isActionActive === 'function') {
+                    isAiming = Boolean(inputCtrl.isActionActive('ads'));
+                } else if (inputCtrl && inputCtrl.actions && typeof inputCtrl.actions.ads === 'boolean') {
+                    isAiming = inputCtrl.actions.ads;
+                }
+                this._isAiming = isAiming;
+
+                if (GameState && typeof GameState.patch === 'function') {
+                    GameState.patch('weapons', { isAiming: isAiming }, true);
+                }
+
+                // [37] 同步目前裝備武器 ID
+                const currentWeaponId = (TacticalWarfare.BallisticsRecoil && TacticalWarfare.BallisticsRecoil.activeWeaponId) || this._activeWeaponId || 'M4A1';
+                if (currentWeaponId !== this._activeWeaponId) {
+                    this._applyActiveWeaponVisibility(currentWeaponId);
+                }
+
                 const moveRes = TacticalWarfare.PlayerMovement && typeof TacticalWarfare.PlayerMovement.update === 'function'
                     ? TacticalWarfare.PlayerMovement.update(dt)
                     : null;
+
+                // [37] 開鏡 FOV 平滑縮放
+                const camera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
+                    ? TacticalWarfare.RendererCore.getCamera()
+                    : null;
+                if (camera && typeof camera.fov === 'number') {
+                    if (this._baseFov === null) {
+                        this._baseFov = camera.fov;
+                    }
+                    const adsFov = currentWeaponId === 'AX50' ? this._baseFov * 0.45 : this._baseFov * 0.72;
+                    const targetFov = isAiming ? adsFov : this._baseFov;
+                    const nextFov = lerp(camera.fov, targetFov, 1 - Math.exp(-16 * dt));
+                    if (Math.abs(nextFov - camera.fov) > 0.01) {
+                        camera.fov = nextFov;
+                        if (typeof camera.updateProjectionMatrix === 'function') {
+                            camera.updateProjectionMatrix();
+                        }
+                    }
+                }
 
                 if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.update === 'function') {
                     TacticalWarfare.FpHandsAnatomy.update(dt, moveRes && moveRes.bobOffset ? moveRes.bobOffset : null);
@@ -454,15 +783,33 @@
                     TacticalWarfare.WeaponController.update(dt, moveRes);
                 }
 
-                if (TacticalWarfare.WeaponM4Urgi && typeof TacticalWarfare.WeaponM4Urgi.update === 'function') {
-                    TacticalWarfare.WeaponM4Urgi.update(dt, moveRes && moveRes.bobOffset ? moveRes.bobOffset : null);
+                // [37] 同步瞄準／衝刺狀態並更新所有已載入的武器模型
+                const isSprinting = Boolean(
+                    (inputCtrl && typeof inputCtrl.isActionActive === 'function' && inputCtrl.isActionActive('sprint')) ||
+                    (moveRes && moveRes.isSprinting)
+                );
+                const bobArg = moveRes && moveRes.bobOffset ? moveRes.bobOffset : null;
+                const weaponEntries = this._getWeaponEntries();
+                for (let i = 0; i < weaponEntries.length; i = i + 1) {
+                    const entry = weaponEntries[i];
+                    if (typeof entry.mod.setAiming === 'function') {
+                        entry.mod.setAiming(isAiming);
+                    }
+                    if (typeof entry.mod.setSprinting === 'function') {
+                        entry.mod.setSprinting(isSprinting);
+                    }
+                    if (entry.id === currentWeaponId && typeof entry.mod.update === 'function') {
+                        entry.mod.update(dt, bobArg);
+                    }
                 }
 
                 if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.update === 'function') {
-                    const isAiming = Boolean(GameState && typeof GameState.get === 'function' && GameState.get('weapons.isAiming', false));
                     const isMoving = Boolean(moveRes && moveRes.speedRatio > 0.08);
                     TacticalWarfare.BallisticsRecoil.update(dt, isAiming, isMoving);
                 }
+
+                // [37] 更新飛行中的手雷
+                this._updateGrenades(dt);
 
                 const playerCtx = {
                     position: moveRes ? moveRes.position : { x: 0, y: 0, z: 24 },
@@ -525,6 +872,7 @@
 
         dispose() {
             this.stopLoop();
+            this._clearGrenades();
             for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
                 if (typeof this._unsubscribers[i] === 'function') {
                     this._unsubscribers[i]();
