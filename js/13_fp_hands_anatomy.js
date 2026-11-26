@@ -44,7 +44,6 @@
         return 'M4A1';
     }
 
-    // 四把槍各自對應 14/15/16/17 模組 weaponBodyGroup 的局部握把與前手支撐點
     const WeaponGripAlignmentTable = Object.freeze({
         M4A1: Object.freeze({
             moduleKey: 'WeaponM4Urgi',
@@ -896,7 +895,7 @@
                 shoulderAnchorWorld,
                 targetWristWorld,
                 upperArmLength,
-                forearmAndWristReachLength,
+                forearmAndWristLength,
                 handSideSign,
                 vectors
             );
@@ -919,184 +918,192 @@
         }
 
         update(rawDeltaSeconds, bobOffsetOrSceneOrCtx) {
-            if (!this.sceneInstance || !this.cameraInstance || !this.dualArmRig) {
-                return;
-            }
-
-            if (bobOffsetOrSceneOrCtx && bobOffsetOrSceneOrCtx.isScene) {
-                if (this.sceneInstance !== bobOffsetOrSceneOrCtx) {
-                    this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
-                    this.sceneInstance = bobOffsetOrSceneOrCtx;
-                    this.sceneInstance.add(this.dualArmRig.rigRootGroup);
-                }
-            }
-
-            if (!this.isVisible) {
-                this.dualArmRig.rigRootGroup.visible = false;
-                return;
-            }
-            this.dualArmRig.rigRootGroup.visible = true;
-
-            const deltaSeconds = clampNumericValue(
-                typeof rawDeltaSeconds === 'number' && !Number.isNaN(rawDeltaSeconds)
-                    ? rawDeltaSeconds
-                    : 0.016,
-                0.001,
-                0.05
-            );
-
-            const isCtxObj = bobOffsetOrSceneOrCtx && !bobOffsetOrSceneOrCtx.isScene && typeof bobOffsetOrSceneOrCtx === 'object';
-            const resolvedWeapon = resolveActiveWeaponModule(
-                (isCtxObj && bobOffsetOrSceneOrCtx.weaponId) || this.activeWeaponCode
-            );
-            const activeWeaponMod = resolvedWeapon.mod;
-            this.activeWeaponCode = resolvedWeapon.code;
-
-            const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode] || WeaponGripAlignmentTable.M4A1;
-
-            this.elapsedTimeSeconds += deltaSeconds;
-            this.recoilKickAmount = Math.max(0.0, this.recoilKickAmount - deltaSeconds * 5.2);
-            this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - deltaSeconds * 8.5);
-
-            this.synchronizeStateFromGameStore(
-                deltaSeconds,
-                isCtxObj ? bobOffsetOrSceneOrCtx : null,
-                activeWeaponMod,
-                weaponAlignment
-            );
-
-            const currentPose = StancePoseDefinitions[this.currentPoseKey] || StancePoseDefinitions.rifle_hip;
-
-            const vectors = this.scratchVectors;
-            const upperArmLength = 0.20;
-            const forearmAndWristLength = 0.21;
-
-            this.transformLocalCameraOffsetToWorld(0.24, -0.26, -0.05, vectors.rightShoulderWorld);
-            this.transformLocalCameraOffsetToWorld(-0.14, -0.26, -0.06, vectors.leftShoulderWorld);
-
-            const weaponAnchorGroup = (activeWeaponMod && (activeWeaponMod.weaponBodyGroup || activeWeaponMod.rootGroup)) || null;
-            let weaponRotX = 0;
-            let weaponRotZ = 0;
-
-            if (weaponAnchorGroup && typeof weaponAnchorGroup.localToWorld === 'function') {
-                weaponAnchorGroup.updateMatrixWorld(true);
-                weaponRotX = weaponAnchorGroup.rotation ? weaponAnchorGroup.rotation.x : 0;
-                weaponRotZ = weaponAnchorGroup.rotation ? weaponAnchorGroup.rotation.z : 0;
-
-                vectors.tempLocalRight.set(
-                    weaponAlignment.bodyRightGrip.x,
-                    weaponAlignment.bodyRightGrip.y,
-                    weaponAlignment.bodyRightGrip.z
-                );
-                vectors.rightTargetWristWorld.copy(vectors.tempLocalRight);
-                weaponAnchorGroup.localToWorld(vectors.rightTargetWristWorld);
-
-                let leftX = weaponAlignment.bodyLeftHandguard.x;
-                let leftY = weaponAlignment.bodyLeftHandguard.y;
-                let leftZ = weaponAlignment.bodyLeftHandguard.z;
-
-                if (this.isReloadingActive) {
-                    const reloadProgress = clampNumericValue(
-                        this.reloadElapsedSeconds / Math.max(0.1, this.reloadTotalDuration),
-                        0.0,
-                        1.0
-                    );
-                    const reloadArcWave = Math.sin(reloadProgress * Math.PI);
-                    leftX = linearInterpolateValue(leftX, weaponAlignment.reloadLeftHand.x, reloadArcWave);
-                    leftY = linearInterpolateValue(
-                        leftY,
-                        weaponAlignment.reloadLeftHand.y + weaponAlignment.reloadPullY * Math.sin(reloadProgress * Math.PI * 2.0),
-                        reloadArcWave
-                    );
-                    leftZ = linearInterpolateValue(leftZ, weaponAlignment.reloadLeftHand.z, reloadArcWave);
-                } else if (this.isPlatingActive) {
-                    const plateProgress = clampNumericValue(
-                        this.plateElapsedSeconds / Math.max(0.1, this.plateTotalDuration),
-                        0.0,
-                        1.0
-                    );
-                    const plateWave = Math.sin(plateProgress * Math.PI);
-                    leftX = linearInterpolateValue(leftX, 0.02, plateWave);
-                    leftY = linearInterpolateValue(leftY, -0.06 + plateWave * 0.04, plateWave);
-                    leftZ = linearInterpolateValue(leftZ, -0.02, plateWave);
+            try {
+                if (!this.sceneInstance || !this.cameraInstance || !this.dualArmRig) {
+                    return;
                 }
 
-                vectors.tempLocalLeft.set(leftX, leftY, leftZ);
-                vectors.leftTargetWristWorld.copy(vectors.tempLocalLeft);
-                weaponAnchorGroup.localToWorld(vectors.leftTargetWristWorld);
-            } else {
-                const bobOffset = isCtxObj && bobOffsetOrSceneOrCtx.bobOffset
-                    ? bobOffsetOrSceneOrCtx.bobOffset
-                    : (isCtxObj && typeof bobOffsetOrSceneOrCtx.x === 'number' ? bobOffsetOrSceneOrCtx : null);
-                const bobX = readSafeCoordinateAxis(bobOffset, 'x', 0.0);
-                const bobY = readSafeCoordinateAxis(bobOffset, 'y', 0.0);
-                const bobZ = readSafeCoordinateAxis(bobOffset, 'z', 0.0);
-                const adsFactor = this.aimDownSightBlend;
+                if (bobOffsetOrSceneOrCtx && bobOffsetOrSceneOrCtx.isScene) {
+                    if (this.sceneInstance !== bobOffsetOrSceneOrCtx) {
+                        this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
+                        this.sceneInstance = bobOffsetOrSceneOrCtx;
+                        this.sceneInstance.add(this.dualArmRig.rigRootGroup);
+                    }
+                }
 
-                this.transformLocalCameraOffsetToWorld(
-                    linearInterpolateValue(weaponAlignment.fallbackRightHip.x, weaponAlignment.fallbackRightAds.x, adsFactor) + bobX,
-                    linearInterpolateValue(weaponAlignment.fallbackRightHip.y, weaponAlignment.fallbackRightAds.y, adsFactor) + bobY,
-                    linearInterpolateValue(weaponAlignment.fallbackRightHip.z, weaponAlignment.fallbackRightAds.z, adsFactor) + bobZ,
-                    vectors.rightTargetWristWorld
+                if (!this.isVisible) {
+                    this.dualArmRig.rigRootGroup.visible = false;
+                    return;
+                }
+                this.dualArmRig.rigRootGroup.visible = true;
+
+                const deltaSeconds = clampNumericValue(
+                    typeof rawDeltaSeconds === 'number' && !Number.isNaN(rawDeltaSeconds)
+                        ? rawDeltaSeconds
+                        : 0.016,
+                    0.001,
+                    0.05
                 );
 
-                this.transformLocalCameraOffsetToWorld(
-                    linearInterpolateValue(weaponAlignment.fallbackLeftHip.x, weaponAlignment.fallbackLeftAds.x, adsFactor) + bobX,
-                    linearInterpolateValue(weaponAlignment.fallbackLeftHip.y, weaponAlignment.fallbackLeftAds.y, adsFactor) + bobY,
-                    linearInterpolateValue(weaponAlignment.fallbackLeftHip.z, weaponAlignment.fallbackLeftAds.z, adsFactor) + bobZ,
-                    vectors.leftTargetWristWorld
+                const isCtxObj = bobOffsetOrSceneOrCtx && !bobOffsetOrSceneOrCtx.isScene && typeof bobOffsetOrSceneOrCtx === 'object';
+                const resolvedWeapon = resolveActiveWeaponModule(
+                    (isCtxObj && bobOffsetOrSceneOrCtx.weaponId) || this.activeWeaponCode
                 );
+                const activeWeaponMod = resolvedWeapon.mod;
+                this.activeWeaponCode = resolvedWeapon.code;
+
+                const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode] || WeaponGripAlignmentTable.M4A1;
+
+                this.elapsedTimeSeconds += deltaSeconds;
+                this.recoilKickAmount = Math.max(0.0, this.recoilKickAmount - deltaSeconds * 5.2);
+                this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - deltaSeconds * 8.5);
+
+                this.synchronizeStateFromGameStore(
+                    deltaSeconds,
+                    isCtxObj ? bobOffsetOrSceneOrCtx : null,
+                    activeWeaponMod,
+                    weaponAlignment
+                );
+
+                const currentPose = StancePoseDefinitions[this.currentPoseKey] || StancePoseDefinitions.rifle_hip;
+
+                const vectors = this.scratchVectors;
+                const upperArmLength = 0.20;
+                const forearmAndWristLength = 0.21;
+
+                if (this.cameraInstance.matrixWorld) {
+                    this.cameraInstance.updateMatrixWorld(true);
+                }
+
+                this.transformLocalCameraOffsetToWorld(0.24, -0.26, -0.05, vectors.rightShoulderWorld);
+                this.transformLocalCameraOffsetToWorld(-0.14, -0.26, -0.06, vectors.leftShoulderWorld);
+
+                const weaponAnchorGroup = (activeWeaponMod && (activeWeaponMod.weaponBodyGroup || activeWeaponMod.rootGroup)) || null;
+                let weaponRotX = 0;
+                let weaponRotZ = 0;
+
+                if (weaponAnchorGroup && typeof weaponAnchorGroup.localToWorld === 'function') {
+                    weaponAnchorGroup.updateMatrixWorld(true);
+                    weaponRotX = weaponAnchorGroup.rotation ? weaponAnchorGroup.rotation.x : 0;
+                    weaponRotZ = weaponAnchorGroup.rotation ? weaponAnchorGroup.rotation.z : 0;
+
+                    vectors.tempLocalRight.set(
+                        weaponAlignment.bodyRightGrip.x,
+                        weaponAlignment.bodyRightGrip.y,
+                        weaponAlignment.bodyRightGrip.z
+                    );
+                    vectors.rightTargetWristWorld.copy(vectors.tempLocalRight);
+                    weaponAnchorGroup.localToWorld(vectors.rightTargetWristWorld);
+
+                    let leftX = weaponAlignment.bodyLeftHandguard.x;
+                    let leftY = weaponAlignment.bodyLeftHandguard.y;
+                    let leftZ = weaponAlignment.bodyLeftHandguard.z;
+
+                    if (this.isReloadingActive) {
+                        const reloadProgress = clampNumericValue(
+                            this.reloadElapsedSeconds / Math.max(0.1, this.reloadTotalDuration),
+                            0.0,
+                            1.0
+                        );
+                        const reloadArcWave = Math.sin(reloadProgress * Math.PI);
+                        leftX = linearInterpolateValue(leftX, weaponAlignment.reloadLeftHand.x, reloadArcWave);
+                        leftY = linearInterpolateValue(
+                            leftY,
+                            weaponAlignment.reloadLeftHand.y + weaponAlignment.reloadPullY * Math.sin(reloadProgress * Math.PI * 2.0),
+                            reloadArcWave
+                        );
+                        leftZ = linearInterpolateValue(leftZ, weaponAlignment.reloadLeftHand.z, reloadArcWave);
+                    } else if (this.isPlatingActive) {
+                        const plateProgress = clampNumericValue(
+                            this.plateElapsedSeconds / Math.max(0.1, this.plateTotalDuration),
+                            0.0,
+                            1.0
+                        );
+                        const plateWave = Math.sin(plateProgress * Math.PI);
+                        leftX = linearInterpolateValue(leftX, 0.02, plateWave);
+                        leftY = linearInterpolateValue(leftY, -0.06 + plateWave * 0.04, plateWave);
+                        leftZ = linearInterpolateValue(leftZ, -0.02, plateWave);
+                    }
+
+                    vectors.tempLocalLeft.set(leftX, leftY, leftZ);
+                    vectors.leftTargetWristWorld.copy(vectors.tempLocalLeft);
+                    weaponAnchorGroup.localToWorld(vectors.leftTargetWristWorld);
+                } else {
+                    const bobOffset = isCtxObj && bobOffsetOrSceneOrCtx.bobOffset
+                        ? bobOffsetOrSceneOrCtx.bobOffset
+                        : (isCtxObj && typeof bobOffsetOrSceneOrCtx.x === 'number' ? bobOffsetOrSceneOrCtx : null);
+                    const bobX = readSafeCoordinateAxis(bobOffset, 'x', 0.0);
+                    const bobY = readSafeCoordinateAxis(bobOffset, 'y', 0.0);
+                    const bobZ = readSafeCoordinateAxis(bobOffset, 'z', 0.0);
+                    const adsFactor = this.aimDownSightBlend;
+
+                    this.transformLocalCameraOffsetToWorld(
+                        linearInterpolateValue(weaponAlignment.fallbackRightHip.x, weaponAlignment.fallbackRightAds.x, adsFactor) + bobX,
+                        linearInterpolateValue(weaponAlignment.fallbackRightHip.y, weaponAlignment.fallbackRightAds.y, adsFactor) + bobY,
+                        linearInterpolateValue(weaponAlignment.fallbackRightHip.z, weaponAlignment.fallbackRightAds.z, adsFactor) + bobZ,
+                        vectors.rightTargetWristWorld
+                    );
+
+                    this.transformLocalCameraOffsetToWorld(
+                        linearInterpolateValue(weaponAlignment.fallbackLeftHip.x, weaponAlignment.fallbackLeftAds.x, adsFactor) + bobX,
+                        linearInterpolateValue(weaponAlignment.fallbackLeftHip.y, weaponAlignment.fallbackLeftAds.y, adsFactor) + bobY,
+                        linearInterpolateValue(weaponAlignment.fallbackLeftHip.z, weaponAlignment.fallbackLeftAds.z, adsFactor) + bobZ,
+                        vectors.leftTargetWristWorld
+                    );
+                }
+
+                this.applySingleArmTwoJointSolution(
+                    this.dualArmRig.rightSide,
+                    1,
+                    vectors.rightShoulderWorld,
+                    vectors.rightTargetWristWorld,
+                    upperArmLength,
+                    forearmAndWristLength,
+                    currentPose
+                );
+
+                this.applySingleArmTwoJointSolution(
+                    this.dualArmRig.leftSide,
+                    -1,
+                    vectors.leftShoulderWorld,
+                    vectors.leftTargetWristWorld,
+                    upperArmLength,
+                    forearmAndWristLength,
+                    currentPose
+                );
+
+                applyTacticalHandPoseToSide(
+                    this.dualArmRig.rightSide,
+                    1,
+                    currentPose,
+                    this.triggerPullAmount,
+                    this.elapsedTimeSeconds * 2.4,
+                    this.recoilKickAmount,
+                    weaponRotX,
+                    weaponRotZ
+                );
+
+                applyTacticalHandPoseToSide(
+                    this.dualArmRig.leftSide,
+                    -1,
+                    currentPose,
+                    0.0,
+                    this.elapsedTimeSeconds * 2.4 + 0.7,
+                    this.recoilKickAmount,
+                    weaponRotX,
+                    weaponRotZ
+                );
+
+                this._rightPos.x = Number(vectors.rightTargetWristWorld.x.toFixed(3));
+                this._rightPos.y = Number(vectors.rightTargetWristWorld.y.toFixed(3));
+                this._rightPos.z = Number(vectors.rightTargetWristWorld.z.toFixed(3));
+
+                this._leftPos.x = Number(vectors.leftTargetWristWorld.x.toFixed(3));
+                this._leftPos.y = Number(vectors.leftTargetWristWorld.y.toFixed(3));
+                this._leftPos.z = Number(vectors.leftTargetWristWorld.z.toFixed(3));
+            } catch (err) {
+                // 防止手模更新例外影響主渲染迴圈
             }
-
-            this.applySingleArmTwoJointSolution(
-                this.dualArmRig.rightSide,
-                1,
-                vectors.rightShoulderWorld,
-                vectors.rightTargetWristWorld,
-                upperArmLength,
-                forearmAndWristLength,
-                currentPose
-            );
-
-            this.applySingleArmTwoJointSolution(
-                this.dualArmRig.leftSide,
-                -1,
-                vectors.leftShoulderWorld,
-                vectors.leftTargetWristWorld,
-                upperArmLength,
-                forearmAndWristLength,
-                currentPose
-            );
-
-            applyTacticalHandPoseToSide(
-                this.dualArmRig.rightSide,
-                1,
-                currentPose,
-                this.triggerPullAmount,
-                this.elapsedTimeSeconds * 2.4,
-                this.recoilKickAmount,
-                weaponRotX,
-                weaponRotZ
-            );
-
-            applyTacticalHandPoseToSide(
-                this.dualArmRig.leftSide,
-                -1,
-                currentPose,
-                0.0,
-                this.elapsedTimeSeconds * 2.4 + 0.7,
-                this.recoilKickAmount,
-                weaponRotX,
-                weaponRotZ
-            );
-
-            this._rightPos.x = Number(vectors.rightTargetWristWorld.x.toFixed(3));
-            this._rightPos.y = Number(vectors.rightTargetWristWorld.y.toFixed(3));
-            this._rightPos.z = Number(vectors.rightTargetWristWorld.z.toFixed(3));
-
-            this._leftPos.x = Number(vectors.leftTargetWristWorld.x.toFixed(3));
-            this._leftPos.y = Number(vectors.leftTargetWristWorld.y.toFixed(3));
-            this._leftPos.z = Number(vectors.leftTargetWristWorld.z.toFixed(3));
         }
 
         dispose() {
