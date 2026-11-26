@@ -20,7 +20,7 @@
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.175, y: -0.165, z: -0.34 },
         adsPosition: { x: 0.0, y: -0.128, z: -0.28 },
-        sprintPosition: { x: 0.22, y: -0.19, z: -0.30 },
+        sprintPosition: { x: 0.19, y: -0.185, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.022, z: -0.56 },
         recoilKickZ: 0.036,
         recoilKickY: 0.012,
@@ -426,9 +426,9 @@
                 targetRotZ = -0.22;
             } else if (this._isSprinting && !this._isAiming) {
                 targetPos = M4_URGI_SPECS.sprintPosition;
-                targetRotX = -0.25;
-                targetRotY = 0.42;
-                targetRotZ = -0.18;
+                targetRotX = -0.08;
+                targetRotY = 0.14;
+                targetRotZ = -0.08;
             } else if (this._isAiming) {
                 targetPos = M4_URGI_SPECS.adsPosition;
             }
