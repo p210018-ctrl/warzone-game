@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱戰術雙手骨架、雙關節解算與槍械即時聯動模組
+ * 第一人稱戰術雙手骨架、雙關節解算與四把槍械（M4A1 / MP5 / AX50 / X16）聯動模組
  * ============================================================================
  */
 (function (globalScope) {
@@ -38,44 +38,61 @@
     function normalizeWeaponCode(rawCode) {
         if (!rawCode || typeof rawCode !== 'string') return 'M4A1';
         const upper = rawCode.toUpperCase();
-        if (upper.indexOf('X16') !== -1) return 'X16';
-        if (upper.indexOf('MP5') !== -1) return 'MP5';
-        if (upper.indexOf('AX50') !== -1) return 'AX50';
+        if (upper.indexOf('X16') !== -1 || upper.indexOf('PISTOL') !== -1) return 'X16';
+        if (upper.indexOf('MP5') !== -1 || upper.indexOf('SMG') !== -1) return 'MP5';
+        if (upper.indexOf('AX50') !== -1 || upper.indexOf('SNIPER') !== -1) return 'AX50';
         return 'M4A1';
     }
 
+    // 四把槍各自對應 14/15/16/17 模組 weaponBodyGroup 的局部握把與前手支撐點
     const WeaponGripAlignmentTable = Object.freeze({
         M4A1: Object.freeze({
-            rightHandHip: Object.freeze({ x: 0.165, y: -0.220, z: -0.340 }),
-            rightHandAds: Object.freeze({ x: 0.015, y: -0.145, z: -0.340 }),
-            leftHandHip: Object.freeze({ x: 0.120, y: -0.175, z: -0.520 }),
-            leftHandAds: Object.freeze({ x: -0.025, y: -0.095, z: -0.520 }),
-            reloadLeftHand: Object.freeze({ x: 0.085, y: -0.225, z: -0.410 }),
-            reloadPullY: -0.045
+            moduleKey: 'WeaponM4Urgi',
+            defaultReloadDuration: 1.65,
+            bodyRightGrip: Object.freeze({ x: 0.012, y: -0.086, z: 0.015 }),
+            bodyLeftHandguard: Object.freeze({ x: -0.015, y: -0.018, z: -0.255 }),
+            reloadLeftHand: Object.freeze({ x: -0.045, y: -0.115, z: -0.110 }),
+            reloadPullY: -0.045,
+            fallbackRightHip: Object.freeze({ x: 0.175, y: -0.245, z: -0.330 }),
+            fallbackRightAds: Object.freeze({ x: 0.008, y: -0.148, z: -0.330 }),
+            fallbackLeftHip: Object.freeze({ x: 0.145, y: -0.185, z: -0.540 }),
+            fallbackLeftAds: Object.freeze({ x: -0.025, y: -0.092, z: -0.540 })
         }),
         MP5: Object.freeze({
-            rightHandHip: Object.freeze({ x: 0.165, y: -0.220, z: -0.335 }),
-            rightHandAds: Object.freeze({ x: 0.015, y: -0.145, z: -0.335 }),
-            leftHandHip: Object.freeze({ x: 0.115, y: -0.170, z: -0.485 }),
-            leftHandAds: Object.freeze({ x: -0.020, y: -0.092, z: -0.485 }),
-            reloadLeftHand: Object.freeze({ x: 0.080, y: -0.220, z: -0.400 }),
-            reloadPullY: -0.040
+            moduleKey: 'WeaponSmgMp5',
+            defaultReloadDuration: 1.45,
+            bodyRightGrip: Object.freeze({ x: 0.012, y: -0.076, z: 0.010 }),
+            bodyLeftHandguard: Object.freeze({ x: -0.015, y: -0.020, z: -0.225 }),
+            reloadLeftHand: Object.freeze({ x: -0.040, y: -0.105, z: -0.100 }),
+            reloadPullY: -0.040,
+            fallbackRightHip: Object.freeze({ x: 0.170, y: -0.245, z: -0.330 }),
+            fallbackRightAds: Object.freeze({ x: 0.008, y: -0.148, z: -0.330 }),
+            fallbackLeftHip: Object.freeze({ x: 0.135, y: -0.180, z: -0.490 }),
+            fallbackLeftAds: Object.freeze({ x: -0.020, y: -0.090, z: -0.490 })
         }),
         AX50: Object.freeze({
-            rightHandHip: Object.freeze({ x: 0.170, y: -0.225, z: -0.345 }),
-            rightHandAds: Object.freeze({ x: 0.015, y: -0.150, z: -0.345 }),
-            leftHandHip: Object.freeze({ x: 0.125, y: -0.180, z: -0.550 }),
-            leftHandAds: Object.freeze({ x: -0.025, y: -0.098, z: -0.550 }),
-            reloadLeftHand: Object.freeze({ x: 0.085, y: -0.230, z: -0.420 }),
-            reloadPullY: -0.045
+            moduleKey: 'WeaponSniperAx50',
+            defaultReloadDuration: 2.20,
+            bodyRightGrip: Object.freeze({ x: 0.014, y: -0.092, z: 0.020 }),
+            bodyLeftHandguard: Object.freeze({ x: -0.018, y: -0.022, z: -0.300 }),
+            reloadLeftHand: Object.freeze({ x: -0.050, y: -0.125, z: -0.125 }),
+            reloadPullY: -0.048,
+            fallbackRightHip: Object.freeze({ x: 0.175, y: -0.250, z: -0.340 }),
+            fallbackRightAds: Object.freeze({ x: 0.008, y: -0.152, z: -0.340 }),
+            fallbackLeftHip: Object.freeze({ x: 0.150, y: -0.190, z: -0.570 }),
+            fallbackLeftAds: Object.freeze({ x: -0.025, y: -0.095, z: -0.570 })
         }),
         X16: Object.freeze({
-            rightHandHip: Object.freeze({ x: 0.160, y: -0.215, z: -0.325 }),
-            rightHandAds: Object.freeze({ x: 0.012, y: -0.135, z: -0.325 }),
-            leftHandHip: Object.freeze({ x: 0.125, y: -0.210, z: -0.365 }),
-            leftHandAds: Object.freeze({ x: -0.015, y: -0.130, z: -0.365 }),
-            reloadLeftHand: Object.freeze({ x: 0.080, y: -0.225, z: -0.370 }),
-            reloadPullY: -0.035
+            moduleKey: 'WeaponPistolX16',
+            defaultReloadDuration: 1.25,
+            bodyRightGrip: Object.freeze({ x: 0.010, y: -0.056, z: 0.018 }),
+            bodyLeftHandguard: Object.freeze({ x: -0.015, y: -0.064, z: -0.035 }),
+            reloadLeftHand: Object.freeze({ x: -0.040, y: -0.105, z: -0.065 }),
+            reloadPullY: -0.035,
+            fallbackRightHip: Object.freeze({ x: 0.165, y: -0.235, z: -0.325 }),
+            fallbackRightAds: Object.freeze({ x: 0.006, y: -0.138, z: -0.325 }),
+            fallbackLeftHip: Object.freeze({ x: 0.145, y: -0.240, z: -0.365 }),
+            fallbackLeftAds: Object.freeze({ x: -0.015, y: -0.140, z: -0.365 })
         })
     });
 
@@ -470,8 +487,8 @@
         triggerPullAmount,
         breathPhaseValue,
         recoilKickValue,
-        weaponPitchOffset,
-        weaponRollOffset
+        weaponRotX,
+        weaponRotZ
     ) {
         if (
             !sideRigObject
@@ -532,31 +549,32 @@
         wristRotation.x = readSafeCoordinateAxis(rawWristBend, 'x', 0.16)
             + Math.sin(breathPhaseValue) * 0.008
             + recoilKickValue * 0.07
-            + (weaponPitchOffset || 0);
+            + (weaponRotX || 0) * 0.5;
         wristRotation.y = readSafeCoordinateAxis(rawWristBend, 'y', -handSideSign * 0.12)
             + Math.cos(breathPhaseValue * 0.7) * 0.006;
         wristRotation.z = readSafeCoordinateAxis(rawWristBend, 'z', handSideSign * 0.08)
-            + (weaponRollOffset || 0);
+            + (weaponRotZ || 0) * 0.5;
     }
 
-    function findVisibleWeaponObjectInTree(rootObj, handsRootObj) {
-        if (!rootObj || !Array.isArray(rootObj.children)) return null;
-        for (let i = 0; i < rootObj.children.length; i = i + 1) {
-            const child = rootObj.children[i];
-            if (!child || child === handsRootObj || !child.visible) continue;
-            const n = (child.name || '').toLowerCase();
-            if (n.indexOf('hand') !== -1 || n.indexOf('grenade') !== -1 || n.indexOf('light') !== -1) {
-                continue;
-            }
-            if (n.indexOf('weapon') !== -1 || n.indexOf('m4') !== -1 || n.indexOf('mp5') !== -1 || n.indexOf('ax50') !== -1 || n.indexOf('x16') !== -1 || n.indexOf('gun') !== -1) {
-                return child;
-            }
-            if (child.children && child.children.length > 0) {
-                const nested = findVisibleWeaponObjectInTree(child, handsRootObj);
-                if (nested) return nested;
+    function resolveActiveWeaponModule(weaponCode) {
+        const order = ['M4A1', 'MP5', 'AX50', 'X16'];
+        const preferredCode = normalizeWeaponCode(weaponCode);
+        const preferredAlign = WeaponGripAlignmentTable[preferredCode];
+        const preferredMod = preferredAlign ? TacticalWarfareNamespace[preferredAlign.moduleKey] : null;
+
+        if (preferredMod && preferredMod.rootGroup && preferredMod.rootGroup.visible) {
+            return { code: preferredCode, mod: preferredMod };
+        }
+
+        for (let i = 0; i < order.length; i = i + 1) {
+            const code = order[i];
+            const mod = TacticalWarfareNamespace[WeaponGripAlignmentTable[code].moduleKey];
+            if (mod && mod.rootGroup && mod.rootGroup.visible) {
+                return { code: code, mod: mod };
             }
         }
-        return null;
+
+        return { code: preferredCode, mod: preferredMod || null };
     }
 
     class FirstPersonTacticalHandsController {
@@ -586,11 +604,6 @@
             this.plateElapsedSeconds = 0.0;
             this.plateTotalDuration = 1.55;
 
-            this._lastWeaponObj = null;
-            this._lastWeaponPos = null;
-            this._lastWeaponRot = null;
-            this._weaponDelta = { dx: 0, dy: 0, dz: 0, rx: 0, rz: 0 };
-
             this.scratchVectors = {
                 cameraForward: new ThreeModule.Vector3(),
                 cameraRight: new ThreeModule.Vector3(),
@@ -599,7 +612,9 @@
                 leftShoulderWorld: new ThreeModule.Vector3(),
                 rightTargetWristWorld: new ThreeModule.Vector3(),
                 leftTargetWristWorld: new ThreeModule.Vector3(),
-                directionVector: new ThreeModule.Vector3()
+                directionVector: new ThreeModule.Vector3(),
+                tempLocalRight: new ThreeModule.Vector3(),
+                tempLocalLeft: new ThreeModule.Vector3()
             };
 
             this._leftPos = { x: 0.0, y: 0.0, z: 0.0 };
@@ -686,7 +701,7 @@
                 return;
             }
 
-            this._subscribeEvent(GameEventsTable.WEAPON_FIRED || 'weapon:fired', (payload) => {
+            this._subscribeEvent(GameEventsTable.WEAPON_FIRED || GameEventsTable.WEAPON_FIRE || 'weapon:fired', (payload) => {
                 const kickStrength = payload && typeof payload.recoil === 'number'
                     ? clampNumericValue(payload.recoil, 0.2, 1.4)
                     : 0.7;
@@ -698,16 +713,41 @@
                 const rawCode = payload && (payload.weaponKey || payload.weaponId || payload.id);
                 if (rawCode) {
                     this.activeWeaponCode = normalizeWeaponCode(String(rawCode));
+                    const align = WeaponGripAlignmentTable[this.activeWeaponCode];
+                    if (align && !this.isReloadingActive) {
+                        this.reloadTotalDuration = align.defaultReloadDuration;
+                    }
                 }
             });
 
-            this._subscribeEvent(GameEventsTable.RELOAD_STARTED || 'reload:started', (payload) => {
-                this.isReloadingActive = true;
-                this.reloadElapsedSeconds = 0.0;
-                if (payload && typeof payload.duration === 'number' && payload.duration > 0.2) {
-                    this.reloadTotalDuration = payload.duration;
-                }
-            });
+            const reloadStartEvents = [
+                GameEventsTable.RELOAD_STARTED,
+                GameEventsTable.WEAPON_RELOAD_START,
+                GameEventsTable.RELOAD_START,
+                'reload:started'
+            ].filter(Boolean);
+            for (let i = 0; i < reloadStartEvents.length; i = i + 1) {
+                this._subscribeEvent(reloadStartEvents[i], (payload) => {
+                    this.isReloadingActive = true;
+                    this.reloadElapsedSeconds = 0.0;
+                    const fallbackDur = (WeaponGripAlignmentTable[this.activeWeaponCode] && WeaponGripAlignmentTable[this.activeWeaponCode].defaultReloadDuration) || 1.65;
+                    this.reloadTotalDuration = payload && typeof payload.duration === 'number' && payload.duration > 0.2
+                        ? payload.duration
+                        : fallbackDur;
+                });
+            }
+
+            const reloadEndEvents = [
+                GameEventsTable.WEAPON_RELOAD_FINISH,
+                GameEventsTable.WEAPON_RELOAD_CANCEL,
+                GameEventsTable.RELOAD_COMPLETE
+            ].filter(Boolean);
+            for (let i = 0; i < reloadEndEvents.length; i = i + 1) {
+                this._subscribeEvent(reloadEndEvents[i], () => {
+                    this.isReloadingActive = false;
+                    this.reloadElapsedSeconds = 0.0;
+                });
+            }
 
             this._subscribeEvent(GameEventsTable.PLATE_STARTED || 'plate:started', (payload) => {
                 this.isPlatingActive = true;
@@ -718,60 +758,7 @@
             });
         }
 
-        _sampleWeaponObjectMotion(deltaSeconds) {
-            const handsRoot = this.dualArmRig ? this.dualArmRig.rigRootGroup : null;
-            let wObj = findVisibleWeaponObjectInTree(this.attachedWeaponGroup, handsRoot);
-            if (!wObj) {
-                wObj = findVisibleWeaponObjectInTree(this.cameraInstance, handsRoot);
-            }
-            if (!wObj) {
-                wObj = findVisibleWeaponObjectInTree(this.sceneInstance, handsRoot);
-            }
-
-            if (!wObj || !wObj.position) {
-                this._weaponDelta.dx = linearInterpolateValue(this._weaponDelta.dx, 0, Math.min(1, deltaSeconds * 10));
-                this._weaponDelta.dy = linearInterpolateValue(this._weaponDelta.dy, 0, Math.min(1, deltaSeconds * 10));
-                this._weaponDelta.dz = linearInterpolateValue(this._weaponDelta.dz, 0, Math.min(1, deltaSeconds * 10));
-                this._weaponDelta.rx = linearInterpolateValue(this._weaponDelta.rx, 0, Math.min(1, deltaSeconds * 10));
-                this._weaponDelta.rz = linearInterpolateValue(this._weaponDelta.rz, 0, Math.min(1, deltaSeconds * 10));
-                return this._weaponDelta;
-            }
-
-            if (this._lastWeaponObj !== wObj || !this._lastWeaponPos || !this._lastWeaponRot) {
-                this._lastWeaponObj = wObj;
-                this._lastWeaponPos = { x: wObj.position.x, y: wObj.position.y, z: wObj.position.z };
-                this._lastWeaponRot = {
-                    x: wObj.rotation ? wObj.rotation.x : 0,
-                    z: wObj.rotation ? wObj.rotation.z : 0
-                };
-                return this._weaponDelta;
-            }
-
-            const rawDx = wObj.position.x - this._lastWeaponPos.x;
-            const rawDy = wObj.position.y - this._lastWeaponPos.y;
-            const rawDz = wObj.position.z - this._lastWeaponPos.z;
-            const curRx = wObj.rotation ? wObj.rotation.x : 0;
-            const curRz = wObj.rotation ? wObj.rotation.z : 0;
-            const rawDrx = curRx - this._lastWeaponRot.x;
-            const rawDrz = curRz - this._lastWeaponRot.z;
-
-            this._lastWeaponPos.x = wObj.position.x;
-            this._lastWeaponPos.y = wObj.position.y;
-            this._lastWeaponPos.z = wObj.position.z;
-            this._lastWeaponRot.x = curRx;
-            this._lastWeaponRot.z = curRz;
-
-            const followRate = Math.min(1, deltaSeconds * 18);
-            this._weaponDelta.dx = linearInterpolateValue(this._weaponDelta.dx, clampNumericValue(rawDx * 2.5, -0.06, 0.06), followRate);
-            this._weaponDelta.dy = linearInterpolateValue(this._weaponDelta.dy, clampNumericValue(rawDy * 2.5, -0.06, 0.06), followRate);
-            this._weaponDelta.dz = linearInterpolateValue(this._weaponDelta.dz, clampNumericValue(rawDz * 2.5, -0.06, 0.06), followRate);
-            this._weaponDelta.rx = linearInterpolateValue(this._weaponDelta.rx, clampNumericValue(rawDrx * 2.0, -0.35, 0.35), followRate);
-            this._weaponDelta.rz = linearInterpolateValue(this._weaponDelta.rz, clampNumericValue(rawDrz * 2.0, -0.35, 0.35), followRate);
-
-            return this._weaponDelta;
-        }
-
-        synchronizeStateFromGameStore(deltaSeconds, overrideState) {
+        synchronizeStateFromGameStore(deltaSeconds, overrideState, activeWeaponMod, weaponAlignment) {
             let stateWeaponId = '';
             let isAimingNow = false;
             let stateReloading = false;
@@ -788,6 +775,24 @@
                 }
             }
 
+            if (activeWeaponMod) {
+                if (typeof activeWeaponMod._isReloading === 'boolean' && activeWeaponMod._isReloading) {
+                    stateReloading = true;
+                    if (typeof activeWeaponMod._reloadDuration === 'number' && activeWeaponMod._reloadDuration > 0.2) {
+                        this.reloadTotalDuration = activeWeaponMod._reloadDuration;
+                    }
+                    if (typeof activeWeaponMod._reloadProgress === 'number') {
+                        this.reloadElapsedSeconds = clampNumericValue(activeWeaponMod._reloadProgress, 0, 1) * this.reloadTotalDuration;
+                    }
+                }
+                if (typeof activeWeaponMod._isAiming === 'boolean') {
+                    isAimingNow = isAimingNow || activeWeaponMod._isAiming;
+                }
+                if (activeWeaponMod._recoilRotX && activeWeaponMod._recoilRotX > 0.01) {
+                    this.recoilKickAmount = Math.max(this.recoilKickAmount, clampNumericValue(activeWeaponMod._recoilRotX * 8, 0, 1.4));
+                }
+            }
+
             if (overrideState && typeof overrideState === 'object') {
                 if (typeof overrideState.weaponId === 'string' && overrideState.weaponId.length > 0) {
                     stateWeaponId = overrideState.weaponId;
@@ -796,7 +801,7 @@
                     isAimingNow = overrideState.isAiming;
                 }
                 if (typeof overrideState.isReloading === 'boolean') {
-                    stateReloading = overrideState.isReloading;
+                    stateReloading = stateReloading || overrideState.isReloading;
                 }
             }
 
@@ -814,13 +819,18 @@
             if (stateReloading && !this.isReloadingActive) {
                 this.isReloadingActive = true;
                 this.reloadElapsedSeconds = 0.0;
+                if (weaponAlignment && weaponAlignment.defaultReloadDuration) {
+                    this.reloadTotalDuration = weaponAlignment.defaultReloadDuration;
+                }
             }
 
             if (this.isReloadingActive) {
                 this.reloadElapsedSeconds += deltaSeconds;
-                if (this.reloadElapsedSeconds >= this.reloadTotalDuration) {
+                if (!stateReloading && this.reloadElapsedSeconds >= this.reloadTotalDuration) {
                     this.isReloadingActive = false;
                     this.reloadElapsedSeconds = 0.0;
+                } else if (stateReloading && this.reloadElapsedSeconds > this.reloadTotalDuration) {
+                    this.reloadElapsedSeconds = this.reloadTotalDuration;
                 }
             }
 
@@ -886,7 +896,7 @@
                 shoulderAnchorWorld,
                 targetWristWorld,
                 upperArmLength,
-                forearmAndWristLength,
+                forearmAndWristReachLength,
                 handSideSign,
                 vectors
             );
@@ -922,8 +932,10 @@
             }
 
             if (!this.isVisible) {
+                this.dualArmRig.rigRootGroup.visible = false;
                 return;
             }
+            this.dualArmRig.rigRootGroup.visible = true;
 
             const deltaSeconds = clampNumericValue(
                 typeof rawDeltaSeconds === 'number' && !Number.isNaN(rawDeltaSeconds)
@@ -934,107 +946,107 @@
             );
 
             const isCtxObj = bobOffsetOrSceneOrCtx && !bobOffsetOrSceneOrCtx.isScene && typeof bobOffsetOrSceneOrCtx === 'object';
-            const bobOffset = isCtxObj && bobOffsetOrSceneOrCtx.bobOffset
-                ? bobOffsetOrSceneOrCtx.bobOffset
-                : (isCtxObj && typeof bobOffsetOrSceneOrCtx.x === 'number' ? bobOffsetOrSceneOrCtx : null);
+            const resolvedWeapon = resolveActiveWeaponModule(
+                (isCtxObj && bobOffsetOrSceneOrCtx.weaponId) || this.activeWeaponCode
+            );
+            const activeWeaponMod = resolvedWeapon.mod;
+            this.activeWeaponCode = resolvedWeapon.code;
 
-            const bobX = readSafeCoordinateAxis(bobOffset, 'x', 0.0);
-            const bobY = readSafeCoordinateAxis(bobOffset, 'y', 0.0);
-            const bobZ = readSafeCoordinateAxis(bobOffset, 'z', 0.0);
-            const sprintDropY = isCtxObj && bobOffsetOrSceneOrCtx.isSprinting && !bobOffsetOrSceneOrCtx.isAiming ? -0.022 : 0.0;
+            const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode] || WeaponGripAlignmentTable.M4A1;
 
             this.elapsedTimeSeconds += deltaSeconds;
             this.recoilKickAmount = Math.max(0.0, this.recoilKickAmount - deltaSeconds * 5.2);
             this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - deltaSeconds * 8.5);
 
-            this.synchronizeStateFromGameStore(deltaSeconds, isCtxObj ? bobOffsetOrSceneOrCtx : null);
+            this.synchronizeStateFromGameStore(
+                deltaSeconds,
+                isCtxObj ? bobOffsetOrSceneOrCtx : null,
+                activeWeaponMod,
+                weaponAlignment
+            );
 
-            const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode] || WeaponGripAlignmentTable.M4A1;
             const currentPose = StancePoseDefinitions[this.currentPoseKey] || StancePoseDefinitions.rifle_hip;
-            const motion = this._sampleWeaponObjectMotion(deltaSeconds);
 
             const vectors = this.scratchVectors;
             const upperArmLength = 0.20;
             const forearmAndWristLength = 0.21;
 
-            this.transformLocalCameraOffsetToWorld(0.24 + motion.dx * 0.5, -0.26 + motion.dy * 0.5, -0.05, vectors.rightShoulderWorld);
-            this.transformLocalCameraOffsetToWorld(-0.14 + motion.dx * 0.5, -0.26 + motion.dy * 0.5, -0.06, vectors.leftShoulderWorld);
+            this.transformLocalCameraOffsetToWorld(0.24, -0.26, -0.05, vectors.rightShoulderWorld);
+            this.transformLocalCameraOffsetToWorld(-0.14, -0.26, -0.06, vectors.leftShoulderWorld);
 
-            const adsFactor = this.aimDownSightBlend;
-            const recoilBackZ = this.recoilKickAmount * 0.025;
-            const recoilLiftY = this.recoilKickAmount * 0.012;
+            const weaponAnchorGroup = (activeWeaponMod && (activeWeaponMod.weaponBodyGroup || activeWeaponMod.rootGroup)) || null;
+            let weaponRotX = 0;
+            let weaponRotZ = 0;
 
-            const rightWristLocalX = linearInterpolateValue(
-                weaponAlignment.rightHandHip.x,
-                weaponAlignment.rightHandAds.x,
-                adsFactor
-            ) + bobX + motion.dx;
-            const rightWristLocalY = linearInterpolateValue(
-                weaponAlignment.rightHandHip.y,
-                weaponAlignment.rightHandAds.y,
-                adsFactor
-            ) + recoilLiftY + bobY + sprintDropY + motion.dy;
-            const rightWristLocalZ = linearInterpolateValue(
-                weaponAlignment.rightHandHip.z,
-                weaponAlignment.rightHandAds.z,
-                adsFactor
-            ) + recoilBackZ + bobZ + motion.dz;
+            if (weaponAnchorGroup && typeof weaponAnchorGroup.localToWorld === 'function') {
+                weaponAnchorGroup.updateMatrixWorld(true);
+                weaponRotX = weaponAnchorGroup.rotation ? weaponAnchorGroup.rotation.x : 0;
+                weaponRotZ = weaponAnchorGroup.rotation ? weaponAnchorGroup.rotation.z : 0;
 
-            this.transformLocalCameraOffsetToWorld(
-                rightWristLocalX,
-                rightWristLocalY,
-                rightWristLocalZ,
-                vectors.rightTargetWristWorld
-            );
-
-            let leftWristLocalX = linearInterpolateValue(
-                weaponAlignment.leftHandHip.x,
-                weaponAlignment.leftHandAds.x,
-                adsFactor
-            ) + bobX + motion.dx;
-            let leftWristLocalY = linearInterpolateValue(
-                weaponAlignment.leftHandHip.y,
-                weaponAlignment.leftHandAds.y,
-                adsFactor
-            ) + recoilLiftY * 0.8 + bobY + sprintDropY + motion.dy;
-            let leftWristLocalZ = linearInterpolateValue(
-                weaponAlignment.leftHandHip.z,
-                weaponAlignment.leftHandAds.z,
-                adsFactor
-            ) + recoilBackZ + bobZ + motion.dz;
-
-            if (this.isReloadingActive) {
-                const reloadProgress = clampNumericValue(
-                    this.reloadElapsedSeconds / Math.max(0.1, this.reloadTotalDuration),
-                    0.0,
-                    1.0
+                vectors.tempLocalRight.set(
+                    weaponAlignment.bodyRightGrip.x,
+                    weaponAlignment.bodyRightGrip.y,
+                    weaponAlignment.bodyRightGrip.z
                 );
-                const reloadArcWave = Math.sin(reloadProgress * Math.PI);
-                leftWristLocalX = linearInterpolateValue(leftWristLocalX, weaponAlignment.reloadLeftHand.x, reloadArcWave);
-                leftWristLocalY = linearInterpolateValue(
-                    leftWristLocalY,
-                    weaponAlignment.reloadLeftHand.y + weaponAlignment.reloadPullY * Math.sin(reloadProgress * Math.PI * 2.0),
-                    reloadArcWave
+                vectors.rightTargetWristWorld.copy(vectors.tempLocalRight);
+                weaponAnchorGroup.localToWorld(vectors.rightTargetWristWorld);
+
+                let leftX = weaponAlignment.bodyLeftHandguard.x;
+                let leftY = weaponAlignment.bodyLeftHandguard.y;
+                let leftZ = weaponAlignment.bodyLeftHandguard.z;
+
+                if (this.isReloadingActive) {
+                    const reloadProgress = clampNumericValue(
+                        this.reloadElapsedSeconds / Math.max(0.1, this.reloadTotalDuration),
+                        0.0,
+                        1.0
+                    );
+                    const reloadArcWave = Math.sin(reloadProgress * Math.PI);
+                    leftX = linearInterpolateValue(leftX, weaponAlignment.reloadLeftHand.x, reloadArcWave);
+                    leftY = linearInterpolateValue(
+                        leftY,
+                        weaponAlignment.reloadLeftHand.y + weaponAlignment.reloadPullY * Math.sin(reloadProgress * Math.PI * 2.0),
+                        reloadArcWave
+                    );
+                    leftZ = linearInterpolateValue(leftZ, weaponAlignment.reloadLeftHand.z, reloadArcWave);
+                } else if (this.isPlatingActive) {
+                    const plateProgress = clampNumericValue(
+                        this.plateElapsedSeconds / Math.max(0.1, this.plateTotalDuration),
+                        0.0,
+                        1.0
+                    );
+                    const plateWave = Math.sin(plateProgress * Math.PI);
+                    leftX = linearInterpolateValue(leftX, 0.02, plateWave);
+                    leftY = linearInterpolateValue(leftY, -0.06 + plateWave * 0.04, plateWave);
+                    leftZ = linearInterpolateValue(leftZ, -0.02, plateWave);
+                }
+
+                vectors.tempLocalLeft.set(leftX, leftY, leftZ);
+                vectors.leftTargetWristWorld.copy(vectors.tempLocalLeft);
+                weaponAnchorGroup.localToWorld(vectors.leftTargetWristWorld);
+            } else {
+                const bobOffset = isCtxObj && bobOffsetOrSceneOrCtx.bobOffset
+                    ? bobOffsetOrSceneOrCtx.bobOffset
+                    : (isCtxObj && typeof bobOffsetOrSceneOrCtx.x === 'number' ? bobOffsetOrSceneOrCtx : null);
+                const bobX = readSafeCoordinateAxis(bobOffset, 'x', 0.0);
+                const bobY = readSafeCoordinateAxis(bobOffset, 'y', 0.0);
+                const bobZ = readSafeCoordinateAxis(bobOffset, 'z', 0.0);
+                const adsFactor = this.aimDownSightBlend;
+
+                this.transformLocalCameraOffsetToWorld(
+                    linearInterpolateValue(weaponAlignment.fallbackRightHip.x, weaponAlignment.fallbackRightAds.x, adsFactor) + bobX,
+                    linearInterpolateValue(weaponAlignment.fallbackRightHip.y, weaponAlignment.fallbackRightAds.y, adsFactor) + bobY,
+                    linearInterpolateValue(weaponAlignment.fallbackRightHip.z, weaponAlignment.fallbackRightAds.z, adsFactor) + bobZ,
+                    vectors.rightTargetWristWorld
                 );
-                leftWristLocalZ = linearInterpolateValue(leftWristLocalZ, weaponAlignment.reloadLeftHand.z, reloadArcWave);
-            } else if (this.isPlatingActive) {
-                const plateProgress = clampNumericValue(
-                    this.plateElapsedSeconds / Math.max(0.1, this.plateTotalDuration),
-                    0.0,
-                    1.0
+
+                this.transformLocalCameraOffsetToWorld(
+                    linearInterpolateValue(weaponAlignment.fallbackLeftHip.x, weaponAlignment.fallbackLeftAds.x, adsFactor) + bobX,
+                    linearInterpolateValue(weaponAlignment.fallbackLeftHip.y, weaponAlignment.fallbackLeftAds.y, adsFactor) + bobY,
+                    linearInterpolateValue(weaponAlignment.fallbackLeftHip.z, weaponAlignment.fallbackLeftAds.z, adsFactor) + bobZ,
+                    vectors.leftTargetWristWorld
                 );
-                const plateWave = Math.sin(plateProgress * Math.PI);
-                leftWristLocalX = linearInterpolateValue(leftWristLocalX, 0.04, plateWave);
-                leftWristLocalY = linearInterpolateValue(leftWristLocalY, -0.15 + plateWave * 0.04, plateWave);
-                leftWristLocalZ = linearInterpolateValue(leftWristLocalZ, -0.26, plateWave);
             }
-
-            this.transformLocalCameraOffsetToWorld(
-                leftWristLocalX,
-                leftWristLocalY,
-                leftWristLocalZ,
-                vectors.leftTargetWristWorld
-            );
 
             this.applySingleArmTwoJointSolution(
                 this.dualArmRig.rightSide,
@@ -1063,8 +1075,8 @@
                 this.triggerPullAmount,
                 this.elapsedTimeSeconds * 2.4,
                 this.recoilKickAmount,
-                motion.rx,
-                motion.rz
+                weaponRotX,
+                weaponRotZ
             );
 
             applyTacticalHandPoseToSide(
@@ -1074,17 +1086,17 @@
                 0.0,
                 this.elapsedTimeSeconds * 2.4 + 0.7,
                 this.recoilKickAmount,
-                motion.rx,
-                motion.rz
+                weaponRotX,
+                weaponRotZ
             );
 
-            this._rightPos.x = Number(rightWristLocalX.toFixed(3));
-            this._rightPos.y = Number(rightWristLocalY.toFixed(3));
-            this._rightPos.z = Number(rightWristLocalZ.toFixed(3));
+            this._rightPos.x = Number(vectors.rightTargetWristWorld.x.toFixed(3));
+            this._rightPos.y = Number(vectors.rightTargetWristWorld.y.toFixed(3));
+            this._rightPos.z = Number(vectors.rightTargetWristWorld.z.toFixed(3));
 
-            this._leftPos.x = Number(leftWristLocalX.toFixed(3));
-            this._leftPos.y = Number(leftWristLocalY.toFixed(3));
-            this._leftPos.z = Number(leftWristLocalZ.toFixed(3));
+            this._leftPos.x = Number(vectors.leftTargetWristWorld.x.toFixed(3));
+            this._leftPos.y = Number(vectors.leftTargetWristWorld.y.toFixed(3));
+            this._leftPos.z = Number(vectors.leftTargetWristWorld.z.toFixed(3));
         }
 
         dispose() {
