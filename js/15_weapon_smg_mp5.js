@@ -3,11 +3,6 @@
  * 15_weapon_smg_mp5.js
  * MP5 衝鋒槍 3D 模型、槍口錨點與專屬槍械動畫模組
  * ============================================================================
- * 職責：
- * 1. 建構 MP5 衝鋒槍多層級 3D 網格（機匣、護木、消音／槍管、弧形彈匣、槍托、瞄具）
- * 2. 提供槍口火光錨點（muzzleAnchor）與世界座標查詢介面
- * 3. 實作高射速後座跳動、弧形彈匣換彈動畫、腰射／開鏡／衝刺姿態平滑插值
- * 4. 監聽 EventBus 的開火、換彈與裝備事件，自動驅動槍械視覺回饋
  */
 (function (global) {
     'use strict';
@@ -20,9 +15,6 @@
     const Events = TacticalWarfare.Events || {};
     const EventBus = TacticalWarfare.EventBus;
 
-    // ------------------------------------------------------------------------
-    // 1. MP5 衝鋒槍視覺與運動參數表
-    // ------------------------------------------------------------------------
     const MP5_SPECS = Object.freeze({
         id: 'MP5',
         displayName: 'MP5 Tactical',
@@ -50,9 +42,6 @@
         return a + (b - a) * t;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. WeaponSmgMp5 主類別
-    // ------------------------------------------------------------------------
     class WeaponSmgMp5 {
         constructor() {
             this.initialized = false;
@@ -74,7 +63,6 @@
             this._reloadDuration = 1.45;
             this._isReloading = false;
 
-            // 後座力與槍口火光動態狀態
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
             this._recoilRotX = 0;
@@ -84,9 +72,6 @@
             this._unsubscribers = [];
         }
 
-        /**
-         * 初始化 MP5 模型並掛載至武器場景或指定父節點
-         */
         init(options) {
             const THREE = global.THREE;
             if (!THREE) {
@@ -187,14 +172,12 @@
             this.weaponBodyGroup.name = 'Mp5BodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 圓柱鋼製機匣本體
             const receiverGeo = new THREE.CylinderGeometry(0.024, 0.024, 0.24, 14);
             receiverGeo.rotateX(Math.PI / 2);
             const receiverMesh = new THREE.Mesh(receiverGeo, this._materials.receiver);
             receiverMesh.position.set(0, 0.008, -0.055);
             this.weaponBodyGroup.add(receiverMesh);
 
-            // 下機匣與握把
             const lowerGeo = new THREE.BoxGeometry(0.034, 0.036, 0.12);
             const lowerMesh = new THREE.Mesh(lowerGeo, this._materials.polymer);
             lowerMesh.position.set(0, -0.024, -0.045);
@@ -206,7 +189,6 @@
             gripMesh.rotation.x = 0.22;
             this.weaponBodyGroup.add(gripMesh);
 
-            // 2. 伸縮槍托導軌與尾托
             const railGeo = new THREE.BoxGeometry(0.036, 0.014, 0.16);
             const leftRail = new THREE.Mesh(railGeo, this._materials.barrel);
             leftRail.position.set(-0.018, 0.006, 0.12);
@@ -221,7 +203,6 @@
             buttMesh.position.set(0, -0.014, 0.195);
             this.weaponBodyGroup.add(buttMesh);
 
-            // 3. 戰術護木與槍管／消音器前端
             const handguardGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.18, 14);
             handguardGeo.rotateX(Math.PI / 2);
             const handguardMesh = new THREE.Mesh(handguardGeo, this._materials.polymer);
@@ -234,7 +215,6 @@
             muzzleMesh.position.set(0, 0.010, -0.39);
             this.weaponBodyGroup.add(muzzleMesh);
 
-            // 4. 迷你反射式瞄具
             const sightBaseGeo = new THREE.BoxGeometry(0.032, 0.010, 0.056);
             const sightBase = new THREE.Mesh(sightBaseGeo, this._materials.receiver);
             sightBase.position.set(0, 0.036, -0.05);
@@ -250,7 +230,6 @@
             dotMesh.position.set(0, 0.054, -0.05);
             this.weaponBodyGroup.add(dotMesh);
 
-            // 5. MP5 招牌弧形彈匣
             const magGeo = new THREE.BoxGeometry(0.026, 0.145, 0.044);
             this.magazineMesh = new THREE.Mesh(magGeo, this._materials.receiver);
             this.magazineMesh.name = 'Mp5CurvedMagazine';
@@ -258,7 +237,6 @@
             this.magazineMesh.rotation.x = 0.24;
             this.weaponBodyGroup.add(this.magazineMesh);
 
-            // 6. 槍口火光錨點與火光網格
             this.muzzleAnchor = new THREE.Object3D();
             this.muzzleAnchor.name = 'Mp5MuzzleAnchor';
             this.muzzleAnchor.position.set(
@@ -511,9 +489,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const weaponSmgMp5Instance = new WeaponSmgMp5();
 
     const moduleExport = {
