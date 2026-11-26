@@ -1609,7 +1609,7 @@
             }
         }
 
-        // ------------------------------------------------------------------------
+      // ------------------------------------------------------------------------
         // [重做第 9/10 段：每幀更新迴圈、雙關節肩—肘—腕姿態寫入與武器掛載同步]
         // ------------------------------------------------------------------------
         attachWeaponGroup(weaponGroupObject) {
@@ -1679,7 +1679,7 @@
                 shoulderAnchorWorld,
                 targetWristWorld,
                 upperArmLength,
-                forearmAndWristLength,
+                forearmAndWristReachLength,
                 handSideSign,
                 vectors
             );
@@ -1695,16 +1695,17 @@
                 ? rawElbowBend
                 : { x: 0.0, y: 0.0, z: 0.0 };
 
+            // 讓大臂與小臂往下方與側邊收斂，避免在第一人稱鏡頭前過度拱起或搶視線
             shoulderRoot.rotation.set(
-                jointAngles.shoulderPitchX * 0.65 + (poseUpperArm.x || 0.0) * 0.35,
-                jointAngles.shoulderYawY * 0.70 + (poseUpperArm.y || 0.0) * 0.30,
-                jointAngles.shoulderRollZ * 0.70 + (poseUpperArm.z || 0.0) * 0.30
+                jointAngles.shoulderPitchX * 0.52 + (poseUpperArm.x || 0.0) * 0.25 - 0.14,
+                jointAngles.shoulderYawY * 0.55 + (poseUpperArm.y || 0.0) * 0.25 + handSideSign * 0.08,
+                jointAngles.shoulderRollZ * 0.55 + (poseUpperArm.z || 0.0) * 0.25 - handSideSign * 0.10
             );
 
             elbowJoint.rotation.set(
-                jointAngles.elbowPitchX * 0.72 + (poseElbowBend.x || 0.0) * 0.28,
-                jointAngles.elbowYawY + (poseElbowBend.y || 0.0),
-                jointAngles.elbowRollZ + (poseElbowBend.z || 0.0)
+                jointAngles.elbowPitchX * 0.65 + (poseElbowBend.x || 0.0) * 0.22 - 0.12,
+                jointAngles.elbowYawY + (poseElbowBend.y || 0.0) + handSideSign * 0.06,
+                jointAngles.elbowRollZ + (poseElbowBend.z || 0.0) - handSideSign * 0.06
             );
         }
 
@@ -1737,16 +1738,17 @@
             const upperArmSegmentLength = 0.24;
             const forearmAndWristReachLength = 0.262;
 
+            // 肩部錨點稍微往左下／右下外擴並壓低，讓手臂線條更順著槍身與畫面邊緣走
             this.transformLocalCameraOffsetToWorld(
-                0.22,
-                -0.19,
-                -0.08,
+                0.26,
+                -0.25,
+                -0.06,
                 vectors.rightShoulderWorld
             );
             this.transformLocalCameraOffsetToWorld(
-                -0.22,
-                -0.19,
-                -0.08,
+                -0.26,
+                -0.25,
+                -0.06,
                 vectors.leftShoulderWorld
             );
 
@@ -1762,19 +1764,20 @@
                 ? weaponAlignment.reloadPullDistanceY
                 : -0.04;
 
+            // 右手往右下握把方向收斂
             const rightWristLocalX = linearInterpolateValue(
-                0.155 + (rightOffset.x || 0.0),
-                0.105 + (rightOffset.x || 0.0),
+                0.18 + (rightOffset.x || 0.0),
+                0.12 + (rightOffset.x || 0.0),
                 adsFactor
             );
             const rightWristLocalY = linearInterpolateValue(
-                -0.145 + (rightOffset.y || 0.0),
-                -0.105 + (rightOffset.y || 0.0),
+                -0.20 + (rightOffset.y || 0.0),
+                -0.15 + (rightOffset.y || 0.0),
                 adsFactor
             ) + recoilLiftY;
             const rightWristLocalZ = linearInterpolateValue(
-                -0.235 + (rightOffset.z || 0.0),
-                -0.255 + (rightOffset.z || 0.0),
+                -0.26 + (rightOffset.z || 0.0),
+                -0.28 + (rightOffset.z || 0.0),
                 adsFactor
             ) + recoilBackZ;
 
@@ -1785,19 +1788,20 @@
                 vectors.rightTargetWristWorld
             );
 
+            // 左手往中下護木前方延伸，避免整條左臂橫擋在左下角
             let leftWristLocalX = linearInterpolateValue(
-                leftHipPos.x || -0.06,
-                leftAimPos.x || -0.04,
+                (leftHipPos.x || -0.06) - 0.02,
+                (leftAimPos.x || -0.04) - 0.01,
                 adsFactor
             );
             let leftWristLocalY = linearInterpolateValue(
-                leftHipPos.y || -0.15,
-                leftAimPos.y || -0.11,
+                (leftHipPos.y || -0.15) - 0.03,
+                (leftAimPos.y || -0.11) - 0.02,
                 adsFactor
             ) + recoilLiftY * 0.8;
             let leftWristLocalZ = linearInterpolateValue(
-                leftHipPos.z || -0.34,
-                leftAimPos.z || -0.35,
+                (leftHipPos.z || -0.34) - 0.04,
+                (leftAimPos.z || -0.35) - 0.04,
                 adsFactor
             ) + recoilBackZ;
 
