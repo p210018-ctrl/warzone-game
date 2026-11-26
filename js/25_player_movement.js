@@ -302,9 +302,8 @@
             }
 
             const ctrl = this.inputSystem || TacticalWarfare.MultiTouchController;
-            const crouchDown = Boolean(inp.crouch);
-            const crouchJustPressed = Boolean(inp.crouchToggleTriggered) || (crouchDown && !this._crouchPressedPrev);
-            this._crouchPressedPrev = crouchDown;
+            const crouchJustPressed = Boolean(inp.crouchToggleTriggered);
+            this._crouchPressedPrev = Boolean(inp.crouch);
 
             if (crouchJustPressed) {
                 if (this.isCrouching || this.isSliding) {
