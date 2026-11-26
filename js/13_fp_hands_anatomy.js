@@ -23,46 +23,47 @@
         sleeveColor: 0x343d36
     });
 
+    // 左臂從左下往前伸握護木，右臂在右下托住槍身與握把
     const STANCE_POSES = Object.freeze({
         rifle_hip: {
-            rightArm: { x: -0.14, y: -0.06, z: -0.08 },
-            rightWrist: { x: 0.14, y: 0.04, z: 0.04 },
+            rightArm: { x: -0.16, y: -0.14, z: -0.06 },
+            rightWrist: { x: 0.12, y: 0.08, z: 0.02 },
             rightIndex: { x: 0.42, y: 0, z: 0 },
             rightGrip: { x: 0.96, y: 0, z: 0 },
-            leftArm: { x: -0.12, y: 0.16, z: 0.12 },
-            leftWrist: { x: 0.06, y: 0.12, z: -0.04 },
-            leftIndex: { x: 0.88, y: 0, z: 0 },
-            leftGrip: { x: 1.02, y: 0, z: 0 }
-        },
-        rifle_ads: {
-            rightArm: { x: -0.08, y: -0.02, z: -0.03 },
-            rightWrist: { x: 0.08, y: 0.02, z: 0.02 },
-            rightIndex: { x: 0.45, y: 0, z: 0 },
-            rightGrip: { x: 0.98, y: 0, z: 0 },
-            leftArm: { x: -0.08, y: 0.10, z: 0.08 },
-            leftWrist: { x: 0.04, y: 0.08, z: -0.02 },
-            leftIndex: { x: 0.90, y: 0, z: 0 },
+            leftArm: { x: -0.22, y: 0.34, z: 0.14 },
+            leftWrist: { x: 0.14, y: -0.16, z: -0.06 },
+            leftIndex: { x: 0.92, y: 0, z: 0 },
             leftGrip: { x: 1.04, y: 0, z: 0 }
         },
+        rifle_ads: {
+            rightArm: { x: -0.10, y: -0.06, z: -0.02 },
+            rightWrist: { x: 0.08, y: 0.04, z: 0.01 },
+            rightIndex: { x: 0.45, y: 0, z: 0 },
+            rightGrip: { x: 0.98, y: 0, z: 0 },
+            leftArm: { x: -0.16, y: 0.24, z: 0.10 },
+            leftWrist: { x: 0.10, y: -0.10, z: -0.04 },
+            leftIndex: { x: 0.94, y: 0, z: 0 },
+            leftGrip: { x: 1.06, y: 0, z: 0 }
+        },
         pistol_hip: {
-            rightArm: { x: -0.12, y: -0.04, z: -0.06 },
-            rightWrist: { x: 0.16, y: 0.02, z: 0.03 },
+            rightArm: { x: -0.14, y: -0.10, z: -0.04 },
+            rightWrist: { x: 0.14, y: 0.06, z: 0.02 },
             rightIndex: { x: 0.38, y: 0, z: 0 },
             rightGrip: { x: 0.96, y: 0, z: 0 },
-            leftArm: { x: -0.14, y: 0.18, z: 0.10 },
-            leftWrist: { x: 0.08, y: 0.22, z: -0.05 },
+            leftArm: { x: -0.18, y: 0.28, z: 0.12 },
+            leftWrist: { x: 0.12, y: -0.14, z: -0.05 },
             leftIndex: { x: 0.92, y: 0, z: 0 },
             leftGrip: { x: 1.02, y: 0, z: 0 }
         },
         reload: {
-            rightArm: { x: -0.18, y: -0.12, z: -0.14 },
-            rightWrist: { x: 0.20, y: 0.10, z: 0.08 },
+            rightArm: { x: -0.20, y: -0.18, z: -0.12 },
+            rightWrist: { x: 0.18, y: 0.12, z: 0.06 },
             rightIndex: { x: 0.55, y: 0, z: 0 },
             rightGrip: { x: 0.92, y: 0, z: 0 },
-            leftArm: { x: 0.22, y: -0.08, z: 0.16 },
-            leftWrist: { x: -0.18, y: -0.06, z: 0.06 },
-            leftIndex: { x: 0.78, y: 0, z: 0 },
-            leftGrip: { x: 0.88, y: 0, z: 0 }
+            leftArm: { x: 0.12, y: 0.14, z: 0.08 },
+            leftWrist: { x: -0.14, y: -0.08, z: 0.04 },
+            leftIndex: { x: 0.80, y: 0, z: 0 },
+            leftGrip: { x: 0.90, y: 0, z: 0 }
         },
         plate: {
             rightArm: { x: 0.25, y: -0.18, z: -0.22 },
@@ -99,13 +100,14 @@
         const rootGroup = new THREE.Group();
         rootGroup.name = sideSign < 0 ? 'LeftHandRig' : 'RightHandRig';
 
-        const sleeveGeo = new THREE.CylinderGeometry(0.044, 0.038, 0.26, 12);
+        // 臂袖延伸向後方 (-Z 視為手掌方向，+Z 視為往肩膀／畫面外緣方向)
+        const sleeveGeo = new THREE.CylinderGeometry(0.042, 0.036, 0.28, 12);
         sleeveGeo.rotateX(Math.PI / 2);
         const sleeveMesh = new THREE.Mesh(sleeveGeo, materials.sleeve);
-        sleeveMesh.position.set(0, 0, 0.13);
+        sleeveMesh.position.set(0, 0, 0.14);
         rootGroup.add(sleeveMesh);
 
-        const forearmGeo = new THREE.CylinderGeometry(0.037, 0.032, 0.11, 12);
+        const forearmGeo = new THREE.CylinderGeometry(0.035, 0.030, 0.11, 12);
         forearmGeo.rotateX(Math.PI / 2);
         const forearmMesh = new THREE.Mesh(forearmGeo, materials.glove);
         forearmMesh.position.set(0, 0, -0.02);
@@ -115,41 +117,41 @@
         wristJoint.position.set(0, 0, -0.075);
         rootGroup.add(wristJoint);
 
-        const palmGeo = new THREE.BoxGeometry(0.066, 0.022, 0.076);
+        const palmGeo = new THREE.BoxGeometry(0.064, 0.022, 0.074);
         const palmMesh = new THREE.Mesh(palmGeo, materials.glove);
-        palmMesh.position.set(0, 0, -0.038);
+        palmMesh.position.set(0, 0, -0.037);
         wristJoint.add(palmMesh);
 
-        const knuckleGeo = new THREE.BoxGeometry(0.062, 0.010, 0.018);
+        const knuckleGeo = new THREE.BoxGeometry(0.060, 0.010, 0.018);
         const knuckleMesh = new THREE.Mesh(knuckleGeo, materials.pad);
-        knuckleMesh.position.set(0, 0.012, -0.065);
+        knuckleMesh.position.set(0, 0.012, -0.064);
         wristJoint.add(knuckleMesh);
 
         const thumbJoint = new THREE.Group();
-        thumbJoint.position.set(-sideSign * 0.036, -0.003, -0.038);
+        thumbJoint.position.set(-sideSign * 0.035, -0.003, -0.036);
         wristJoint.add(thumbJoint);
 
-        const thumbGeo = new THREE.BoxGeometry(0.017, 0.017, 0.044);
+        const thumbGeo = new THREE.BoxGeometry(0.016, 0.016, 0.042);
         const thumbMesh = new THREE.Mesh(thumbGeo, materials.glove);
-        thumbMesh.position.set(0, 0, -0.020);
+        thumbMesh.position.set(0, 0, -0.019);
         thumbJoint.add(thumbMesh);
 
         const indexJoint = new THREE.Group();
-        indexJoint.position.set(-sideSign * 0.024, -0.002, -0.074);
+        indexJoint.position.set(-sideSign * 0.023, -0.002, -0.072);
         wristJoint.add(indexJoint);
 
-        const indexGeo = new THREE.BoxGeometry(0.014, 0.014, 0.038);
+        const indexGeo = new THREE.BoxGeometry(0.013, 0.013, 0.036);
         const indexMesh = new THREE.Mesh(indexGeo, materials.glove);
-        indexMesh.position.set(0, 0, -0.019);
+        indexMesh.position.set(0, 0, -0.018);
         indexJoint.add(indexMesh);
 
         const gripJoint = new THREE.Group();
-        gripJoint.position.set(0, -0.003, -0.074);
+        gripJoint.position.set(0, -0.003, -0.072);
         wristJoint.add(gripJoint);
 
-        const gripGeo = new THREE.BoxGeometry(0.058, 0.014, 0.036);
+        const gripGeo = new THREE.BoxGeometry(0.056, 0.014, 0.034);
         const gripMesh = new THREE.Mesh(gripGeo, materials.glove);
-        gripMesh.position.set(0, 0, -0.018);
+        gripMesh.position.set(0, 0, -0.017);
         gripJoint.add(gripMesh);
 
         return {
@@ -179,16 +181,16 @@
             this._reloadProgress = 0;
             this._reloadDuration = 1.65;
 
-            this._rightPos = { x: 0.175, y: -0.255, z: -0.26 };
-            this._leftPos = { x: 0.08, y: -0.215, z: -0.44 };
+            this._rightPos = { x: 0.19, y: -0.24, z: -0.24 };
+            this._leftPos = { x: -0.18, y: -0.21, z: -0.36 };
 
             this._poseBlend = {
-                rx: -0.14, ry: -0.06, rz: -0.08,
-                rwx: 0.14, rwy: 0.04, rwz: 0.04,
+                rx: -0.16, ry: -0.14, rz: -0.06,
+                rwx: 0.12, rwy: 0.08, rwz: 0.02,
                 rix: 0.42, rgx: 0.96,
-                lx: -0.12, ly: 0.16, lz: 0.12,
-                lwx: 0.06, lwy: 0.12, lwz: -0.04,
-                lix: 0.88, lgx: 1.02
+                lx: -0.22, ly: 0.34, lz: 0.14,
+                lwx: 0.14, lwy: -0.16, lwz: -0.06,
+                lix: 0.92, lgx: 1.04
             };
 
             this._unsubscribers = [];
@@ -419,7 +421,7 @@
             this.setPose(isAiming ? 'rifle_ads' : 'rifle_hip', false);
         }
 
-        // [13] 整合槍身位移、後座力踢動與槍身旋轉，讓雙手真正跟著槍械聯動
+        // 左臂從左邊往前伸握護木／前段，右臂在右下配合槍身與後座力
         _computeWeaponMotionState(weaponInfo, isAiming) {
             const wMod = weaponInfo && weaponInfo.mod ? weaponInfo.mod : null;
             const wId = weaponInfo && weaponInfo.id ? weaponInfo.id : 'M4A1';
@@ -440,21 +442,25 @@
             const gunY = (root ? root.position.y : (isAiming ? -0.128 : -0.165)) + bodyPosY;
             const gunZ = (root ? root.position.z : (isAiming ? -0.28 : -0.34)) + bodyPosZ;
 
-            // 後座力對雙手的直接踢動偏移
-            const recoilKickY = Math.max(0, bodyPosY) * 1.35 + Math.max(0, bodyRotX) * 0.22;
-            const recoilKickZ = Math.max(0, bodyPosZ) * 1.25;
+            const recoilKickY = Math.max(0, bodyPosY) * 1.45 + Math.max(0, bodyRotX) * 0.25;
+            const recoilKickZ = Math.max(0, bodyPosZ) * 1.35;
 
+            // 右手托住槍身右後方／握把位置
             const rightTarget = {
-                x: gunX + 0.025 + bodyRotZ * 0.08,
-                y: gunY - 0.085 + recoilKickY,
-                z: gunZ + 0.075 + recoilKickZ
+                x: gunX + 0.045 + bodyRotZ * 0.08,
+                y: gunY - 0.075 + recoilKickY,
+                z: gunZ + 0.11 + recoilKickZ
             };
 
-            const foregripZOffset = wId === 'X16' ? -0.06 : (wId === 'AX50' ? -0.24 : -0.17);
+            // 左手從左前方伸出扣住護木／槍管前段
+            const foregripZ = wId === 'X16' ? -0.05 : (wId === 'AX50' ? -0.28 : -0.20);
+            const foregripX = isAiming ? -0.075 : -0.155;
+            const foregripY = gunY - 0.035 + recoilKickY * 0.85;
+
             const leftTarget = {
-                x: gunX - (isAiming ? 0.035 : 0.055) + bodyRotZ * 0.12,
-                y: gunY - 0.045 + recoilKickY,
-                z: gunZ + foregripZOffset + recoilKickZ
+                x: foregripX + bodyRotZ * 0.10,
+                y: foregripY,
+                z: gunZ + foregripZ + recoilKickZ * 0.85
             };
 
             if (this._isReloading) {
@@ -463,43 +469,40 @@
                 const magLocalY = mag ? mag.position.y : -0.105;
                 const magLocalZ = mag ? mag.position.z : -0.085;
 
-                const magX = gunX + magLocalX - 0.02;
+                const magX = gunX + magLocalX - 0.03;
                 const magZ = gunZ + magLocalZ;
-                const seatedY = gunY + magLocalY - 0.03;
-                const pulledY = seatedY - 0.12;
+                const seatedY = gunY + magLocalY - 0.025;
+                const pulledY = seatedY - 0.11;
 
-                if (p < 0.20) {
-                    const t = p / 0.20;
-                    leftTarget.x = lerp(leftTarget.x, magX, t);
-                    leftTarget.y = lerp(leftTarget.y, seatedY, t);
-                    leftTarget.z = lerp(leftTarget.z, magZ, t);
-                } else if (p < 0.48) {
-                    const t = (p - 0.20) / 0.28;
+                if (p < 0.22) {
+                    const t = p / 0.22;
+                    leftTarget.x = lerp(foregripX, magX, t);
+                    leftTarget.y = lerp(foregripY, seatedY, t);
+                    leftTarget.z = lerp(gunZ + foregripZ, magZ, t);
+                } else if (p < 0.50) {
+                    const t = (p - 0.22) / 0.28;
                     leftTarget.x = magX;
                     leftTarget.y = lerp(seatedY, pulledY, t);
                     leftTarget.z = magZ + t * 0.02;
                 } else if (p < 0.76) {
-                    const t = (p - 0.48) / 0.28;
+                    const t = (p - 0.50) / 0.26;
                     leftTarget.x = magX;
                     leftTarget.y = lerp(pulledY, seatedY, t);
                     leftTarget.z = lerp(magZ + 0.02, magZ, t);
                 } else {
                     const t = (p - 0.76) / 0.24;
-                    const homeX = gunX - (isAiming ? 0.035 : 0.055);
-                    const homeY = gunY - 0.045 + recoilKickY;
-                    const homeZ = gunZ + foregripZOffset + recoilKickZ;
-                    leftTarget.x = lerp(magX, homeX, t);
-                    leftTarget.y = lerp(seatedY, homeY, t);
-                    leftTarget.z = lerp(magZ, homeZ, t);
+                    leftTarget.x = lerp(magX, foregripX, t);
+                    leftTarget.y = lerp(seatedY, foregripY, t);
+                    leftTarget.z = lerp(magZ, gunZ + foregripZ + recoilKickZ * 0.85, t);
                 }
             }
 
             return {
                 right: rightTarget,
                 left: leftTarget,
-                gunPitch: rootRotX + bodyRotX * 0.75,
+                gunPitch: rootRotX + bodyRotX * 0.85,
                 gunYaw: rootRotY * 0.45,
-                gunRoll: rootRotZ + bodyRotZ * 0.85
+                gunRoll: rootRotZ + bodyRotZ * 0.90
             };
         }
 
@@ -544,7 +547,7 @@
 
             const target = STANCE_POSES[this.currentPoseKey] || STANCE_POSES.rifle_hip;
             const rotAlpha = 1 - Math.exp(-16 * dt);
-            const posAlpha = 1 - Math.exp(-26 * dt);
+            const posAlpha = 1 - Math.exp(-28 * dt);
 
             this._poseBlend.rx = lerp(this._poseBlend.rx, target.rightArm.x, rotAlpha);
             this._poseBlend.ry = lerp(this._poseBlend.ry, target.rightArm.y, rotAlpha);
@@ -584,9 +587,9 @@
             if (this.rightHand) {
                 this.rightHand.root.position.set(this._rightPos.x, this._rightPos.y, this._rightPos.z);
                 this.rightHand.root.rotation.set(
-                    this._poseBlend.rx + motion.gunPitch * 0.65,
+                    this._poseBlend.rx + motion.gunPitch * 0.75,
                     this._poseBlend.ry + motion.gunYaw * 0.5,
-                    this._poseBlend.rz + motion.gunRoll * 0.65
+                    this._poseBlend.rz + motion.gunRoll * 0.75
                 );
                 this.rightHand.wrist.rotation.set(
                     this._poseBlend.rwx + motion.gunPitch * 0.35,
@@ -600,9 +603,9 @@
             if (this.leftHand) {
                 this.leftHand.root.position.set(this._leftPos.x, this._leftPos.y, this._leftPos.z);
                 this.leftHand.root.rotation.set(
-                    this._poseBlend.lx + motion.gunPitch * 0.55,
+                    this._poseBlend.lx + motion.gunPitch * 0.65,
                     this._poseBlend.ly + motion.gunYaw * 0.4,
-                    this._poseBlend.lz + motion.gunRoll * 0.55
+                    this._poseBlend.lz + motion.gunRoll * 0.65
                 );
                 this.leftHand.wrist.rotation.set(
                     this._poseBlend.lwx + motion.gunPitch * 0.25,
