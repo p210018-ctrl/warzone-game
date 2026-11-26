@@ -1366,13 +1366,29 @@
         breathPhaseValue,
         recoilKickValue
     ) {
+        if (
+            !sideRigObject
+            || !sideRigObject.fingerChains
+            || !sideRigObject.armAssembly
+            || !sideRigObject.armAssembly.wristJoint
+        ) {
+            return;
+        }
+
+        const safePose = poseDefinition || {};
         const fingerChains = sideRigObject.fingerChains;
         const wristJoint = sideRigObject.armAssembly.wristJoint;
 
-        const indexCurlBase = poseDefinition.indexCurl.x + triggerPullAmount * 0.42;
-        const gripCurlBase = poseDefinition.gripCurl.x + recoilKickValue * 0.08;
+        const defaultIndexCurlX = typeof safePose.indexCurl === 'object' && safePose.indexCurl !== null && typeof safePose.indexCurl.x === 'number'
+            ? safePose.indexCurl.x
+            : 0.35;
+        const defaultGripCurlX = typeof safePose.gripCurl === 'object' && safePose.gripCurl !== null && typeof safePose.gripCurl.x === 'number'
+            ? safePose.gripCurl.x
+            : 0.65;
 
-        // 拇指收攏貼合握把側緣或護木下方
+        const indexCurlBase = defaultIndexCurlX + triggerPullAmount * 0.42;
+        const gripCurlBase = defaultGripCurlX + recoilKickValue * 0.08;
+
         applyFingerChainCurlAngles(
             fingerChains.thumbChain,
             0.34 + gripCurlBase * 0.25,
@@ -1381,7 +1397,6 @@
             -handSideSign * 0.22
         );
 
-        // 食指獨立控制（扣扳機或貼合護木）
         applyFingerChainCurlAngles(
             fingerChains.indexFingerChain,
             indexCurlBase * 0.58,
@@ -1390,7 +1405,6 @@
             -handSideSign * 0.04
         );
 
-        // 中指、無名指、小指依序向掌心收握
         applyFingerChainCurlAngles(
             fingerChains.middleFingerChain,
             gripCurlBase * 0.65,
@@ -1415,24 +1429,20 @@
             handSideSign * 0.06
         );
 
-        // 腕關節微調自然握持角度與呼吸起伏
-        const wristBase = handSideSign > 0
-            ? poseDefinition.rightWristBend
-            : poseDefinition.leftWristBend;
+        const rawWristBend = handSideSign > 0 ? safePose.rightWristBend : safePose.leftWristBend;
+        const wristBase = typeof rawWristBend === 'object' && rawWristBend !== null
+            ? rawWristBend
+            : { x: 0.0, y: 0.0, z: 0.0 };
 
-        wristJoint.rotation.x = wristBase.x
+        wristJoint.rotation.x = (typeof wristBase.x === 'number' ? wristBase.x : 0.0)
             + Math.sin(breathPhaseValue) * 0.012
             + recoilKickValue * 0.08;
-        wristJoint.rotation.y = wristBase.y
+        wristJoint.rotation.y = (typeof wristBase.y === 'number' ? wristBase.y : 0.0)
             + handSideSign * 0.14;
-        wristJoint.rotation.z = wristBase.z
+        wristJoint.rotation.z = (typeof wristBase.z === 'number' ? wristBase.z : 0.0)
             + Math.cos(breathPhaseValue * 0.8) * 0.010;
     }
-
     // ------------------------------------------------------------------------
-    // [重做第 7/10 段接續點] 接下來在第 8/10 段建構主控制器類別骨架、事件訂閱與武器姿態計算
-    // ------------------------------------------------------------------------
-// ------------------------------------------------------------------------
     // [重做第 8/10 段：主控制器類別骨架、事件訂閱與武器姿態／換彈／插板動態計算]
     // ------------------------------------------------------------------------
     class FirstPersonTacticalHandsController {
@@ -1600,9 +1610,6 @@
         }
 
         // ------------------------------------------------------------------------
-        // [重做第 8/10 段接續點] 接下來在第 9/10 段完成 update 迴圈、雙關節解算與武器掛載同步
-        // ------------------------------------------------------------------------
-// ------------------------------------------------------------------------
         // [重做第 9/10 段：每幀更新迴圈、雙關節肩—肘—腕姿態寫入與武器掛載同步]
         // ------------------------------------------------------------------------
         attachWeaponGroup(weaponGroupObject) {
@@ -1613,7 +1620,6 @@
             this.cameraInstance.updateMatrixWorld(true);
             const worldMatrixElements = this.cameraInstance.matrixWorld.elements;
 
-            // Three.js 相機世界矩陣：-Z 為鏡頭前方，+X 為鏡頭右方，+Y 為鏡頭上方
             cameraRight.set(
                 worldMatrixElements[0],
                 worldMatrixElements[1],
@@ -1678,23 +1684,27 @@
                 vectors
             );
 
-            const poseUpperArm = handSideSign > 0
-                ? poseDefinition.rightUpperArm
-                : poseDefinition.leftUpperArm;
-            const poseElbowBend = handSideSign > 0
-                ? poseDefinition.rightElbowBend
-                : poseDefinition.leftElbowBend;
+            const safePose = poseDefinition || {};
+            const rawUpperArm = handSideSign > 0 ? safePose.rightUpperArm : safePose.leftUpperArm;
+            const rawElbowBend = handSideSign > 0 ? safePose.rightElbowBend : safePose.leftElbowBend;
+
+            const poseUpperArm = typeof rawUpperArm === 'object' && rawUpperArm !== null
+                ? rawUpperArm
+                : { x: 0.0, y: 0.0, z: 0.0 };
+            const poseElbowBend = typeof rawElbowBend === 'object' && rawElbowBend !== null
+                ? rawElbowBend
+                : { x: 0.0, y: 0.0, z: 0.0 };
 
             shoulderRoot.rotation.set(
-                jointAngles.shoulderPitchX * 0.65 + poseUpperArm.x * 0.35,
-                jointAngles.shoulderYawY * 0.70 + poseUpperArm.y * 0.30,
-                jointAngles.shoulderRollZ * 0.70 + poseUpperArm.z * 0.30
+                jointAngles.shoulderPitchX * 0.65 + (poseUpperArm.x || 0.0) * 0.35,
+                jointAngles.shoulderYawY * 0.70 + (poseUpperArm.y || 0.0) * 0.30,
+                jointAngles.shoulderRollZ * 0.70 + (poseUpperArm.z || 0.0) * 0.30
             );
 
             elbowJoint.rotation.set(
-                jointAngles.elbowPitchX * 0.72 + poseElbowBend.x * 0.28,
-                jointAngles.elbowYawY + poseElbowBend.y,
-                jointAngles.elbowRollZ + poseElbowBend.z
+                jointAngles.elbowPitchX * 0.72 + (poseElbowBend.x || 0.0) * 0.28,
+                jointAngles.elbowYawY + (poseElbowBend.y || 0.0),
+                jointAngles.elbowRollZ + (poseElbowBend.z || 0.0)
             );
         }
 
@@ -1720,13 +1730,13 @@
             const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode]
                 || WeaponGripAlignmentTable.M4A1;
             const currentPose = StancePoseDefinitions[this.currentPoseKey]
-                || StancePoseDefinitions.rifle_hip;
+                || StancePoseDefinitions.rifle_hip
+                || {};
 
             const vectors = this.scratchVectors;
             const upperArmSegmentLength = 0.24;
             const forearmAndWristReachLength = 0.262;
 
-            // 肩部世界錨點：位於鏡頭後方與兩側自然位置，避免大臂直接穿過鏡頭
             this.transformLocalCameraOffsetToWorld(
                 0.22,
                 -0.19,
@@ -1744,20 +1754,27 @@
             const recoilBackZ = this.recoilKickAmount * 0.022;
             const recoilLiftY = this.recoilKickAmount * 0.012;
 
-            // 右手目標手腕位置：貼合槍身握把位置
+            const rightOffset = weaponAlignment.rightHandOffset || { x: 0.0, y: 0.0, z: 0.0 };
+            const leftHipPos = weaponAlignment.leftHandHipPosition || { x: -0.06, y: -0.15, z: -0.34 };
+            const leftAimPos = weaponAlignment.leftHandAimPosition || { x: -0.04, y: -0.11, z: -0.35 };
+            const reloadOffset = weaponAlignment.reloadMagazineOffset || { x: -0.02, y: -0.18, z: -0.26 };
+            const reloadPullY = typeof weaponAlignment.reloadPullDistanceY === 'number'
+                ? weaponAlignment.reloadPullDistanceY
+                : -0.04;
+
             const rightWristLocalX = linearInterpolateValue(
-                0.155 + weaponAlignment.rightHandOffset.x,
-                0.105 + weaponAlignment.rightHandOffset.x,
+                0.155 + (rightOffset.x || 0.0),
+                0.105 + (rightOffset.x || 0.0),
                 adsFactor
             );
             const rightWristLocalY = linearInterpolateValue(
-                -0.145 + weaponAlignment.rightHandOffset.y,
-                -0.105 + weaponAlignment.rightHandOffset.y,
+                -0.145 + (rightOffset.y || 0.0),
+                -0.105 + (rightOffset.y || 0.0),
                 adsFactor
             ) + recoilLiftY;
             const rightWristLocalZ = linearInterpolateValue(
-                -0.235 + weaponAlignment.rightHandOffset.z,
-                -0.255 + weaponAlignment.rightHandOffset.z,
+                -0.235 + (rightOffset.z || 0.0),
+                -0.255 + (rightOffset.z || 0.0),
                 adsFactor
             ) + recoilBackZ;
 
@@ -1768,20 +1785,19 @@
                 vectors.rightTargetWristWorld
             );
 
-            // 左手目標手腕位置：依武器類型與是否換彈／插板動態切換
             let leftWristLocalX = linearInterpolateValue(
-                weaponAlignment.leftHandHipPosition.x,
-                weaponAlignment.leftHandAimPosition.x,
+                leftHipPos.x || -0.06,
+                leftAimPos.x || -0.04,
                 adsFactor
             );
             let leftWristLocalY = linearInterpolateValue(
-                weaponAlignment.leftHandHipPosition.y,
-                weaponAlignment.leftHandAimPosition.y,
+                leftHipPos.y || -0.15,
+                leftAimPos.y || -0.11,
                 adsFactor
             ) + recoilLiftY * 0.8;
             let leftWristLocalZ = linearInterpolateValue(
-                weaponAlignment.leftHandHipPosition.z,
-                weaponAlignment.leftHandAimPosition.z,
+                leftHipPos.z || -0.34,
+                leftAimPos.z || -0.35,
                 adsFactor
             ) + recoilBackZ;
 
@@ -1794,17 +1810,17 @@
                 const reloadArcWave = Math.sin(reloadProgress * Math.PI);
                 leftWristLocalX = linearInterpolateValue(
                     leftWristLocalX,
-                    weaponAlignment.reloadMagazineOffset.x,
+                    reloadOffset.x || -0.02,
                     reloadArcWave
                 );
                 leftWristLocalY = linearInterpolateValue(
                     leftWristLocalY,
-                    weaponAlignment.reloadMagazineOffset.y + weaponAlignment.reloadPullDistanceY * Math.sin(reloadProgress * Math.PI * 2.0),
+                    (reloadOffset.y || -0.18) + reloadPullY * Math.sin(reloadProgress * Math.PI * 2.0),
                     reloadArcWave
                 );
                 leftWristLocalZ = linearInterpolateValue(
                     leftWristLocalZ,
-                    weaponAlignment.reloadMagazineOffset.z,
+                    reloadOffset.z || -0.26,
                     reloadArcWave
                 );
             } else if (this.isPlatingActive) {
@@ -1906,9 +1922,6 @@
     }
 
     // ------------------------------------------------------------------------
-    // [重做第 9/10 段接續點] 接下來在第 10/10 段完成全域掛載與生命週期安全初始化
-    // ------------------------------------------------------------------------
-// ------------------------------------------------------------------------
     // [重做第 10/10 段：全域掛載、自動與手動初始化橋接以及完整資源釋放管理]
     // ------------------------------------------------------------------------
     let activeControllerInstance = null;
@@ -1924,13 +1937,19 @@
     }
 
     function resolveSceneAndCameraFromContext(overrideScene, overrideCamera) {
+        const rendererCore = TacticalWarfareNamespace.RendererCore
+            || (globalScope.TacticalWarfare && globalScope.TacticalWarfare.RendererCore)
+            || null;
+
         const resolvedScene = overrideScene
+            || (rendererCore && rendererCore.scene)
             || (GameStateStore && GameStateStore.scene)
             || TacticalWarfareNamespace.scene
             || globalScope.scene
             || null;
 
         const resolvedCamera = overrideCamera
+            || (rendererCore && rendererCore.camera)
             || (GameStateStore && GameStateStore.camera)
             || TacticalWarfareNamespace.camera
             || globalScope.camera
@@ -1977,8 +1996,14 @@
         }
 
         if (activeControllerInstance && typeof activeControllerInstance.update === 'function') {
-            if (overrideScene) {
+            if (overrideScene && activeControllerInstance.sceneInstance !== overrideScene) {
+                if (activeControllerInstance.sceneInstance && activeControllerInstance.dualArmRig && activeControllerInstance.dualArmRig.rigRootGroup) {
+                    activeControllerInstance.sceneInstance.remove(activeControllerInstance.dualArmRig.rigRootGroup);
+                }
                 activeControllerInstance.sceneInstance = overrideScene;
+                if (activeControllerInstance.dualArmRig && activeControllerInstance.dualArmRig.rigRootGroup) {
+                    overrideScene.add(activeControllerInstance.dualArmRig.rigRootGroup);
+                }
             }
             if (overrideCamera) {
                 activeControllerInstance.cameraInstance = overrideCamera;
@@ -2023,4 +2048,3 @@
 
     createOrReplaceTacticalHandsController();
 })(typeof window !== 'undefined' ? window : globalThis);
-
