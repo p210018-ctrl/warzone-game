@@ -1,8 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱露指戰術手套雙臂骨架、雙關節解算與主控橋接模組（重做輕量穩定版）
- * 參考結構：first-person-arm-hand-fingerless-gloves（露指戰術手套與前臂層次）
+ * 第一人稱戰術雙手骨架、雙關節解算與槍械握持對齊模組（重寫對齊版）
  * ============================================================================
  */
 (function (globalScope) {
@@ -36,114 +35,99 @@
             : fallbackNumber;
     }
 
+    // 對應 14_weapon_m4_urgi.js 的握把與護木局部座標
     const WeaponGripAlignmentTable = Object.freeze({
         M4A1: Object.freeze({
-            rightHandOffset: Object.freeze({ x: 0.0, y: 0.0, z: 0.0 }),
-            leftHandHipPosition: Object.freeze({ x: -0.075, y: -0.175, z: -0.37 }),
-            leftHandAimPosition: Object.freeze({ x: -0.055, y: -0.130, z: -0.38 }),
-            reloadMagazineOffset: Object.freeze({ x: -0.03, y: -0.19, z: -0.28 }),
-            reloadPullDistanceY: -0.035
+            rightHandHip: Object.freeze({ x: 0.172, y: -0.245, z: -0.345 }),
+            rightHandAds: Object.freeze({ x: 0.004, y: -0.145, z: -0.345 }),
+            leftHandHip: Object.freeze({ x: 0.145, y: -0.185, z: -0.545 }),
+            leftHandAds: Object.freeze({ x: -0.025, y: -0.088, z: -0.545 }),
+            reloadLeftHand: Object.freeze({ x: 0.115, y: -0.255, z: -0.435 }),
+            reloadPullY: -0.035
         }),
         MP5: Object.freeze({
-            rightHandOffset: Object.freeze({ x: 0.0, y: 0.0, z: 0.01 }),
-            leftHandHipPosition: Object.freeze({ x: -0.065, y: -0.165, z: -0.33 }),
-            leftHandAimPosition: Object.freeze({ x: -0.045, y: -0.125, z: -0.34 }),
-            reloadMagazineOffset: Object.freeze({ x: -0.025, y: -0.18, z: -0.26 }),
-            reloadPullDistanceY: -0.03
+            rightHandHip: Object.freeze({ x: 0.170, y: -0.245, z: -0.340 }),
+            rightHandAds: Object.freeze({ x: 0.004, y: -0.145, z: -0.340 }),
+            leftHandHip: Object.freeze({ x: 0.135, y: -0.180, z: -0.500 }),
+            leftHandAds: Object.freeze({ x: -0.020, y: -0.085, z: -0.500 }),
+            reloadLeftHand: Object.freeze({ x: 0.110, y: -0.250, z: -0.420 }),
+            reloadPullY: -0.030
         }),
         AX50: Object.freeze({
-            rightHandOffset: Object.freeze({ x: 0.005, y: -0.005, z: -0.01 }),
-            leftHandHipPosition: Object.freeze({ x: -0.085, y: -0.180, z: -0.40 }),
-            leftHandAimPosition: Object.freeze({ x: -0.060, y: -0.135, z: -0.41 }),
-            reloadMagazineOffset: Object.freeze({ x: -0.035, y: -0.19, z: -0.29 }),
-            reloadPullDistanceY: -0.04
+            rightHandHip: Object.freeze({ x: 0.175, y: -0.250, z: -0.350 }),
+            rightHandAds: Object.freeze({ x: 0.004, y: -0.150, z: -0.350 }),
+            leftHandHip: Object.freeze({ x: 0.150, y: -0.190, z: -0.580 }),
+            leftHandAds: Object.freeze({ x: -0.025, y: -0.092, z: -0.580 }),
+            reloadLeftHand: Object.freeze({ x: 0.115, y: -0.260, z: -0.440 }),
+            reloadPullY: -0.040
         }),
         X16: Object.freeze({
-            rightHandOffset: Object.freeze({ x: -0.01, y: 0.005, z: 0.015 }),
-            leftHandHipPosition: Object.freeze({ x: 0.035, y: -0.165, z: -0.27 }),
-            leftHandAimPosition: Object.freeze({ x: 0.020, y: -0.125, z: -0.28 }),
-            reloadMagazineOffset: Object.freeze({ x: -0.02, y: -0.18, z: -0.24 }),
-            reloadPullDistanceY: -0.03
+            rightHandHip: Object.freeze({ x: 0.165, y: -0.235, z: -0.330 }),
+            rightHandAds: Object.freeze({ x: 0.002, y: -0.135, z: -0.330 }),
+            leftHandHip: Object.freeze({ x: 0.145, y: -0.240, z: -0.365 }),
+            leftHandAds: Object.freeze({ x: -0.015, y: -0.140, z: -0.365 }),
+            reloadLeftHand: Object.freeze({ x: 0.105, y: -0.255, z: -0.380 }),
+            reloadPullY: -0.030
         })
     });
 
     const StancePoseDefinitions = Object.freeze({
         rifle_hip: Object.freeze({
-            rightUpperArm: Object.freeze({ x: -0.18, y: 0.08, z: -0.10 }),
-            leftUpperArm: Object.freeze({ x: -0.22, y: -0.08, z: 0.10 }),
-            rightElbowBend: Object.freeze({ x: -0.55, y: 0.05, z: 0.0 }),
-            leftElbowBend: Object.freeze({ x: -0.48, y: -0.05, z: 0.0 }),
-            leftWristBend: Object.freeze({ x: 0.08, y: -0.12, z: 0.10 }),
-            rightWristBend: Object.freeze({ x: 0.06, y: 0.10, z: -0.08 }),
-            indexCurl: Object.freeze({ x: 0.36 }),
-            gripCurl: Object.freeze({ x: 0.68 })
+            rightWristBend: Object.freeze({ x: 0.16, y: -0.12, z: 0.08 }),
+            leftWristBend: Object.freeze({ x: 0.22, y: 0.28, z: -0.18 }),
+            indexCurl: Object.freeze({ x: 0.68 }),
+            gripCurl: Object.freeze({ x: 0.92 })
         }),
         rifle_ads: Object.freeze({
-            rightUpperArm: Object.freeze({ x: -0.24, y: 0.05, z: -0.06 }),
-            leftUpperArm: Object.freeze({ x: -0.28, y: -0.05, z: 0.06 }),
-            rightElbowBend: Object.freeze({ x: -0.66, y: 0.04, z: 0.0 }),
-            leftElbowBend: Object.freeze({ x: -0.58, y: -0.04, z: 0.0 }),
-            leftWristBend: Object.freeze({ x: 0.10, y: -0.14, z: 0.12 }),
-            rightWristBend: Object.freeze({ x: 0.08, y: 0.08, z: -0.06 }),
-            indexCurl: Object.freeze({ x: 0.32 }),
-            gripCurl: Object.freeze({ x: 0.72 })
+            rightWristBend: Object.freeze({ x: 0.18, y: -0.10, z: 0.06 }),
+            leftWristBend: Object.freeze({ x: 0.24, y: 0.26, z: -0.16 }),
+            indexCurl: Object.freeze({ x: 0.62 }),
+            gripCurl: Object.freeze({ x: 0.96 })
         }),
         pistol_hip: Object.freeze({
-            rightUpperArm: Object.freeze({ x: -0.16, y: 0.06, z: -0.08 }),
-            leftUpperArm: Object.freeze({ x: -0.20, y: 0.04, z: 0.08 }),
-            rightElbowBend: Object.freeze({ x: -0.52, y: 0.04, z: 0.0 }),
-            leftElbowBend: Object.freeze({ x: -0.62, y: 0.06, z: 0.0 }),
-            leftWristBend: Object.freeze({ x: 0.06, y: 0.16, z: 0.08 }),
-            rightWristBend: Object.freeze({ x: 0.05, y: 0.08, z: -0.06 }),
-            indexCurl: Object.freeze({ x: 0.34 }),
-            gripCurl: Object.freeze({ x: 0.70 })
+            rightWristBend: Object.freeze({ x: 0.14, y: -0.08, z: 0.06 }),
+            leftWristBend: Object.freeze({ x: 0.18, y: 0.34, z: -0.14 }),
+            indexCurl: Object.freeze({ x: 0.64 }),
+            gripCurl: Object.freeze({ x: 0.94 })
         }),
         reload: Object.freeze({
-            rightUpperArm: Object.freeze({ x: -0.16, y: 0.08, z: -0.10 }),
-            leftUpperArm: Object.freeze({ x: -0.12, y: -0.12, z: 0.14 }),
-            rightElbowBend: Object.freeze({ x: -0.54, y: 0.04, z: 0.0 }),
-            leftElbowBend: Object.freeze({ x: -0.72, y: -0.08, z: 0.0 }),
-            leftWristBend: Object.freeze({ x: 0.14, y: -0.10, z: 0.08 }),
-            rightWristBend: Object.freeze({ x: 0.06, y: 0.10, z: -0.08 }),
-            indexCurl: Object.freeze({ x: 0.45 }),
-            gripCurl: Object.freeze({ x: 0.78 })
+            rightWristBend: Object.freeze({ x: 0.16, y: -0.12, z: 0.08 }),
+            leftWristBend: Object.freeze({ x: 0.28, y: 0.18, z: -0.12 }),
+            indexCurl: Object.freeze({ x: 0.72 }),
+            gripCurl: Object.freeze({ x: 0.95 })
         }),
         plate: Object.freeze({
-            rightUpperArm: Object.freeze({ x: -0.18, y: 0.08, z: -0.10 }),
-            leftUpperArm: Object.freeze({ x: -0.14, y: 0.14, z: 0.12 }),
-            rightElbowBend: Object.freeze({ x: -0.55, y: 0.04, z: 0.0 }),
-            leftElbowBend: Object.freeze({ x: -0.82, y: 0.10, z: 0.0 }),
-            leftWristBend: Object.freeze({ x: 0.12, y: 0.18, z: 0.06 }),
-            rightWristBend: Object.freeze({ x: 0.06, y: 0.10, z: -0.08 }),
-            indexCurl: Object.freeze({ x: 0.55 }),
-            gripCurl: Object.freeze({ x: 0.85 })
+            rightWristBend: Object.freeze({ x: 0.16, y: -0.12, z: 0.08 }),
+            leftWristBend: Object.freeze({ x: 0.20, y: 0.24, z: -0.10 }),
+            indexCurl: Object.freeze({ x: 0.78 }),
+            gripCurl: Object.freeze({ x: 1.02 })
         })
     });
 
     function createLightweightTacticalMaterials(ThreeModule, materialBucket) {
         const sleeveMat = new ThreeModule.MeshStandardMaterial({
             color: 0x262b30,
-            roughness: 0.78,
-            metalness: 0.08
+            roughness: 0.76,
+            metalness: 0.10
         });
         const cuffMat = new ThreeModule.MeshStandardMaterial({
-            color: 0x181b1e,
-            roughness: 0.65,
-            metalness: 0.15
+            color: 0x171a1d,
+            roughness: 0.62,
+            metalness: 0.18
         });
         const gloveKnuckleMat = new ThreeModule.MeshStandardMaterial({
-            color: 0x2e343a,
-            roughness: 0.52,
-            metalness: 0.25
+            color: 0x30363c,
+            roughness: 0.50,
+            metalness: 0.28
         });
         const glovePalmMat = new ThreeModule.MeshStandardMaterial({
-            color: 0x1d2125,
-            roughness: 0.72,
-            metalness: 0.12
+            color: 0x1c2024,
+            roughness: 0.70,
+            metalness: 0.14
         });
         const skinFingerMat = new ThreeModule.MeshStandardMaterial({
             color: 0xc59373,
-            roughness: 0.62,
+            roughness: 0.60,
             metalness: 0.04
         });
 
@@ -159,31 +143,31 @@
     }
 
     function createSharedLightweightGeometries(ThreeModule, geometryBucket) {
-        const upperArmGeo = new ThreeModule.CylinderGeometry(0.046, 0.040, 0.22, 8);
+        const upperArmGeo = new ThreeModule.CylinderGeometry(0.042, 0.036, 0.20, 8);
         upperArmGeo.rotateX(Math.PI * 0.5);
-        upperArmGeo.translate(0, 0, -0.11);
+        upperArmGeo.translate(0, 0, -0.10);
 
-        const forearmGeo = new ThreeModule.CylinderGeometry(0.039, 0.031, 0.23, 8);
+        const forearmGeo = new ThreeModule.CylinderGeometry(0.036, 0.028, 0.21, 8);
         forearmGeo.rotateX(Math.PI * 0.5);
-        forearmGeo.translate(0, 0, -0.115);
+        forearmGeo.translate(0, 0, -0.105);
 
-        const cuffGeo = new ThreeModule.CylinderGeometry(0.033, 0.035, 0.026, 8);
+        const cuffGeo = new ThreeModule.CylinderGeometry(0.030, 0.032, 0.022, 8);
         cuffGeo.rotateX(Math.PI * 0.5);
-        cuffGeo.translate(0, 0, -0.013);
+        cuffGeo.translate(0, 0, -0.011);
 
-        const palmCoreGeo = new ThreeModule.BoxGeometry(0.068, 0.022, 0.074);
-        palmCoreGeo.translate(0, 0, -0.037);
+        const palmCoreGeo = new ThreeModule.BoxGeometry(0.056, 0.018, 0.062);
+        palmCoreGeo.translate(0, 0, -0.031);
 
-        const knuckleArmorGeo = new ThreeModule.BoxGeometry(0.064, 0.010, 0.022);
-        knuckleArmorGeo.translate(0, 0.013, -0.062);
+        const knuckleArmorGeo = new ThreeModule.BoxGeometry(0.052, 0.008, 0.018);
+        knuckleArmorGeo.translate(0, 0.011, -0.052);
 
-        const fingerSegGeo = new ThreeModule.CylinderGeometry(0.0085, 0.0078, 0.024, 6);
+        const fingerSegGeo = new ThreeModule.CylinderGeometry(0.0072, 0.0065, 0.020, 6);
         fingerSegGeo.rotateX(Math.PI * 0.5);
-        fingerSegGeo.translate(0, 0, -0.012);
+        fingerSegGeo.translate(0, 0, -0.010);
 
-        const thumbSegGeo = new ThreeModule.CylinderGeometry(0.0095, 0.0085, 0.024, 6);
+        const thumbSegGeo = new ThreeModule.CylinderGeometry(0.0080, 0.0072, 0.020, 6);
         thumbSegGeo.rotateX(Math.PI * 0.5);
-        thumbSegGeo.translate(0, 0, -0.012);
+        thumbSegGeo.translate(0, 0, -0.010);
 
         geometryBucket.push(
             upperArmGeo,
@@ -225,22 +209,21 @@
         basePivot.add(baseMesh);
 
         const midPivot = new ThreeModule.Group();
-        midPivot.position.set(0, 0, -0.024);
+        midPivot.position.set(0, 0, -0.020);
         basePivot.add(midPivot);
 
         const midMesh = new ThreeModule.Mesh(segmentGeo, skinMat);
         midPivot.add(midMesh);
 
         const tipPivot = new ThreeModule.Group();
-        tipPivot.position.set(0, 0, -0.024);
+        tipPivot.position.set(0, 0, -0.020);
         midPivot.add(tipPivot);
 
         const tipMesh = new ThreeModule.Mesh(segmentGeo, skinMat);
         tipPivot.add(tipMesh);
 
         return {
-            jointPivots: [basePivot, midPivot, tipPivot],
-            meshes: [baseMesh, midMesh, tipMesh]
+            jointPivots: [basePivot, midPivot, tipPivot]
         };
     }
 
@@ -258,25 +241,25 @@
         shoulderRoot.add(upperArmMesh);
 
         const elbowJoint = new ThreeModule.Group();
-        elbowJoint.position.set(0, 0, -0.22);
+        elbowJoint.position.set(0, 0, -0.20);
         shoulderRoot.add(elbowJoint);
 
         const forearmMesh = new ThreeModule.Mesh(geos.forearmGeo, mats.sleeveMat);
         elbowJoint.add(forearmMesh);
 
         const wristJoint = new ThreeModule.Group();
-        wristJoint.position.set(0, 0, -0.23);
+        wristJoint.position.set(0, 0, -0.21);
         elbowJoint.add(wristJoint);
 
         const cuffMesh = new ThreeModule.Mesh(geos.cuffGeo, mats.cuffMat);
         wristJoint.add(cuffMesh);
 
         const palmMesh = new ThreeModule.Mesh(geos.palmCoreGeo, mats.glovePalmMat);
-        palmMesh.position.set(0, -0.002, -0.024);
+        palmMesh.position.set(0, -0.002, -0.020);
         wristJoint.add(palmMesh);
 
         const knuckleMesh = new ThreeModule.Mesh(geos.knuckleArmorGeo, mats.gloveKnuckleMat);
-        knuckleMesh.position.set(0, 0.002, -0.032);
+        knuckleMesh.position.set(0, 0.002, -0.026);
         wristJoint.add(knuckleMesh);
 
         const thumbChain = buildFingerChain(
@@ -285,9 +268,9 @@
             geos.thumbSegGeo,
             mats.gloveKnuckleMat,
             mats.skinFingerMat,
-            handSideSign * 0.036,
-            -0.006,
-            -0.044,
+            handSideSign * 0.028,
+            -0.005,
+            -0.036,
             true
         );
 
@@ -297,9 +280,9 @@
             geos.fingerSegGeo,
             mats.gloveKnuckleMat,
             mats.skinFingerMat,
-            handSideSign * 0.024,
-            0.002,
-            -0.098,
+            handSideSign * 0.019,
+            0.001,
+            -0.080,
             false
         );
 
@@ -309,9 +292,9 @@
             geos.fingerSegGeo,
             mats.gloveKnuckleMat,
             mats.skinFingerMat,
-            handSideSign * 0.008,
-            0.002,
-            -0.100,
+            handSideSign * 0.006,
+            0.001,
+            -0.082,
             false
         );
 
@@ -321,9 +304,9 @@
             geos.fingerSegGeo,
             mats.gloveKnuckleMat,
             mats.skinFingerMat,
-            -handSideSign * 0.008,
-            0.001,
-            -0.098,
+            -handSideSign * 0.007,
+            0.000,
+            -0.080,
             false
         );
 
@@ -333,9 +316,9 @@
             geos.fingerSegGeo,
             mats.gloveKnuckleMat,
             mats.skinFingerMat,
-            -handSideSign * 0.024,
-            0.000,
-            -0.094,
+            -handSideSign * 0.020,
+            -0.001,
+            -0.076,
             false
         );
 
@@ -374,7 +357,7 @@
         if (rawDistance > 0.00001) {
             directionVector.divideScalar(rawDistance);
         } else {
-            directionVector.set(handSideSign * 0.15, -0.25, -0.95).normalize();
+            directionVector.set(handSideSign * 0.12, -0.22, -0.96).normalize();
         }
 
         const cosShoulderChord = clampNumericValue(
@@ -402,11 +385,11 @@
 
         return {
             shoulderPitchX: basePitchAngleX + shoulderToChordAngle * 0.55,
-            shoulderYawY: baseYawAngleY + handSideSign * 0.08,
-            shoulderRollZ: -handSideSign * 0.12,
+            shoulderYawY: baseYawAngleY + handSideSign * 0.06,
+            shoulderRollZ: -handSideSign * 0.10,
             elbowPitchX: elbowFlexionAngleX,
-            elbowYawY: handSideSign * 0.07,
-            elbowRollZ: handSideSign * 0.05
+            elbowYawY: handSideSign * 0.06,
+            elbowRollZ: handSideSign * 0.04
         };
     }
 
@@ -433,6 +416,7 @@
         }
     }
 
+    // 正向 rotation.x 讓 -Z 指尖往下方／內側扣住握把與護木
     function applyTacticalHandPoseToSide(
         sideRigObject,
         handSideSign,
@@ -454,56 +438,55 @@
         const fingerChains = sideRigObject.fingerChains;
         const wristRotation = sideRigObject.armAssembly.wristJoint.rotation;
 
-        const baseIndexCurlX = readSafeCoordinateAxis(safePose.indexCurl, 'x', 0.35);
-        const baseGripCurlX = readSafeCoordinateAxis(safePose.gripCurl, 'x', 0.68);
+        const baseIndexCurlX = readSafeCoordinateAxis(safePose.indexCurl, 'x', 0.65);
+        const baseGripCurlX = readSafeCoordinateAxis(safePose.gripCurl, 'x', 0.92);
 
-        const indexCurlBase = baseIndexCurlX + triggerPullAmount * 0.42;
-        const gripCurlBase = baseGripCurlX + recoilKickValue * 0.08;
+        const indexHook = baseIndexCurlX + triggerPullAmount * 0.35;
+        const gripHook = baseGripCurlX + recoilKickValue * 0.08;
 
         applyFingerChainCurlAngles(
             fingerChains.thumbChain,
-            0.34 + gripCurlBase * 0.25,
-            0.42 + gripCurlBase * 0.22,
-            0.18,
-            -handSideSign * 0.22
+            0.48 + gripHook * 0.22,
+            0.52 + gripHook * 0.20,
+            0.25,
+            -handSideSign * 0.35
         );
         applyFingerChainCurlAngles(
             fingerChains.indexFingerChain,
-            indexCurlBase * 0.58,
-            indexCurlBase * 0.78,
-            indexCurlBase * 0.55,
+            indexHook * 0.72,
+            indexHook * 0.85,
+            indexHook * 0.65,
             -handSideSign * 0.04
         );
         applyFingerChainCurlAngles(
             fingerChains.middleFingerChain,
-            gripCurlBase * 0.65,
-            gripCurlBase * 0.85,
-            gripCurlBase * 0.62,
+            gripHook * 0.78,
+            gripHook * 0.90,
+            gripHook * 0.72,
             0.0
         );
         applyFingerChainCurlAngles(
             fingerChains.ringFingerChain,
-            gripCurlBase * 0.70,
-            gripCurlBase * 0.90,
-            gripCurlBase * 0.66,
+            gripHook * 0.82,
+            gripHook * 0.94,
+            gripHook * 0.76,
             handSideSign * 0.03
         );
         applyFingerChainCurlAngles(
             fingerChains.pinkyFingerChain,
-            gripCurlBase * 0.75,
-            gripCurlBase * 0.92,
-            gripCurlBase * 0.68,
+            gripHook * 0.86,
+            gripHook * 0.96,
+            gripHook * 0.80,
             handSideSign * 0.06
         );
 
         const rawWristBend = handSideSign > 0 ? safePose.rightWristBend : safePose.leftWristBend;
-        wristRotation.x = readSafeCoordinateAxis(rawWristBend, 'x', 0.06)
-            + Math.sin(breathPhaseValue) * 0.010
-            + recoilKickValue * 0.08;
-        wristRotation.y = readSafeCoordinateAxis(rawWristBend, 'y', handSideSign * 0.10)
-            + handSideSign * 0.12;
-        wristRotation.z = readSafeCoordinateAxis(rawWristBend, 'z', -handSideSign * 0.08)
-            + Math.cos(breathPhaseValue * 0.8) * 0.008;
+        wristRotation.x = readSafeCoordinateAxis(rawWristBend, 'x', 0.16)
+            + Math.sin(breathPhaseValue) * 0.008
+            + recoilKickValue * 0.07;
+        wristRotation.y = readSafeCoordinateAxis(rawWristBend, 'y', -handSideSign * 0.12)
+            + Math.cos(breathPhaseValue * 0.7) * 0.006;
+        wristRotation.z = readSafeCoordinateAxis(rawWristBend, 'z', handSideSign * 0.08);
     }
 
     class FirstPersonTacticalHandsController {
@@ -741,15 +724,15 @@
             const rawElbowBend = handSideSign > 0 ? safePose.rightElbowBend : safePose.leftElbowBend;
 
             shoulderRoot.rotation.set(
-                jointAngles.shoulderPitchX * 0.52 + readSafeCoordinateAxis(rawUpperArm, 'x', 0.0) * 0.25 - 0.14,
-                jointAngles.shoulderYawY * 0.55 + readSafeCoordinateAxis(rawUpperArm, 'y', 0.0) * 0.25 + handSideSign * 0.08,
-                jointAngles.shoulderRollZ * 0.55 + readSafeCoordinateAxis(rawUpperArm, 'z', 0.0) * 0.25 - handSideSign * 0.10
+                jointAngles.shoulderPitchX * 0.50 + readSafeCoordinateAxis(rawUpperArm, 'x', 0.0) * 0.25 - 0.12,
+                jointAngles.shoulderYawY * 0.52 + readSafeCoordinateAxis(rawUpperArm, 'y', 0.0) * 0.25 + handSideSign * 0.06,
+                jointAngles.shoulderRollZ * 0.52 + readSafeCoordinateAxis(rawUpperArm, 'z', 0.0) * 0.25 - handSideSign * 0.08
             );
 
             elbowJoint.rotation.set(
-                jointAngles.elbowPitchX * 0.65 + readSafeCoordinateAxis(rawElbowBend, 'x', 0.0) * 0.22 - 0.12,
-                jointAngles.elbowYawY + readSafeCoordinateAxis(rawElbowBend, 'y', 0.0) + handSideSign * 0.06,
-                jointAngles.elbowRollZ + readSafeCoordinateAxis(rawElbowBend, 'z', 0.0) - handSideSign * 0.06
+                jointAngles.elbowPitchX * 0.62 + readSafeCoordinateAxis(rawElbowBend, 'x', 0.0) * 0.22 - 0.10,
+                jointAngles.elbowYawY + readSafeCoordinateAxis(rawElbowBend, 'y', 0.0) + handSideSign * 0.05,
+                jointAngles.elbowRollZ + readSafeCoordinateAxis(rawElbowBend, 'z', 0.0) - handSideSign * 0.04
             );
         }
 
@@ -795,35 +778,31 @@
             const currentPose = StancePoseDefinitions[this.currentPoseKey] || StancePoseDefinitions.rifle_hip;
 
             const vectors = this.scratchVectors;
-            const upperArmLength = 0.22;
-            const forearmAndWristLength = 0.23;
+            const upperArmLength = 0.20;
+            const forearmAndWristLength = 0.21;
 
-            this.transformLocalCameraOffsetToWorld(0.25, -0.24, -0.06, vectors.rightShoulderWorld);
-            this.transformLocalCameraOffsetToWorld(-0.25, -0.24, -0.06, vectors.leftShoulderWorld);
+            // 肩部 anchors 放在鏡頭下方偏側邊，讓大臂與小臂往槍身方向收攏
+            this.transformLocalCameraOffsetToWorld(0.24, -0.27, -0.05, vectors.rightShoulderWorld);
+            this.transformLocalCameraOffsetToWorld(-0.14, -0.27, -0.06, vectors.leftShoulderWorld);
 
             const adsFactor = this.aimDownSightBlend;
-            const recoilBackZ = this.recoilKickAmount * 0.022;
+            const recoilBackZ = this.recoilKickAmount * 0.025;
             const recoilLiftY = this.recoilKickAmount * 0.012;
 
-            const rightOffset = weaponAlignment.rightHandOffset;
-            const leftHipPos = weaponAlignment.leftHandHipPosition;
-            const leftAimPos = weaponAlignment.leftHandAimPosition;
-            const reloadOffset = weaponAlignment.reloadMagazineOffset;
-            const reloadPullY = weaponAlignment.reloadPullDistanceY;
-
+            // 右手扣住握把
             const rightWristLocalX = linearInterpolateValue(
-                0.175 + rightOffset.x,
-                0.115 + rightOffset.x,
+                weaponAlignment.rightHandHip.x,
+                weaponAlignment.rightHandAds.x,
                 adsFactor
             ) + bobX;
             const rightWristLocalY = linearInterpolateValue(
-                -0.195 + rightOffset.y,
-                -0.145 + rightOffset.y,
+                weaponAlignment.rightHandHip.y,
+                weaponAlignment.rightHandAds.y,
                 adsFactor
             ) + recoilLiftY + bobY;
             const rightWristLocalZ = linearInterpolateValue(
-                -0.255 + rightOffset.z,
-                -0.275 + rightOffset.z,
+                weaponAlignment.rightHandHip.z,
+                weaponAlignment.rightHandAds.z,
                 adsFactor
             ) + recoilBackZ + bobZ;
 
@@ -834,9 +813,22 @@
                 vectors.rightTargetWristWorld
             );
 
-            let leftWristLocalX = linearInterpolateValue(leftHipPos.x, leftAimPos.x, adsFactor) + bobX;
-            let leftWristLocalY = linearInterpolateValue(leftHipPos.y, leftAimPos.y, adsFactor) + recoilLiftY * 0.8 + bobY;
-            let leftWristLocalZ = linearInterpolateValue(leftHipPos.z, leftAimPos.z, adsFactor) + recoilBackZ + bobZ;
+            // 左手托住並扣住護木下方
+            let leftWristLocalX = linearInterpolateValue(
+                weaponAlignment.leftHandHip.x,
+                weaponAlignment.leftHandAds.x,
+                adsFactor
+            ) + bobX;
+            let leftWristLocalY = linearInterpolateValue(
+                weaponAlignment.leftHandHip.y,
+                weaponAlignment.leftHandAds.y,
+                adsFactor
+            ) + recoilLiftY * 0.8 + bobY;
+            let leftWristLocalZ = linearInterpolateValue(
+                weaponAlignment.leftHandHip.z,
+                weaponAlignment.leftHandAds.z,
+                adsFactor
+            ) + recoilBackZ + bobZ;
 
             if (this.isReloadingActive) {
                 const reloadProgress = clampNumericValue(
@@ -845,13 +837,13 @@
                     1.0
                 );
                 const reloadArcWave = Math.sin(reloadProgress * Math.PI);
-                leftWristLocalX = linearInterpolateValue(leftWristLocalX, reloadOffset.x, reloadArcWave);
+                leftWristLocalX = linearInterpolateValue(leftWristLocalX, weaponAlignment.reloadLeftHand.x, reloadArcWave);
                 leftWristLocalY = linearInterpolateValue(
                     leftWristLocalY,
-                    reloadOffset.y + reloadPullY * Math.sin(reloadProgress * Math.PI * 2.0),
+                    weaponAlignment.reloadLeftHand.y + weaponAlignment.reloadPullY * Math.sin(reloadProgress * Math.PI * 2.0),
                     reloadArcWave
                 );
-                leftWristLocalZ = linearInterpolateValue(leftWristLocalZ, reloadOffset.z, reloadArcWave);
+                leftWristLocalZ = linearInterpolateValue(leftWristLocalZ, weaponAlignment.reloadLeftHand.z, reloadArcWave);
             } else if (this.isPlatingActive) {
                 const plateProgress = clampNumericValue(
                     this.plateElapsedSeconds / Math.max(0.1, this.plateTotalDuration),
@@ -860,8 +852,8 @@
                 );
                 const plateWave = Math.sin(plateProgress * Math.PI);
                 leftWristLocalX = linearInterpolateValue(leftWristLocalX, 0.04, plateWave);
-                leftWristLocalY = linearInterpolateValue(leftWristLocalY, -0.14 + plateWave * 0.04, plateWave);
-                leftWristLocalZ = linearInterpolateValue(leftWristLocalZ, -0.24, plateWave);
+                leftWristLocalY = linearInterpolateValue(leftWristLocalY, -0.15 + plateWave * 0.04, plateWave);
+                leftWristLocalZ = linearInterpolateValue(leftWristLocalZ, -0.26, plateWave);
             }
 
             this.transformLocalCameraOffsetToWorld(
