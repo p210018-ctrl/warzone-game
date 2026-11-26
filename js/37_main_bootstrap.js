@@ -55,6 +55,79 @@
             return TacticalWarfare.MultiTouchController || TacticalWarfare.InputController || TacticalWarfare.InputSystem || null;
         }
 
+        _resolveSceneAndCamera() {
+            const rendererCore = TacticalWarfare.RendererCore || null;
+            const scene = (rendererCore && typeof rendererCore.getScene === 'function' ? rendererCore.getScene() : null)
+                || (rendererCore && rendererCore.scene)
+                || null;
+            const camera = (rendererCore && typeof rendererCore.getCamera === 'function' ? rendererCore.getCamera() : null)
+                || (rendererCore && rendererCore.camera)
+                || null;
+            const weaponCamera = (rendererCore && typeof rendererCore.getWeaponCamera === 'function' ? rendererCore.getWeaponCamera() : null)
+                || (rendererCore && rendererCore.weaponCamera)
+                || null;
+
+            return {
+                scene: scene,
+                camera: camera,
+                weaponCamera: weaponCamera
+            };
+        }
+
+        _ensureHandsController(scene, camera, weaponCamera) {
+            const resolved = {
+                scene: scene || this._resolveSceneAndCamera().scene,
+                camera: camera || this._resolveSceneAndCamera().camera,
+                weaponCamera: weaponCamera || this._resolveSceneAndCamera().weaponCamera
+            };
+
+            let handsCtrl = TacticalWarfare.FpHandsAnatomy || TacticalWarfare.fpHandsAnatomy || null;
+
+            if (!handsCtrl && typeof TacticalWarfare.createTacticalHandsController === 'function') {
+                handsCtrl = TacticalWarfare.createTacticalHandsController(resolved.scene, resolved.camera);
+            }
+
+            if (handsCtrl) {
+                if (typeof handsCtrl.init === 'function') {
+                    handsCtrl.init({
+                        scene: resolved.scene,
+                        parentGroup: resolved.weaponCamera || resolved.camera,
+                        camera: resolved.camera
+                    });
+                } else {
+                    if (resolved.scene && !handsCtrl.sceneInstance) {
+                        handsCtrl.sceneInstance = resolved.scene;
+                    }
+                    if (resolved.camera) {
+                        handsCtrl.cameraInstance = resolved.camera;
+                    }
+                    if (resolved.scene && handsCtrl.dualArmRig && handsCtrl.dualArmRig.rigRootGroup) {
+                        if (handsCtrl.dualArmRig.rigRootGroup.parent !== resolved.scene) {
+                            resolved.scene.add(handsCtrl.dualArmRig.rigRootGroup);
+                        }
+                    }
+                }
+            }
+
+            return handsCtrl;
+        }
+
+        _setHandsVisible(visible) {
+            const isVisible = Boolean(visible);
+            const handsCtrl = TacticalWarfare.FpHandsAnatomy || TacticalWarfare.fpHandsAnatomy || null;
+            if (!handsCtrl) {
+                return;
+            }
+
+            if (typeof handsCtrl.setVisible === 'function') {
+                handsCtrl.setVisible(isVisible);
+            }
+
+            if (handsCtrl.dualArmRig && handsCtrl.dualArmRig.rigRootGroup) {
+                handsCtrl.dualArmRig.rigRootGroup.visible = isVisible;
+            }
+        }
+
         _setGamePhase(nextPhase) {
             if (!GameState) return;
             if (typeof GameState.setPhase === 'function') {
@@ -111,15 +184,10 @@
                 TacticalWarfare.RendererCore.init(opts.renderer || opts);
             }
 
-            const scene = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getScene === 'function'
-                ? TacticalWarfare.RendererCore.getScene()
-                : null;
-            const camera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
-                ? TacticalWarfare.RendererCore.getCamera()
-                : null;
-            const weaponCamera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getWeaponCamera === 'function'
-                ? TacticalWarfare.RendererCore.getWeaponCamera()
-                : null;
+            const resolvedView = this._resolveSceneAndCamera();
+            const scene = resolvedView.scene;
+            const camera = resolvedView.camera;
+            const weaponCamera = resolvedView.weaponCamera;
 
             if (camera && typeof camera.fov === 'number' && this._baseFov === null) {
                 this._baseFov = camera.fov;
@@ -179,12 +247,7 @@
                 });
             }
 
-            if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.init === 'function') {
-                TacticalWarfare.FpHandsAnatomy.init({
-                    parentGroup: weaponCamera || camera,
-                    camera: camera
-                });
-            }
+            this._ensureHandsController(scene, camera, weaponCamera);
 
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.init === 'function') {
                 TacticalWarfare.BallisticsRecoil.init({
@@ -430,12 +493,9 @@
         _throwGrenade() {
             if (this.paused || this._grenadeCooldown > 0) return;
             const THREE = global.THREE;
-            const scene = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getScene === 'function'
-                ? TacticalWarfare.RendererCore.getScene()
-                : null;
-            const camera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
-                ? TacticalWarfare.RendererCore.getCamera()
-                : null;
+            const resolvedView = this._resolveSceneAndCamera();
+            const scene = resolvedView.scene;
+            const camera = resolvedView.camera;
 
             if (!THREE || !scene) return;
             if (!this._grenadeGroup) {
@@ -633,9 +693,9 @@
                 }
             }
 
-            if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.setVisible === 'function') {
-                TacticalWarfare.FpHandsAnatomy.setVisible(true);
-            }
+            const resolvedView = this._resolveSceneAndCamera();
+            this._ensureHandsController(resolvedView.scene, resolvedView.camera, resolvedView.weaponCamera);
+            this._setHandsVisible(true);
 
             const activeId = (TacticalWarfare.BallisticsRecoil && TacticalWarfare.BallisticsRecoil.activeWeaponId) || this._activeWeaponId || 'M4A1';
             this._applyActiveWeaponVisibility(activeId);
@@ -657,6 +717,7 @@
         returnToLobby() {
             this._setGamePhase('lobby');
             this._clearGrenades();
+            this._setHandsVisible(false);
 
             const inputCtrl = this._getInputController();
             if (inputCtrl) {
@@ -729,6 +790,7 @@
                 TacticalWarfare.UiLobby3d.isActive();
 
             if (isLobbyActive) {
+                this._setHandsVisible(false);
                 TacticalWarfare.UiLobby3d.update(dt);
             } else if (phase === 'combat') {
                 const inputCtrl = this._getInputController();
@@ -758,9 +820,8 @@
                     ? TacticalWarfare.PlayerMovement.update(dt)
                     : null;
 
-                const camera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
-                    ? TacticalWarfare.RendererCore.getCamera()
-                    : null;
+                const resolvedView = this._resolveSceneAndCamera();
+                const camera = resolvedView.camera;
                 if (camera && typeof camera.fov === 'number') {
                     if (this._baseFov === null) {
                         this._baseFov = camera.fov;
@@ -779,8 +840,15 @@
                     TacticalWarfare.FpReloadInspect.update(dt);
                 }
 
-                if (TacticalWarfare.FpHandsAnatomy && typeof TacticalWarfare.FpHandsAnatomy.update === 'function') {
-                    TacticalWarfare.FpHandsAnatomy.update(dt, moveRes && moveRes.bobOffset ? moveRes.bobOffset : null);
+                const bobOffsetArg = moveRes && moveRes.bobOffset ? moveRes.bobOffset : null;
+                const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera);
+                if (handsCtrl) {
+                    this._setHandsVisible(true);
+                    if (typeof handsCtrl.update === 'function') {
+                        handsCtrl.update(dt, bobOffsetArg);
+                    } else if (typeof TacticalWarfare.updateTacticalHandsController === 'function') {
+                        TacticalWarfare.updateTacticalHandsController(dt, resolvedView.scene, camera);
+                    }
                 }
 
                 if (TacticalWarfare.WeaponController && typeof TacticalWarfare.WeaponController.update === 'function') {
