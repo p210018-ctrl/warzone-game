@@ -20,7 +20,7 @@
         displayName: 'MP5 Tactical',
         hipPosition: { x: 0.165, y: -0.158, z: -0.32 },
         adsPosition: { x: 0.0, y: -0.122, z: -0.26 },
-        sprintPosition: { x: 0.20, y: -0.175, z: -0.28 },
+        sprintPosition: { x: 0.18, y: -0.172, z: -0.32 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.46 },
         recoilKickZ: 0.026,
         recoilKickY: 0.009,
@@ -401,9 +401,9 @@
                 targetRotZ = -0.20;
             } else if (this._isSprinting && !this._isAiming) {
                 targetPos = MP5_SPECS.sprintPosition;
-                targetRotX = -0.24;
-                targetRotY = 0.40;
-                targetRotZ = -0.16;
+                targetRotX = -0.07;
+                targetRotY = 0.12;
+                targetRotZ = -0.07;
             } else if (this._isAiming) {
                 targetPos = MP5_SPECS.adsPosition;
             }
