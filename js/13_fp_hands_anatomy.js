@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱戰術雙手骨架、雙關節解算與槍械握持對齊模組（槍械即時連動版）
+ * 第一人稱戰術雙手骨架、雙關節解算與槍械即時聯動模組
  * ============================================================================
  */
 (function (globalScope) {
@@ -46,36 +46,36 @@
 
     const WeaponGripAlignmentTable = Object.freeze({
         M4A1: Object.freeze({
-            rightHandHip: Object.freeze({ x: 0.172, y: -0.245, z: -0.345 }),
-            rightHandAds: Object.freeze({ x: 0.004, y: -0.145, z: -0.345 }),
-            leftHandHip: Object.freeze({ x: 0.145, y: -0.185, z: -0.545 }),
-            leftHandAds: Object.freeze({ x: -0.025, y: -0.088, z: -0.545 }),
-            reloadLeftHand: Object.freeze({ x: 0.115, y: -0.255, z: -0.435 }),
-            reloadPullY: -0.035
+            rightHandHip: Object.freeze({ x: 0.165, y: -0.220, z: -0.340 }),
+            rightHandAds: Object.freeze({ x: 0.015, y: -0.145, z: -0.340 }),
+            leftHandHip: Object.freeze({ x: 0.120, y: -0.175, z: -0.520 }),
+            leftHandAds: Object.freeze({ x: -0.025, y: -0.095, z: -0.520 }),
+            reloadLeftHand: Object.freeze({ x: 0.085, y: -0.225, z: -0.410 }),
+            reloadPullY: -0.045
         }),
         MP5: Object.freeze({
-            rightHandHip: Object.freeze({ x: 0.170, y: -0.245, z: -0.340 }),
-            rightHandAds: Object.freeze({ x: 0.004, y: -0.145, z: -0.340 }),
-            leftHandHip: Object.freeze({ x: 0.135, y: -0.180, z: -0.500 }),
-            leftHandAds: Object.freeze({ x: -0.020, y: -0.085, z: -0.500 }),
-            reloadLeftHand: Object.freeze({ x: 0.110, y: -0.250, z: -0.420 }),
-            reloadPullY: -0.030
-        }),
-        AX50: Object.freeze({
-            rightHandHip: Object.freeze({ x: 0.175, y: -0.250, z: -0.350 }),
-            rightHandAds: Object.freeze({ x: 0.004, y: -0.150, z: -0.350 }),
-            leftHandHip: Object.freeze({ x: 0.150, y: -0.190, z: -0.580 }),
-            leftHandAds: Object.freeze({ x: -0.025, y: -0.092, z: -0.580 }),
-            reloadLeftHand: Object.freeze({ x: 0.115, y: -0.260, z: -0.440 }),
+            rightHandHip: Object.freeze({ x: 0.165, y: -0.220, z: -0.335 }),
+            rightHandAds: Object.freeze({ x: 0.015, y: -0.145, z: -0.335 }),
+            leftHandHip: Object.freeze({ x: 0.115, y: -0.170, z: -0.485 }),
+            leftHandAds: Object.freeze({ x: -0.020, y: -0.092, z: -0.485 }),
+            reloadLeftHand: Object.freeze({ x: 0.080, y: -0.220, z: -0.400 }),
             reloadPullY: -0.040
         }),
+        AX50: Object.freeze({
+            rightHandHip: Object.freeze({ x: 0.170, y: -0.225, z: -0.345 }),
+            rightHandAds: Object.freeze({ x: 0.015, y: -0.150, z: -0.345 }),
+            leftHandHip: Object.freeze({ x: 0.125, y: -0.180, z: -0.550 }),
+            leftHandAds: Object.freeze({ x: -0.025, y: -0.098, z: -0.550 }),
+            reloadLeftHand: Object.freeze({ x: 0.085, y: -0.230, z: -0.420 }),
+            reloadPullY: -0.045
+        }),
         X16: Object.freeze({
-            rightHandHip: Object.freeze({ x: 0.165, y: -0.235, z: -0.330 }),
-            rightHandAds: Object.freeze({ x: 0.002, y: -0.135, z: -0.330 }),
-            leftHandHip: Object.freeze({ x: 0.145, y: -0.240, z: -0.365 }),
-            leftHandAds: Object.freeze({ x: -0.015, y: -0.140, z: -0.365 }),
-            reloadLeftHand: Object.freeze({ x: 0.105, y: -0.255, z: -0.380 }),
-            reloadPullY: -0.030
+            rightHandHip: Object.freeze({ x: 0.160, y: -0.215, z: -0.325 }),
+            rightHandAds: Object.freeze({ x: 0.012, y: -0.135, z: -0.325 }),
+            leftHandHip: Object.freeze({ x: 0.125, y: -0.210, z: -0.365 }),
+            leftHandAds: Object.freeze({ x: -0.015, y: -0.130, z: -0.365 }),
+            reloadLeftHand: Object.freeze({ x: 0.080, y: -0.225, z: -0.370 }),
+            reloadPullY: -0.035
         })
     });
 
@@ -99,8 +99,8 @@
             gripCurl: Object.freeze({ x: 0.94 })
         }),
         reload: Object.freeze({
-            rightWristBend: Object.freeze({ x: 0.16, y: -0.12, z: 0.08 }),
-            leftWristBend: Object.freeze({ x: 0.28, y: 0.18, z: -0.12 }),
+            rightWristBend: Object.freeze({ x: 0.22, y: -0.10, z: 0.14 }),
+            leftWristBend: Object.freeze({ x: 0.30, y: 0.22, z: -0.10 }),
             indexCurl: Object.freeze({ x: 0.72 }),
             gripCurl: Object.freeze({ x: 0.95 })
         }),
@@ -539,34 +539,24 @@
             + (weaponRollOffset || 0);
     }
 
-    function resolveActiveWeaponTransformDelta(weaponCode) {
-        const keyMap = {
-            M4A1: 'WeaponM4Urgi',
-            MP5: 'WeaponSmgMp5',
-            AX50: 'WeaponSniperAx50',
-            X16: 'WeaponPistolX16'
-        };
-        const modKey = keyMap[weaponCode] || 'WeaponM4Urgi';
-        const mod = TacticalWarfareNamespace[modKey];
-        if (!mod) return null;
-
-        const targetObj = mod.weaponGroup
-            || mod.rootGroup
-            || mod.modelGroup
-            || mod.gunGroup
-            || mod.mesh
-            || (mod.instance && (mod.instance.weaponGroup || mod.instance.rootGroup || mod.instance.mesh))
-            || null;
-
-        if (!targetObj || !targetObj.position) return null;
-
-        return {
-            dx: typeof targetObj.position.x === 'number' ? targetObj.position.x : 0,
-            dy: typeof targetObj.position.y === 'number' ? targetObj.position.y : 0,
-            dz: typeof targetObj.position.z === 'number' ? targetObj.position.z : 0,
-            rx: targetObj.rotation && typeof targetObj.rotation.x === 'number' ? targetObj.rotation.x : 0,
-            rz: targetObj.rotation && typeof targetObj.rotation.z === 'number' ? targetObj.rotation.z : 0
-        };
+    function findVisibleWeaponObjectInTree(rootObj, handsRootObj) {
+        if (!rootObj || !Array.isArray(rootObj.children)) return null;
+        for (let i = 0; i < rootObj.children.length; i = i + 1) {
+            const child = rootObj.children[i];
+            if (!child || child === handsRootObj || !child.visible) continue;
+            const n = (child.name || '').toLowerCase();
+            if (n.indexOf('hand') !== -1 || n.indexOf('grenade') !== -1 || n.indexOf('light') !== -1) {
+                continue;
+            }
+            if (n.indexOf('weapon') !== -1 || n.indexOf('m4') !== -1 || n.indexOf('mp5') !== -1 || n.indexOf('ax50') !== -1 || n.indexOf('x16') !== -1 || n.indexOf('gun') !== -1) {
+                return child;
+            }
+            if (child.children && child.children.length > 0) {
+                const nested = findVisibleWeaponObjectInTree(child, handsRootObj);
+                if (nested) return nested;
+            }
+        }
+        return null;
     }
 
     class FirstPersonTacticalHandsController {
@@ -595,6 +585,11 @@
             this.isPlatingActive = false;
             this.plateElapsedSeconds = 0.0;
             this.plateTotalDuration = 1.55;
+
+            this._lastWeaponObj = null;
+            this._lastWeaponPos = null;
+            this._lastWeaponRot = null;
+            this._weaponDelta = { dx: 0, dy: 0, dz: 0, rx: 0, rz: 0 };
 
             this.scratchVectors = {
                 cameraForward: new ThreeModule.Vector3(),
@@ -721,6 +716,59 @@
                     this.plateTotalDuration = payload.duration;
                 }
             });
+        }
+
+        _sampleWeaponObjectMotion(deltaSeconds) {
+            const handsRoot = this.dualArmRig ? this.dualArmRig.rigRootGroup : null;
+            let wObj = findVisibleWeaponObjectInTree(this.attachedWeaponGroup, handsRoot);
+            if (!wObj) {
+                wObj = findVisibleWeaponObjectInTree(this.cameraInstance, handsRoot);
+            }
+            if (!wObj) {
+                wObj = findVisibleWeaponObjectInTree(this.sceneInstance, handsRoot);
+            }
+
+            if (!wObj || !wObj.position) {
+                this._weaponDelta.dx = linearInterpolateValue(this._weaponDelta.dx, 0, Math.min(1, deltaSeconds * 10));
+                this._weaponDelta.dy = linearInterpolateValue(this._weaponDelta.dy, 0, Math.min(1, deltaSeconds * 10));
+                this._weaponDelta.dz = linearInterpolateValue(this._weaponDelta.dz, 0, Math.min(1, deltaSeconds * 10));
+                this._weaponDelta.rx = linearInterpolateValue(this._weaponDelta.rx, 0, Math.min(1, deltaSeconds * 10));
+                this._weaponDelta.rz = linearInterpolateValue(this._weaponDelta.rz, 0, Math.min(1, deltaSeconds * 10));
+                return this._weaponDelta;
+            }
+
+            if (this._lastWeaponObj !== wObj || !this._lastWeaponPos || !this._lastWeaponRot) {
+                this._lastWeaponObj = wObj;
+                this._lastWeaponPos = { x: wObj.position.x, y: wObj.position.y, z: wObj.position.z };
+                this._lastWeaponRot = {
+                    x: wObj.rotation ? wObj.rotation.x : 0,
+                    z: wObj.rotation ? wObj.rotation.z : 0
+                };
+                return this._weaponDelta;
+            }
+
+            const rawDx = wObj.position.x - this._lastWeaponPos.x;
+            const rawDy = wObj.position.y - this._lastWeaponPos.y;
+            const rawDz = wObj.position.z - this._lastWeaponPos.z;
+            const curRx = wObj.rotation ? wObj.rotation.x : 0;
+            const curRz = wObj.rotation ? wObj.rotation.z : 0;
+            const rawDrx = curRx - this._lastWeaponRot.x;
+            const rawDrz = curRz - this._lastWeaponRot.z;
+
+            this._lastWeaponPos.x = wObj.position.x;
+            this._lastWeaponPos.y = wObj.position.y;
+            this._lastWeaponPos.z = wObj.position.z;
+            this._lastWeaponRot.x = curRx;
+            this._lastWeaponRot.z = curRz;
+
+            const followRate = Math.min(1, deltaSeconds * 18);
+            this._weaponDelta.dx = linearInterpolateValue(this._weaponDelta.dx, clampNumericValue(rawDx * 2.5, -0.06, 0.06), followRate);
+            this._weaponDelta.dy = linearInterpolateValue(this._weaponDelta.dy, clampNumericValue(rawDy * 2.5, -0.06, 0.06), followRate);
+            this._weaponDelta.dz = linearInterpolateValue(this._weaponDelta.dz, clampNumericValue(rawDz * 2.5, -0.06, 0.06), followRate);
+            this._weaponDelta.rx = linearInterpolateValue(this._weaponDelta.rx, clampNumericValue(rawDrx * 2.0, -0.35, 0.35), followRate);
+            this._weaponDelta.rz = linearInterpolateValue(this._weaponDelta.rz, clampNumericValue(rawDrz * 2.0, -0.35, 0.35), followRate);
+
+            return this._weaponDelta;
         }
 
         synchronizeStateFromGameStore(deltaSeconds, overrideState) {
@@ -903,20 +951,14 @@
 
             const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode] || WeaponGripAlignmentTable.M4A1;
             const currentPose = StancePoseDefinitions[this.currentPoseKey] || StancePoseDefinitions.rifle_hip;
-            const weaponDelta = resolveActiveWeaponTransformDelta(this.activeWeaponCode);
-
-            const gunOffsetX = weaponDelta ? clampNumericValue(weaponDelta.dx * 0.45, -0.08, 0.08) : 0.0;
-            const gunOffsetY = weaponDelta ? clampNumericValue(weaponDelta.dy * 0.45, -0.08, 0.08) : 0.0;
-            const gunOffsetZ = weaponDelta ? clampNumericValue(weaponDelta.dz * 0.45, -0.08, 0.08) : 0.0;
-            const gunPitch = weaponDelta ? clampNumericValue(weaponDelta.rx * 0.5, -0.35, 0.35) : 0.0;
-            const gunRoll = weaponDelta ? clampNumericValue(weaponDelta.rz * 0.5, -0.35, 0.35) : 0.0;
+            const motion = this._sampleWeaponObjectMotion(deltaSeconds);
 
             const vectors = this.scratchVectors;
             const upperArmLength = 0.20;
             const forearmAndWristLength = 0.21;
 
-            this.transformLocalCameraOffsetToWorld(0.24 + gunOffsetX * 0.5, -0.27 + gunOffsetY * 0.5, -0.05, vectors.rightShoulderWorld);
-            this.transformLocalCameraOffsetToWorld(-0.14 + gunOffsetX * 0.5, -0.27 + gunOffsetY * 0.5, -0.06, vectors.leftShoulderWorld);
+            this.transformLocalCameraOffsetToWorld(0.24 + motion.dx * 0.5, -0.26 + motion.dy * 0.5, -0.05, vectors.rightShoulderWorld);
+            this.transformLocalCameraOffsetToWorld(-0.14 + motion.dx * 0.5, -0.26 + motion.dy * 0.5, -0.06, vectors.leftShoulderWorld);
 
             const adsFactor = this.aimDownSightBlend;
             const recoilBackZ = this.recoilKickAmount * 0.025;
@@ -926,17 +968,17 @@
                 weaponAlignment.rightHandHip.x,
                 weaponAlignment.rightHandAds.x,
                 adsFactor
-            ) + bobX + gunOffsetX;
+            ) + bobX + motion.dx;
             const rightWristLocalY = linearInterpolateValue(
                 weaponAlignment.rightHandHip.y,
                 weaponAlignment.rightHandAds.y,
                 adsFactor
-            ) + recoilLiftY + bobY + sprintDropY + gunOffsetY;
+            ) + recoilLiftY + bobY + sprintDropY + motion.dy;
             const rightWristLocalZ = linearInterpolateValue(
                 weaponAlignment.rightHandHip.z,
                 weaponAlignment.rightHandAds.z,
                 adsFactor
-            ) + recoilBackZ + bobZ + gunOffsetZ;
+            ) + recoilBackZ + bobZ + motion.dz;
 
             this.transformLocalCameraOffsetToWorld(
                 rightWristLocalX,
@@ -949,17 +991,17 @@
                 weaponAlignment.leftHandHip.x,
                 weaponAlignment.leftHandAds.x,
                 adsFactor
-            ) + bobX + gunOffsetX;
+            ) + bobX + motion.dx;
             let leftWristLocalY = linearInterpolateValue(
                 weaponAlignment.leftHandHip.y,
                 weaponAlignment.leftHandAds.y,
                 adsFactor
-            ) + recoilLiftY * 0.8 + bobY + sprintDropY + gunOffsetY;
+            ) + recoilLiftY * 0.8 + bobY + sprintDropY + motion.dy;
             let leftWristLocalZ = linearInterpolateValue(
                 weaponAlignment.leftHandHip.z,
                 weaponAlignment.leftHandAds.z,
                 adsFactor
-            ) + recoilBackZ + bobZ + gunOffsetZ;
+            ) + recoilBackZ + bobZ + motion.dz;
 
             if (this.isReloadingActive) {
                 const reloadProgress = clampNumericValue(
@@ -1021,8 +1063,8 @@
                 this.triggerPullAmount,
                 this.elapsedTimeSeconds * 2.4,
                 this.recoilKickAmount,
-                gunPitch,
-                gunRoll
+                motion.rx,
+                motion.rz
             );
 
             applyTacticalHandPoseToSide(
@@ -1032,8 +1074,8 @@
                 0.0,
                 this.elapsedTimeSeconds * 2.4 + 0.7,
                 this.recoilKickAmount,
-                gunPitch,
-                gunRoll
+                motion.rx,
+                motion.rz
             );
 
             this._rightPos.x = Number(rightWristLocalX.toFixed(3));
