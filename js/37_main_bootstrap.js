@@ -16,7 +16,6 @@
     const EventBus = TacticalWarfare.EventBus;
     const GameState = TacticalWarfare.GameState;
 
-    // [37] 四把槍模組對應表
     const WEAPON_MODULES = Object.freeze([
         { id: 'M4A1', key: 'WeaponM4Urgi' },
         { id: 'MP5', key: 'WeaponSmgMp5' },
@@ -44,7 +43,6 @@
             this._lastTimeMs = 0;
             this._unsubscribers = [];
 
-            // [37] 切槍、瞄準與手雷執行期狀態
             this._activeWeaponId = 'M4A1';
             this._isAiming = false;
             this._baseFov = null;
@@ -68,7 +66,6 @@
             }
         }
 
-        // [37] 取得所有已載入的武器模組實例
         _getWeaponEntries() {
             const list = [];
             for (let i = 0; i < WEAPON_MODULES.length; i = i + 1) {
@@ -81,18 +78,26 @@
             return list;
         }
 
-        // [37] 同步目前裝備武器在四把槍模中的顯示狀態
         _applyActiveWeaponVisibility(weaponId) {
             const targetId = weaponId || this._activeWeaponId || 'M4A1';
             this._activeWeaponId = targetId;
+            this._isAiming = false;
+
+            const inputCtrl = this._getInputController();
+            if (inputCtrl && typeof inputCtrl.clearAdsToggle === 'function') {
+                inputCtrl.clearAdsToggle();
+            }
 
             if (GameState && typeof GameState.patch === 'function') {
-                GameState.patch('weapons', { activeId: targetId }, true);
+                GameState.patch('weapons', { activeId: targetId, isAiming: false }, true);
             }
 
             const entries = this._getWeaponEntries();
             for (let i = 0; i < entries.length; i = i + 1) {
                 const entry = entries[i];
+                if (typeof entry.mod.setAiming === 'function') {
+                    entry.mod.setAiming(false);
+                }
                 if (typeof entry.mod.setVisible === 'function') {
                     entry.mod.setVisible(entry.id === targetId);
                 }
@@ -199,7 +204,6 @@
                 });
             }
 
-            // [37] 初始化所有已載入的武器模型（M4A1 / MP5 / AX50 / X16）
             const initialActiveId = (GameState && typeof GameState.get === 'function' && GameState.get('weapons.activeId', 'M4A1')) || 'M4A1';
             this._activeWeaponId = initialActiveId;
             const weaponEntries = this._getWeaponEntries();
@@ -392,7 +396,6 @@
                 );
             }
 
-            // [37] 監聽武器裝備事件以切換顯示模型
             if (Events.WEAPON_EQUIP) {
                 this._unsubscribers.push(
                     EventBus.on(Events.WEAPON_EQUIP, (payload) => {
@@ -404,7 +407,6 @@
                 );
             }
 
-            // [37] 監聽手雷輸入事件
             const inputActionEvt = Events.INPUT_ACTION || 'input:action';
             this._unsubscribers.push(
                 EventBus.on(inputActionEvt, (payload) => {
@@ -416,7 +418,6 @@
             );
         }
 
-        // [37] 投擲手雷並安排爆炸
         _throwGrenade() {
             if (this.paused || this._grenadeCooldown > 0) return;
             const THREE = global.THREE;
@@ -475,7 +476,6 @@
             });
         }
 
-        // [37] 手雷物理移動與爆炸結算
         _updateGrenades(dt) {
             if (this._grenadeCooldown > 0) {
                 this._grenadeCooldown = Math.max(0, this._grenadeCooldown - dt);
@@ -526,7 +526,6 @@
             this._activeGrenades = remaining;
         }
 
-        // [37] 手雷爆炸特效、震動與範圍傷害
         _detonateGrenade(pos) {
             const blastRadius = 7.5;
             const maxDamage = 140;
@@ -591,7 +590,6 @@
             }
         }
 
-        // [37] 清理殘留手雷
         _clearGrenades() {
             for (let i = 0; i < this._activeGrenades.length; i = i + 1) {
                 const g = this._activeGrenades[i];
@@ -610,7 +608,6 @@
             this.paused = false;
             this._clearGrenades();
 
-            // [37] 每次進入或重新開始戰局時重設彈道執行期旗標
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil._resetRuntimeFlags === 'function') {
                 TacticalWarfare.BallisticsRecoil._resetRuntimeFlags();
             }
@@ -631,7 +628,6 @@
                 TacticalWarfare.FpHandsAnatomy.setVisible(true);
             }
 
-            // [37] 顯示目前裝備的武器模型並隱藏其餘槍模
             const activeId = (TacticalWarfare.BallisticsRecoil && TacticalWarfare.BallisticsRecoil.activeWeaponId) || this._activeWeaponId || 'M4A1';
             this._applyActiveWeaponVisibility(activeId);
 
@@ -728,12 +724,10 @@
             } else if (phase === 'combat') {
                 const inputCtrl = this._getInputController();
 
-                // [37] 檢查手雷 pressedQueue
                 if (inputCtrl && typeof inputCtrl.consumeActionPress === 'function' && inputCtrl.consumeActionPress('grenade')) {
                     this._throwGrenade();
                 }
 
-                // [37] 同步瞄準狀態（ADS）
                 let isAiming = Boolean(GameState && typeof GameState.get === 'function' && GameState.get('weapons.isAiming', false));
                 if (inputCtrl && typeof inputCtrl.isActionActive === 'function') {
                     isAiming = Boolean(inputCtrl.isActionActive('ads'));
@@ -746,7 +740,6 @@
                     GameState.patch('weapons', { isAiming: isAiming }, true);
                 }
 
-                // [37] 同步目前裝備武器 ID
                 const currentWeaponId = (TacticalWarfare.BallisticsRecoil && TacticalWarfare.BallisticsRecoil.activeWeaponId) || this._activeWeaponId || 'M4A1';
                 if (currentWeaponId !== this._activeWeaponId) {
                     this._applyActiveWeaponVisibility(currentWeaponId);
@@ -756,7 +749,6 @@
                     ? TacticalWarfare.PlayerMovement.update(dt)
                     : null;
 
-                // [37] 開鏡 FOV 平滑縮放
                 const camera = TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getCamera === 'function'
                     ? TacticalWarfare.RendererCore.getCamera()
                     : null;
@@ -764,8 +756,7 @@
                     if (this._baseFov === null) {
                         this._baseFov = camera.fov;
                     }
-                    const adsFov = currentWeaponId === 'AX50' ? this._baseFov * 0.45 : this._baseFov * 0.72;
-                    const targetFov = isAiming ? adsFov : this._baseFov;
+                    const targetFov = isAiming ? this._baseFov * 0.72 : this._baseFov;
                     const nextFov = lerp(camera.fov, targetFov, 1 - Math.exp(-16 * dt));
                     if (Math.abs(nextFov - camera.fov) > 0.01) {
                         camera.fov = nextFov;
@@ -783,7 +774,6 @@
                     TacticalWarfare.WeaponController.update(dt, moveRes);
                 }
 
-                // [37] 同步瞄準／衝刺狀態並更新所有已載入的武器模型
                 const isSprinting = Boolean(
                     (inputCtrl && typeof inputCtrl.isActionActive === 'function' && inputCtrl.isActionActive('sprint')) ||
                     (moveRes && moveRes.isSprinting)
@@ -808,7 +798,6 @@
                     TacticalWarfare.BallisticsRecoil.update(dt, isAiming, isMoving);
                 }
 
-                // [37] 更新飛行中的手雷
                 this._updateGrenades(dt);
 
                 const playerCtx = {
