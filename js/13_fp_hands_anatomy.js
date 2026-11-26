@@ -25,44 +25,44 @@
 
     const STANCE_POSES = Object.freeze({
         rifle_hip: {
-            rightArm: { x: -0.18, y: 0.08, z: -0.12 },
-            rightWrist: { x: 0.12, y: -0.05, z: 0.05 },
-            rightIndex: { x: 0.35, y: 0, z: 0 },
-            rightGrip: { x: 0.85, y: 0, z: 0 },
-            leftArm: { x: 0.12, y: 0.24, z: 0.18 },
-            leftWrist: { x: -0.10, y: 0.18, z: -0.08 },
-            leftIndex: { x: 0.72, y: 0, z: 0 },
-            leftGrip: { x: 0.92, y: 0, z: 0 }
+            rightArm: { x: -0.14, y: -0.06, z: -0.08 },
+            rightWrist: { x: 0.14, y: 0.04, z: 0.04 },
+            rightIndex: { x: 0.42, y: 0, z: 0 },
+            rightGrip: { x: 0.96, y: 0, z: 0 },
+            leftArm: { x: -0.12, y: 0.16, z: 0.12 },
+            leftWrist: { x: 0.06, y: 0.12, z: -0.04 },
+            leftIndex: { x: 0.88, y: 0, z: 0 },
+            leftGrip: { x: 1.02, y: 0, z: 0 }
         },
         rifle_ads: {
-            rightArm: { x: -0.10, y: 0.02, z: -0.04 },
-            rightWrist: { x: 0.08, y: 0.0, z: 0.02 },
+            rightArm: { x: -0.08, y: -0.02, z: -0.03 },
+            rightWrist: { x: 0.08, y: 0.02, z: 0.02 },
             rightIndex: { x: 0.45, y: 0, z: 0 },
-            rightGrip: { x: 0.88, y: 0, z: 0 },
-            leftArm: { x: 0.06, y: 0.14, z: 0.10 },
-            leftWrist: { x: -0.06, y: 0.10, z: -0.04 },
-            leftIndex: { x: 0.75, y: 0, z: 0 },
-            leftGrip: { x: 0.95, y: 0, z: 0 }
+            rightGrip: { x: 0.98, y: 0, z: 0 },
+            leftArm: { x: -0.08, y: 0.10, z: 0.08 },
+            leftWrist: { x: 0.04, y: 0.08, z: -0.02 },
+            leftIndex: { x: 0.90, y: 0, z: 0 },
+            leftGrip: { x: 1.04, y: 0, z: 0 }
         },
         pistol_hip: {
-            rightArm: { x: -0.14, y: 0.04, z: -0.08 },
-            rightWrist: { x: 0.15, y: -0.04, z: 0.04 },
-            rightIndex: { x: 0.32, y: 0, z: 0 },
-            rightGrip: { x: 0.88, y: 0, z: 0 },
-            leftArm: { x: -0.16, y: 0.22, z: 0.14 },
-            leftWrist: { x: 0.10, y: 0.26, z: -0.06 },
-            leftIndex: { x: 0.80, y: 0, z: 0 },
-            leftGrip: { x: 0.92, y: 0, z: 0 }
+            rightArm: { x: -0.12, y: -0.04, z: -0.06 },
+            rightWrist: { x: 0.16, y: 0.02, z: 0.03 },
+            rightIndex: { x: 0.38, y: 0, z: 0 },
+            rightGrip: { x: 0.96, y: 0, z: 0 },
+            leftArm: { x: -0.14, y: 0.18, z: 0.10 },
+            leftWrist: { x: 0.08, y: 0.22, z: -0.05 },
+            leftIndex: { x: 0.92, y: 0, z: 0 },
+            leftGrip: { x: 1.02, y: 0, z: 0 }
         },
         reload: {
-            rightArm: { x: -0.24, y: -0.10, z: -0.18 },
-            rightWrist: { x: 0.22, y: 0.14, z: 0.10 },
+            rightArm: { x: -0.18, y: -0.12, z: -0.14 },
+            rightWrist: { x: 0.20, y: 0.10, z: 0.08 },
             rightIndex: { x: 0.55, y: 0, z: 0 },
-            rightGrip: { x: 0.75, y: 0, z: 0 },
-            leftArm: { x: 0.42, y: -0.16, z: 0.32 },
-            leftWrist: { x: -0.32, y: -0.18, z: 0.14 },
-            leftIndex: { x: 0.65, y: 0, z: 0 },
-            leftGrip: { x: 0.70, y: 0, z: 0 }
+            rightGrip: { x: 0.92, y: 0, z: 0 },
+            leftArm: { x: 0.22, y: -0.08, z: 0.16 },
+            leftWrist: { x: -0.18, y: -0.06, z: 0.06 },
+            leftIndex: { x: 0.78, y: 0, z: 0 },
+            leftGrip: { x: 0.88, y: 0, z: 0 }
         },
         plate: {
             rightArm: { x: 0.25, y: -0.18, z: -0.22 },
@@ -74,6 +74,13 @@
             leftIndex: { x: 0.5, y: 0, z: 0 },
             leftGrip: { x: 0.8, y: 0, z: 0 }
         }
+    });
+
+    const WEAPON_KEY_MAP = Object.freeze({
+        M4A1: 'WeaponM4Urgi',
+        MP5: 'WeaponSmgMp5',
+        AX50: 'WeaponSniperAx50',
+        X16: 'WeaponPistolX16'
     });
 
     function clamp(val, minVal, maxVal) {
@@ -92,57 +99,57 @@
         const rootGroup = new THREE.Group();
         rootGroup.name = sideSign < 0 ? 'LeftHandRig' : 'RightHandRig';
 
-        const sleeveGeo = new THREE.CylinderGeometry(0.052, 0.044, 0.28, 12);
+        const sleeveGeo = new THREE.CylinderGeometry(0.044, 0.038, 0.26, 12);
         sleeveGeo.rotateX(Math.PI / 2);
         const sleeveMesh = new THREE.Mesh(sleeveGeo, materials.sleeve);
-        sleeveMesh.position.set(0, 0, 0.14);
+        sleeveMesh.position.set(0, 0, 0.13);
         rootGroup.add(sleeveMesh);
 
-        const forearmGeo = new THREE.CylinderGeometry(0.043, 0.037, 0.12, 12);
+        const forearmGeo = new THREE.CylinderGeometry(0.037, 0.032, 0.11, 12);
         forearmGeo.rotateX(Math.PI / 2);
         const forearmMesh = new THREE.Mesh(forearmGeo, materials.glove);
         forearmMesh.position.set(0, 0, -0.02);
         rootGroup.add(forearmMesh);
 
         const wristJoint = new THREE.Group();
-        wristJoint.position.set(0, 0, -0.08);
+        wristJoint.position.set(0, 0, -0.075);
         rootGroup.add(wristJoint);
 
-        const palmGeo = new THREE.BoxGeometry(0.076, 0.026, 0.086);
+        const palmGeo = new THREE.BoxGeometry(0.066, 0.022, 0.076);
         const palmMesh = new THREE.Mesh(palmGeo, materials.glove);
-        palmMesh.position.set(0, 0, -0.043);
+        palmMesh.position.set(0, 0, -0.038);
         wristJoint.add(palmMesh);
 
-        const knuckleGeo = new THREE.BoxGeometry(0.072, 0.012, 0.022);
+        const knuckleGeo = new THREE.BoxGeometry(0.062, 0.010, 0.018);
         const knuckleMesh = new THREE.Mesh(knuckleGeo, materials.pad);
-        knuckleMesh.position.set(0, 0.014, -0.074);
+        knuckleMesh.position.set(0, 0.012, -0.065);
         wristJoint.add(knuckleMesh);
 
         const thumbJoint = new THREE.Group();
-        thumbJoint.position.set(-sideSign * 0.042, -0.004, -0.045);
+        thumbJoint.position.set(-sideSign * 0.036, -0.003, -0.038);
         wristJoint.add(thumbJoint);
 
-        const thumbGeo = new THREE.BoxGeometry(0.020, 0.020, 0.052);
+        const thumbGeo = new THREE.BoxGeometry(0.017, 0.017, 0.044);
         const thumbMesh = new THREE.Mesh(thumbGeo, materials.glove);
-        thumbMesh.position.set(0, 0, -0.024);
+        thumbMesh.position.set(0, 0, -0.020);
         thumbJoint.add(thumbMesh);
 
         const indexJoint = new THREE.Group();
-        indexJoint.position.set(-sideSign * 0.028, -0.002, -0.086);
+        indexJoint.position.set(-sideSign * 0.024, -0.002, -0.074);
         wristJoint.add(indexJoint);
 
-        const indexGeo = new THREE.BoxGeometry(0.016, 0.016, 0.044);
+        const indexGeo = new THREE.BoxGeometry(0.014, 0.014, 0.038);
         const indexMesh = new THREE.Mesh(indexGeo, materials.glove);
-        indexMesh.position.set(0, 0, -0.022);
+        indexMesh.position.set(0, 0, -0.019);
         indexJoint.add(indexMesh);
 
         const gripJoint = new THREE.Group();
-        gripJoint.position.set(0, -0.004, -0.086);
+        gripJoint.position.set(0, -0.003, -0.074);
         wristJoint.add(gripJoint);
 
-        const gripGeo = new THREE.BoxGeometry(0.068, 0.017, 0.042);
+        const gripGeo = new THREE.BoxGeometry(0.058, 0.014, 0.036);
         const gripMesh = new THREE.Mesh(gripGeo, materials.glove);
-        gripMesh.position.set(0, 0, -0.021);
+        gripMesh.position.set(0, 0, -0.018);
         gripJoint.add(gripMesh);
 
         return {
@@ -168,18 +175,20 @@
             this.triggerPull = 0;
             this._targetTriggerPull = 0;
 
-            // [13] 換彈動態進度狀態
             this._isReloading = false;
             this._reloadProgress = 0;
             this._reloadDuration = 1.65;
 
+            this._rightPos = { x: 0.175, y: -0.255, z: -0.26 };
+            this._leftPos = { x: 0.08, y: -0.215, z: -0.44 };
+
             this._poseBlend = {
-                rx: -0.18, ry: 0.08, rz: -0.12,
-                rwx: 0.12, rwy: -0.05, rwz: 0.05,
-                rix: 0.35, rgx: 0.85,
-                lx: 0.12, ly: 0.24, lz: 0.18,
-                lwx: -0.10, lwy: 0.18, lwz: -0.08,
-                lix: 0.72, lgx: 0.92
+                rx: -0.14, ry: -0.06, rz: -0.08,
+                rwx: 0.14, rwy: 0.04, rwz: 0.04,
+                rix: 0.42, rgx: 0.96,
+                lx: -0.12, ly: 0.16, lz: 0.12,
+                lwx: 0.06, lwy: 0.12, lwz: -0.04,
+                lix: 0.88, lgx: 1.02
             };
 
             this._unsubscribers = [];
@@ -200,6 +209,14 @@
                 return rc.getScene();
             }
             return null;
+        }
+
+        _getActiveWeaponMod() {
+            const raw = GameState && GameState.raw ? GameState.raw : {};
+            const w = raw.weapons || {};
+            const id = w.activeId || 'M4A1';
+            const key = WEAPON_KEY_MAP[id] || 'WeaponM4Urgi';
+            return { id: id, mod: TacticalWarfare[key] || null };
         }
 
         _resolveIdlePose() {
@@ -260,11 +277,11 @@
             this.parentGroup.add(this.handsGroup);
 
             this.leftHand = buildSingleHandRig(-1, this._materials);
-            this.leftHand.root.position.set(-0.24, -0.24, -0.32);
+            this.leftHand.root.position.set(this._leftPos.x, this._leftPos.y, this._leftPos.z);
             this.handsGroup.add(this.leftHand.root);
 
             this.rightHand = buildSingleHandRig(1, this._materials);
-            this.rightHand.root.position.set(0.24, -0.24, -0.28);
+            this.rightHand.root.position.set(this._rightPos.x, this._rightPos.y, this._rightPos.z);
             this.handsGroup.add(this.rightHand.root);
 
             this._isReloading = false;
@@ -291,7 +308,6 @@
                 );
             }
 
-            // [13] 同時相容 WEAPON_RELOAD_START 與 RELOAD_START
             const reloadStartEvts = [Events.WEAPON_RELOAD_START, Events.RELOAD_START].filter(Boolean);
             for (let i = 0; i < reloadStartEvts.length; i = i + 1) {
                 this._unsubscribers.push(
@@ -403,6 +419,72 @@
             this.setPose(isAiming ? 'rifle_ads' : 'rifle_hip', false);
         }
 
+        _computeGripTargets(weaponInfo, isAiming) {
+            const wMod = weaponInfo && weaponInfo.mod ? weaponInfo.mod : null;
+            const wId = weaponInfo && weaponInfo.id ? weaponInfo.id : 'M4A1';
+            const root = wMod && wMod.rootGroup ? wMod.rootGroup : null;
+            const mag = wMod && wMod.magazineMesh ? wMod.magazineMesh : null;
+
+            const gunX = root ? root.position.x : (isAiming ? 0 : 0.175);
+            const gunY = root ? root.position.y : (isAiming ? -0.128 : -0.165);
+            const gunZ = root ? root.position.z : (isAiming ? -0.28 : -0.34);
+
+            // 右手貼近槍身握把後方偏下
+            const rightTarget = {
+                x: gunX + 0.025,
+                y: gunY - 0.085,
+                z: gunZ + 0.075
+            };
+
+            // 左手預設扶住護木 / 前握把
+            const foregripZOffset = wId === 'X16' ? -0.06 : (wId === 'AX50' ? -0.24 : -0.17);
+            const leftTarget = {
+                x: gunX - (isAiming ? 0.035 : 0.055),
+                y: gunY - 0.045,
+                z: gunZ + foregripZOffset
+            };
+
+            // 換彈時左手轉向彈匣位置，做「抓取下拉 → 上推裝填 → 回到護木」
+            if (this._isReloading) {
+                const p = clamp(this._reloadProgress, 0, 1);
+                const magLocalX = mag ? mag.position.x : 0;
+                const magLocalY = mag ? mag.position.y : -0.105;
+                const magLocalZ = mag ? mag.position.z : -0.085;
+
+                const magX = gunX + magLocalX - 0.02;
+                const magZ = gunZ + magLocalZ;
+                const seatedY = gunY + magLocalY - 0.03;
+                const pulledY = seatedY - 0.12;
+
+                if (p < 0.20) {
+                    const t = p / 0.20;
+                    leftTarget.x = lerp(leftTarget.x, magX, t);
+                    leftTarget.y = lerp(leftTarget.y, seatedY, t);
+                    leftTarget.z = lerp(leftTarget.z, magZ, t);
+                } else if (p < 0.48) {
+                    const t = (p - 0.20) / 0.28;
+                    leftTarget.x = magX;
+                    leftTarget.y = lerp(seatedY, pulledY, t);
+                    leftTarget.z = magZ + t * 0.02;
+                } else if (p < 0.76) {
+                    const t = (p - 0.48) / 0.28;
+                    leftTarget.x = magX;
+                    leftTarget.y = lerp(pulledY, seatedY, t);
+                    leftTarget.z = lerp(magZ + 0.02, magZ, t);
+                } else {
+                    const t = (p - 0.76) / 0.24;
+                    const homeX = gunX - (isAiming ? 0.035 : 0.055);
+                    const homeY = gunY - 0.045;
+                    const homeZ = gunZ + foregripZOffset;
+                    leftTarget.x = lerp(magX, homeX, t);
+                    leftTarget.y = lerp(seatedY, homeY, t);
+                    leftTarget.z = lerp(magZ, homeZ, t);
+                }
+            }
+
+            return { right: rightTarget, left: leftTarget };
+        }
+
         update(deltaTime, motionOffset) {
             if (!this.handsGroup && global.THREE) {
                 this.init();
@@ -411,7 +493,6 @@
 
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
 
-            // [13] 同步 GameState 換彈狀態與推進換彈進度
             const raw = GameState && GameState.raw ? GameState.raw : {};
             const w = raw.weapons || {};
             if (typeof w.isReloading === 'boolean') {
@@ -444,58 +525,46 @@
             }
 
             const target = STANCE_POSES[this.currentPoseKey] || STANCE_POSES.rifle_hip;
-            const alpha = 1 - Math.exp(-15 * dt);
+            const rotAlpha = 1 - Math.exp(-16 * dt);
+            const posAlpha = 1 - Math.exp(-22 * dt);
 
-            this._poseBlend.rx = lerp(this._poseBlend.rx, target.rightArm.x, alpha);
-            this._poseBlend.ry = lerp(this._poseBlend.ry, target.rightArm.y, alpha);
-            this._poseBlend.rz = lerp(this._poseBlend.rz, target.rightArm.z, alpha);
-            this._poseBlend.rwx = lerp(this._poseBlend.rwx, target.rightWrist.x, alpha);
-            this._poseBlend.rwy = lerp(this._poseBlend.rwy, target.rightWrist.y, alpha);
-            this._poseBlend.rwz = lerp(this._poseBlend.rwz, target.rightWrist.z, alpha);
-            this._poseBlend.rix = lerp(this._poseBlend.rix, target.rightIndex.x, alpha);
-            this._poseBlend.rgx = lerp(this._poseBlend.rgx, target.rightGrip.x, alpha);
+            this._poseBlend.rx = lerp(this._poseBlend.rx, target.rightArm.x, rotAlpha);
+            this._poseBlend.ry = lerp(this._poseBlend.ry, target.rightArm.y, rotAlpha);
+            this._poseBlend.rz = lerp(this._poseBlend.rz, target.rightArm.z, rotAlpha);
+            this._poseBlend.rwx = lerp(this._poseBlend.rwx, target.rightWrist.x, rotAlpha);
+            this._poseBlend.rwy = lerp(this._poseBlend.rwy, target.rightWrist.y, rotAlpha);
+            this._poseBlend.rwz = lerp(this._poseBlend.rwz, target.rightWrist.z, rotAlpha);
+            this._poseBlend.rix = lerp(this._poseBlend.rix, target.rightIndex.x, rotAlpha);
+            this._poseBlend.rgx = lerp(this._poseBlend.rgx, target.rightGrip.x, rotAlpha);
 
-            this._poseBlend.lx = lerp(this._poseBlend.lx, target.leftArm.x, alpha);
-            this._poseBlend.ly = lerp(this._poseBlend.ly, target.leftArm.y, alpha);
-            this._poseBlend.lz = lerp(this._poseBlend.lz, target.leftArm.z, alpha);
-            this._poseBlend.lwx = lerp(this._poseBlend.lwx, target.leftWrist.x, alpha);
-            this._poseBlend.lwy = lerp(this._poseBlend.lwy, target.leftWrist.y, alpha);
-            this._poseBlend.lwz = lerp(this._poseBlend.lwz, target.leftWrist.z, alpha);
-            this._poseBlend.lix = lerp(this._poseBlend.lix, target.leftIndex.x, alpha);
-            this._poseBlend.lgx = lerp(this._poseBlend.lgx, target.leftGrip.x, alpha);
+            this._poseBlend.lx = lerp(this._poseBlend.lx, target.leftArm.x, rotAlpha);
+            this._poseBlend.ly = lerp(this._poseBlend.ly, target.leftArm.y, rotAlpha);
+            this._poseBlend.lz = lerp(this._poseBlend.lz, target.leftArm.z, rotAlpha);
+            this._poseBlend.lwx = lerp(this._poseBlend.lwx, target.leftWrist.x, rotAlpha);
+            this._poseBlend.lwy = lerp(this._poseBlend.lwy, target.leftWrist.y, rotAlpha);
+            this._poseBlend.lwz = lerp(this._poseBlend.lwz, target.leftWrist.z, rotAlpha);
+            this._poseBlend.lix = lerp(this._poseBlend.lix, target.leftIndex.x, rotAlpha);
+            this._poseBlend.lgx = lerp(this._poseBlend.lgx, target.leftGrip.x, rotAlpha);
 
             this.triggerPull = lerp(this.triggerPull, this._targetTriggerPull, 1 - Math.exp(-26 * dt));
             this._targetTriggerPull = Math.max(0, this._targetTriggerPull - 18 * dt);
 
-            // [13] 換彈階段的雙手動態起伏（卸彈匣下拉 -> 裝填抬起 -> 回正）
-            let reloadLiftY = 0;
-            let leftDropY = 0;
-            let leftPitchOffset = 0;
-            if (this._isReloading) {
-                const p = this._reloadProgress;
-                const arc = Math.sin(p * Math.PI);
-                reloadLiftY = -0.028 * arc;
-                if (p < 0.45) {
-                    leftDropY = -(p / 0.45) * 0.085;
-                    leftPitchOffset = (p / 0.45) * 0.24;
-                } else if (p < 0.55) {
-                    leftDropY = -0.085;
-                    leftPitchOffset = 0.24;
-                } else {
-                    const rem = (1 - p) / 0.45;
-                    leftDropY = -rem * 0.085;
-                    leftPitchOffset = rem * 0.24;
-                }
-            }
+            const weaponInfo = this._getActiveWeaponMod();
+            const gripTargets = this._computeGripTargets(weaponInfo, Boolean(w.isAiming));
 
-            const swayX = motionOffset && typeof motionOffset.x === 'number' ? motionOffset.x : 0;
-            const swayY = motionOffset && typeof motionOffset.y === 'number' ? motionOffset.y : 0;
+            this._rightPos.x = lerp(this._rightPos.x, gripTargets.right.x, posAlpha);
+            this._rightPos.y = lerp(this._rightPos.y, gripTargets.right.y, posAlpha);
+            this._rightPos.z = lerp(this._rightPos.z, gripTargets.right.z, posAlpha);
+
+            this._leftPos.x = lerp(this._leftPos.x, gripTargets.left.x, posAlpha);
+            this._leftPos.y = lerp(this._leftPos.y, gripTargets.left.y, posAlpha);
+            this._leftPos.z = lerp(this._leftPos.z, gripTargets.left.z, posAlpha);
 
             this.handsGroup.visible = true;
-            this.handsGroup.position.set(swayX, swayY + reloadLiftY, 0);
+            this.handsGroup.position.set(0, 0, 0);
 
             if (this.rightHand) {
-                this.rightHand.root.position.set(0.24, -0.24 + reloadLiftY * 0.5, -0.28);
+                this.rightHand.root.position.set(this._rightPos.x, this._rightPos.y, this._rightPos.z);
                 this.rightHand.root.rotation.set(this._poseBlend.rx, this._poseBlend.ry, this._poseBlend.rz);
                 this.rightHand.wrist.rotation.set(this._poseBlend.rwx, this._poseBlend.rwy, this._poseBlend.rwz);
                 this.rightHand.index.rotation.x = this._poseBlend.rix + this.triggerPull * 0.42;
@@ -503,12 +572,8 @@
             }
 
             if (this.leftHand) {
-                this.leftHand.root.position.set(-0.24, -0.24 + leftDropY, -0.32);
-                this.leftHand.root.rotation.set(
-                    this._poseBlend.lx + leftPitchOffset,
-                    this._poseBlend.ly,
-                    this._poseBlend.lz
-                );
+                this.leftHand.root.position.set(this._leftPos.x, this._leftPos.y, this._leftPos.z);
+                this.leftHand.root.rotation.set(this._poseBlend.lx, this._poseBlend.ly, this._poseBlend.lz);
                 this.leftHand.wrist.rotation.set(this._poseBlend.lwx, this._poseBlend.lwy, this._poseBlend.lwz);
                 this.leftHand.index.rotation.x = this._poseBlend.lix;
                 this.leftHand.grip.rotation.x = this._poseBlend.lgx;
