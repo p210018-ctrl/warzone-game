@@ -3,11 +3,6 @@
  * 17_weapon_pistol_x16.js
  * X16 戰術手槍 3D 模型、槍口錨點與專屬槍械動畫模組
  * ============================================================================
- * 職責：
- * 1. 建構 X16 戰術手槍多層級 3D 網格（滑套、聚合物下槍身、握把、瞄具、彈匣）
- * 2. 提供槍口火光錨點（muzzleAnchor）與世界座標查詢介面
- * 3. 實作快節奏後座跳動、彈匣換彈動畫、腰射／開鏡／衝刺姿態平滑插值
- * 4. 監聽 EventBus 的開火、換彈與裝備事件，自動驅動槍械視覺回饋
  */
 (function (global) {
     'use strict';
@@ -20,9 +15,6 @@
     const Events = TacticalWarfare.Events || {};
     const EventBus = TacticalWarfare.EventBus;
 
-    // ------------------------------------------------------------------------
-    // 1. X16 手槍視覺與運動參數表
-    // ------------------------------------------------------------------------
     const X16_SPECS = Object.freeze({
         id: 'X16',
         displayName: 'X16 Sidearm',
@@ -50,9 +42,6 @@
         return a + (b - a) * t;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. WeaponPistolX16 主類別
-    // ------------------------------------------------------------------------
     class WeaponPistolX16 {
         constructor() {
             this.initialized = false;
@@ -72,9 +61,9 @@
             this._isAiming = false;
             this._isSprinting = false;
             this._reloadProgress = 0;
+            this._reloadDuration = 1.25;
             this._isReloading = false;
 
-            // 後座力與槍口火光動態狀態
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
             this._recoilRotX = 0;
@@ -84,9 +73,6 @@
             this._unsubscribers = [];
         }
 
-        /**
-         * 初始化 X16 手槍模型並掛載至武器場景或指定父節點
-         */
         init(options) {
             const THREE = global.THREE;
             if (!THREE) {
@@ -95,9 +81,14 @@
 
             const opts = options || {};
             this.parentGroup = opts.parentGroup ||
-                (TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getWeaponCamera()) ||
+                (TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getWeaponCamera === 'function'
+                    ? TacticalWarfare.RendererCore.getWeaponCamera()
+                    : null) ||
                 null;
-            this.textureFactory = opts.textureFactory || TacticalWarfare.PBRTextureFactory || null;
+            this.textureFactory = opts.textureFactory ||
+                TacticalWarfare.PBRTextureFactory ||
+                TacticalWarfare.PbrMaterials ||
+                null;
 
             if (!this.parentGroup) {
                 throw new Error('17_weapon_pistol_x16.js 找不到有效的武器相機或父節點');
@@ -173,7 +164,6 @@
             this.weaponBodyGroup.name = 'X16BodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 聚合物下槍身與握把
             const frameGeo = new THREE.BoxGeometry(0.028, 0.022, 0.17);
             const frameMesh = new THREE.Mesh(frameGeo, this._materials.frame);
             frameMesh.position.set(0, -0.004, -0.075);
@@ -185,7 +175,6 @@
             gripMesh.rotation.x = 0.28;
             this.weaponBodyGroup.add(gripMesh);
 
-            // 2. 金屬滑套與準星／照門
             const slideGeo = new THREE.BoxGeometry(0.026, 0.024, 0.175);
             this.slideMesh = new THREE.Mesh(slideGeo, this._materials.slide);
             this.slideMesh.name = 'X16Slide';
@@ -206,7 +195,6 @@
             rearSightRight.position.set(0.008, 0.028, -0.008);
             this.slideMesh.add(rearSightRight);
 
-            // 3. 可拆式手槍彈匣
             const magGeo = new THREE.BoxGeometry(0.022, 0.068, 0.032);
             this.magazineMesh = new THREE.Mesh(magGeo, this._materials.slide);
             this.magazineMesh.name = 'X16Magazine';
@@ -214,7 +202,6 @@
             this.magazineMesh.rotation.x = 0.28;
             this.weaponBodyGroup.add(this.magazineMesh);
 
-            // 4. 槍口火光錨點與火光網格
             this.muzzleAnchor = new THREE.Object3D();
             this.muzzleAnchor.name = 'X16MuzzleAnchor';
             this.muzzleAnchor.position.set(
@@ -262,13 +249,17 @@
                 );
             }
 
-            if (Events.WEAPON_RELOAD_START) {
+            const reloadStartEvt = Events.WEAPON_RELOAD_START || Events.RELOAD_START;
+            if (reloadStartEvt) {
                 this._unsubscribers.push(
-                    EventBus.on(Events.WEAPON_RELOAD_START, (payload) => {
+                    EventBus.on(reloadStartEvt, (payload) => {
                         if (!this._isVisible) return;
                         if (payload && payload.weaponId && payload.weaponId !== X16_SPECS.id) return;
                         this._isReloading = true;
                         this._reloadProgress = 0;
+                        this._reloadDuration = payload && typeof payload.duration === 'number' && payload.duration > 0
+                            ? payload.duration
+                            : 1.25;
                     })
                 );
             }
@@ -283,10 +274,15 @@
                 );
             }
 
-            if (Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL) {
-                const endEvt = Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL;
+            const reloadEndEvts = [
+                Events.WEAPON_RELOAD_FINISH,
+                Events.WEAPON_RELOAD_CANCEL,
+                Events.RELOAD_COMPLETE
+            ].filter(Boolean);
+
+            for (let i = 0; i < reloadEndEvts.length; i = i + 1) {
                 this._unsubscribers.push(
-                    EventBus.on(endEvt, () => {
+                    EventBus.on(reloadEndEvts[i], () => {
                         this._isReloading = false;
                         this._reloadProgress = 0;
                     })
@@ -315,6 +311,15 @@
             if (this.rootGroup) {
                 this.rootGroup.visible = this._isVisible;
             }
+            if (!this._isVisible) {
+                this._isReloading = false;
+                this._reloadProgress = 0;
+                this._flashTimer = 0;
+                if (this.muzzleFlashMesh && this.muzzleFlashMat) {
+                    this.muzzleFlashMesh.visible = false;
+                    this.muzzleFlashMat.opacity = 0;
+                }
+            }
         }
 
         isVisible() {
@@ -332,7 +337,7 @@
         getMuzzleWorldPosition(targetVector) {
             const THREE = global.THREE;
             const out = targetVector || new THREE.Vector3();
-            if (this.muzzleAnchor) {
+            if (this.muzzleAnchor && this.rootGroup) {
                 this.rootGroup.updateMatrixWorld(true);
                 this.muzzleAnchor.getWorldPosition(out);
             }
@@ -346,6 +351,10 @@
 
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const alpha = 1 - Math.exp(-18 * dt);
+
+            if (this._isReloading) {
+                this._reloadProgress = Math.min(1, this._reloadProgress + dt / Math.max(0.2, this._reloadDuration));
+            }
 
             let targetPos = X16_SPECS.hipPosition;
             let targetRotX = 0;
@@ -386,7 +395,6 @@
                 this.weaponBodyGroup.rotation.set(this._recoilRotX, 0, this._recoilRotZ);
             }
 
-            // 滑套隨開火後座向後退縮並回彈
             if (this.slideMesh) {
                 this.slideMesh.position.z = -0.078 + Math.min(0.032, this._recoilPosZ * 0.85);
             }
@@ -451,9 +459,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const weaponPistolX16Instance = new WeaponPistolX16();
 
     const moduleExport = {
