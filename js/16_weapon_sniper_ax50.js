@@ -3,11 +3,6 @@
  * 16_weapon_sniper_ax50.js
  * AX-50 重型狙擊步槍 3D 模型、槍口錨點與專屬槍械動畫模組
  * ============================================================================
- * 職責：
- * 1. 建構 AX-50 重型狙擊步槍多層級 3D 網格（機匣、重護木、凹槽槍管、制退器、彈匣、槍托、狙擊鏡）
- * 2. 提供槍口火光錨點（muzzleAnchor）與世界座標查詢介面
- * 3. 實作沉重狙擊後座位移／上揚、彈匣換彈動畫、腰射／開鏡／衝刺姿態平滑插值
- * 4. 監聽 EventBus 的開火、換彈與裝備事件，自動驅動槍械視覺回饋
  */
 (function (global) {
     'use strict';
@@ -20,9 +15,6 @@
     const Events = TacticalWarfare.Events || {};
     const EventBus = TacticalWarfare.EventBus;
 
-    // ------------------------------------------------------------------------
-    // 1. AX-50 重型狙擊槍視覺與運動參數表
-    // ------------------------------------------------------------------------
     const AX50_SPECS = Object.freeze({
         id: 'AX50',
         displayName: 'AX-50 Marksman',
@@ -50,9 +42,6 @@
         return a + (b - a) * t;
     }
 
-    // ------------------------------------------------------------------------
-    // 2. WeaponSniperAx50 主類別
-    // ------------------------------------------------------------------------
     class WeaponSniperAx50 {
         constructor() {
             this.initialized = false;
@@ -71,9 +60,9 @@
             this._isAiming = false;
             this._isSprinting = false;
             this._reloadProgress = 0;
+            this._reloadDuration = 2.2;
             this._isReloading = false;
 
-            // 後座力與槍口火光動態狀態
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
             this._recoilRotX = 0;
@@ -83,9 +72,6 @@
             this._unsubscribers = [];
         }
 
-        /**
-         * 初始化 AX-50 模型並掛載至武器場景或指定父節點
-         */
         init(options) {
             const THREE = global.THREE;
             if (!THREE) {
@@ -94,9 +80,14 @@
 
             const opts = options || {};
             this.parentGroup = opts.parentGroup ||
-                (TacticalWarfare.RendererCore && TacticalWarfare.RendererCore.getWeaponCamera()) ||
+                (TacticalWarfare.RendererCore && typeof TacticalWarfare.RendererCore.getWeaponCamera === 'function'
+                    ? TacticalWarfare.RendererCore.getWeaponCamera()
+                    : null) ||
                 null;
-            this.textureFactory = opts.textureFactory || TacticalWarfare.PBRTextureFactory || null;
+            this.textureFactory = opts.textureFactory ||
+                TacticalWarfare.PBRTextureFactory ||
+                TacticalWarfare.PbrMaterials ||
+                null;
 
             if (!this.parentGroup) {
                 throw new Error('16_weapon_sniper_ax50.js 找不到有效的武器相機或父節點');
@@ -187,7 +178,6 @@
             this.weaponBodyGroup.name = 'Ax50BodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 重型狙擊機匣與握把
             const receiverGeo = new THREE.BoxGeometry(0.048, 0.058, 0.25);
             const receiverMesh = new THREE.Mesh(receiverGeo, this._materials.receiver);
             receiverMesh.position.set(0, 0.008, -0.05);
@@ -199,7 +189,6 @@
             gripMesh.rotation.x = 0.26;
             this.weaponBodyGroup.add(gripMesh);
 
-            // 2. 骨骼化狙擊槍托與後托墊
             const stockBeamGeo = new THREE.BoxGeometry(0.044, 0.042, 0.22);
             const stockBeam = new THREE.Mesh(stockBeamGeo, this._materials.chassis);
             stockBeam.position.set(0, -0.002, 0.175);
@@ -210,13 +199,11 @@
             buttPad.position.set(0, -0.015, 0.285);
             this.weaponBodyGroup.add(buttPad);
 
-            // 3. 加長戰術護木
             const handguardGeo = new THREE.BoxGeometry(0.054, 0.058, 0.34);
             const handguardMesh = new THREE.Mesh(handguardGeo, this._materials.chassis);
             handguardMesh.position.set(0, 0.010, -0.335);
             this.weaponBodyGroup.add(handguardMesh);
 
-            // 4. 重型長槍管與多氣室槍口制退器
             const barrelGeo = new THREE.CylinderGeometry(0.013, 0.016, 0.30, 14);
             barrelGeo.rotateX(Math.PI / 2);
             const barrelMesh = new THREE.Mesh(barrelGeo, this._materials.barrel);
@@ -228,7 +215,6 @@
             brakeMesh.position.set(0, 0.014, -0.765);
             this.weaponBodyGroup.add(brakeMesh);
 
-            // 5. 高倍率狙擊瞄準鏡
             const mountRingGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.024, 12);
             mountRingGeo.rotateX(Math.PI / 2);
             const ringFront = new THREE.Mesh(mountRingGeo, this._materials.receiver);
@@ -251,14 +237,12 @@
             objLens.position.set(0, 0.064, -0.186);
             this.weaponBodyGroup.add(objLens);
 
-            // 6. 可拆式狙擊彈匣
             const magGeo = new THREE.BoxGeometry(0.034, 0.115, 0.076);
             this.magazineMesh = new THREE.Mesh(magGeo, this._materials.receiver);
             this.magazineMesh.name = 'Ax50Magazine';
             this.magazineMesh.position.set(0, -0.092, -0.09);
             this.weaponBodyGroup.add(this.magazineMesh);
 
-            // 7. 槍口火光錨點與火光網格
             this.muzzleAnchor = new THREE.Object3D();
             this.muzzleAnchor.name = 'Ax50MuzzleAnchor';
             this.muzzleAnchor.position.set(
@@ -306,13 +290,17 @@
                 );
             }
 
-            if (Events.WEAPON_RELOAD_START) {
+            const reloadStartEvt = Events.WEAPON_RELOAD_START || Events.RELOAD_START;
+            if (reloadStartEvt) {
                 this._unsubscribers.push(
-                    EventBus.on(Events.WEAPON_RELOAD_START, (payload) => {
+                    EventBus.on(reloadStartEvt, (payload) => {
                         if (!this._isVisible) return;
                         if (payload && payload.weaponId && payload.weaponId !== AX50_SPECS.id) return;
                         this._isReloading = true;
                         this._reloadProgress = 0;
+                        this._reloadDuration = payload && typeof payload.duration === 'number' && payload.duration > 0
+                            ? payload.duration
+                            : 2.2;
                     })
                 );
             }
@@ -327,10 +315,15 @@
                 );
             }
 
-            if (Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL) {
-                const endEvt = Events.WEAPON_RELOAD_FINISH || Events.WEAPON_RELOAD_CANCEL;
+            const reloadEndEvts = [
+                Events.WEAPON_RELOAD_FINISH,
+                Events.WEAPON_RELOAD_CANCEL,
+                Events.RELOAD_COMPLETE
+            ].filter(Boolean);
+
+            for (let i = 0; i < reloadEndEvts.length; i = i + 1) {
                 this._unsubscribers.push(
-                    EventBus.on(endEvt, () => {
+                    EventBus.on(reloadEndEvts[i], () => {
                         this._isReloading = false;
                         this._reloadProgress = 0;
                     })
@@ -359,6 +352,15 @@
             if (this.rootGroup) {
                 this.rootGroup.visible = this._isVisible;
             }
+            if (!this._isVisible) {
+                this._isReloading = false;
+                this._reloadProgress = 0;
+                this._flashTimer = 0;
+                if (this.muzzleFlashMesh && this.muzzleFlashMat) {
+                    this.muzzleFlashMesh.visible = false;
+                    this.muzzleFlashMat.opacity = 0;
+                }
+            }
         }
 
         isVisible() {
@@ -376,7 +378,7 @@
         getMuzzleWorldPosition(targetVector) {
             const THREE = global.THREE;
             const out = targetVector || new THREE.Vector3();
-            if (this.muzzleAnchor) {
+            if (this.muzzleAnchor && this.rootGroup) {
                 this.rootGroup.updateMatrixWorld(true);
                 this.muzzleAnchor.getWorldPosition(out);
             }
@@ -390,6 +392,10 @@
 
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const alpha = 1 - Math.exp(-14 * dt);
+
+            if (this._isReloading) {
+                this._reloadProgress = Math.min(1, this._reloadProgress + dt / Math.max(0.2, this._reloadDuration));
+            }
 
             let targetPos = AX50_SPECS.hipPosition;
             let targetRotX = 0;
@@ -489,9 +495,6 @@
         }
     }
 
-    // ------------------------------------------------------------------------
-    // 3. 建立單例並註冊至全域命名空間
-    // ------------------------------------------------------------------------
     const weaponSniperAx50Instance = new WeaponSniperAx50();
 
     const moduleExport = {
