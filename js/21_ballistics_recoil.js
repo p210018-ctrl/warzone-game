@@ -16,7 +16,6 @@
     const EventBus = TacticalWarfare.EventBus;
     const GameState = TacticalWarfare.GameState;
 
-    // [21] 武器切換順序表
     const WEAPON_LOADOUT_ORDER = Object.freeze(['M4A1', 'MP5', 'AX50', 'X16']);
 
     const BALLISTICS_WEAPON_SPECS = Object.freeze({
@@ -133,6 +132,7 @@
             };
 
             this._fireCooldown = 0;
+            this._switchCooldown = 0;
             this._spreadBonus = 0;
             this.currentSpread = 0.032;
 
@@ -150,6 +150,7 @@
 
         _resetRuntimeFlags() {
             this._fireCooldown = 0;
+            this._switchCooldown = 0;
             this._spreadBonus = 0;
             this._isFiringHeld = false;
             this._semiTriggered = false;
@@ -160,7 +161,6 @@
             this.recoilOffset.yaw = 0;
         }
 
-        // [21] 切換至指定武器並同步 GameState 與 WEAPON_EQUIP 事件
         equipWeapon(weaponId) {
             const targetId = weaponId && BALLISTICS_WEAPON_SPECS[weaponId] ? weaponId : 'M4A1';
             this.activeWeaponId = targetId;
@@ -181,8 +181,11 @@
             return targetId;
         }
 
-        // [21] 依方向切換下一把或上一把武器
         cycleWeapon(step) {
+            if (this._switchCooldown > 0) {
+                return this.activeWeaponId;
+            }
+            this._switchCooldown = 0.16;
             const delta = typeof step === 'number' && step < 0 ? -1 : 1;
             const currentIdx = WEAPON_LOADOUT_ORDER.indexOf(this.activeWeaponId);
             const baseIdx = currentIdx >= 0 ? currentIdx : 0;
@@ -291,7 +294,6 @@
                 );
             }
 
-            // [21] 監聽切換武器、換彈與瞄準的 INPUT_ACTION 事件
             const inputActionEvt = Events.INPUT_ACTION || 'input:action';
             this._unsubscribers.push(
                 EventBus.on(inputActionEvt, (payload) => {
@@ -376,21 +378,9 @@
                     inputFiring = inputFiring || ctrl.buttons.fire;
                 }
 
-                if (typeof ctrl.consumeActionPress === 'function') {
-                    if (ctrl.consumeActionPress('reload')) {
-                        this.startReload(this.activeWeaponId);
-                        return false;
-                    }
-                    if (ctrl.consumeActionPress('weaponNext')) {
-                        this.cycleWeapon(1);
-                    } else if (ctrl.consumeActionPress('weaponPrev')) {
-                        this.cycleWeapon(-1);
-                    } else {
-                        const slotNum = ctrl.consumeActionPress('weaponSlot');
-                        if (slotNum && WEAPON_LOADOUT_ORDER[slotNum - 1]) {
-                            this.equipWeapon(WEAPON_LOADOUT_ORDER[slotNum - 1]);
-                        }
-                    }
+                if (typeof ctrl.consumeActionPress === 'function' && ctrl.consumeActionPress('reload')) {
+                    this.startReload(this.activeWeaponId);
+                    return false;
                 }
             }
 
@@ -669,6 +659,9 @@
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             if (this._fireCooldown > 0) {
                 this._fireCooldown = Math.max(0, this._fireCooldown - dt);
+            }
+            if (this._switchCooldown > 0) {
+                this._switchCooldown = Math.max(0, this._switchCooldown - dt);
             }
 
             if (this.isReloading) {
