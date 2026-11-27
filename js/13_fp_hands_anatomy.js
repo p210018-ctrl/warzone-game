@@ -28,6 +28,10 @@
         return 1 - inv * inv * inv;
     }
 
+    function pulseWindow(start, peak, end, x) {
+        return smoothstep(start, peak, x) * (1.0 - smoothstep(peak, end, x));
+    }
+
     function normalizeWeaponId(raw) {
         if (!raw || typeof raw !== 'string') return 'M4A1';
         const u = raw.toUpperCase();
@@ -46,7 +50,6 @@
             magWellLocal: Object.freeze({ x: 0.004, y: -0.105, z: -0.062 }),
             magDropLocal: Object.freeze({ x: -0.035, y: -0.175, z: -0.048 }),
             reloadLeftLocal: Object.freeze({ x: -0.048, y: -0.112, z: -0.115 }),
-            reloadPullY: -0.020,
             rightElbowBend: 1.02,
             leftElbowBend: 0.96
         }),
@@ -58,7 +61,6 @@
             magWellLocal: Object.freeze({ x: 0.004, y: -0.098, z: -0.072 }),
             magDropLocal: Object.freeze({ x: -0.032, y: -0.168, z: -0.058 }),
             reloadLeftLocal: Object.freeze({ x: -0.045, y: -0.106, z: -0.108 }),
-            reloadPullY: -0.018,
             rightElbowBend: 1.05,
             leftElbowBend: 0.98
         }),
@@ -70,7 +72,6 @@
             magWellLocal: Object.freeze({ x: 0.004, y: -0.112, z: -0.075 }),
             magDropLocal: Object.freeze({ x: -0.038, y: -0.185, z: -0.060 }),
             reloadLeftLocal: Object.freeze({ x: -0.052, y: -0.120, z: -0.125 }),
-            reloadPullY: -0.022,
             rightElbowBend: 1.00,
             leftElbowBend: 0.94
         }),
@@ -82,7 +83,6 @@
             magWellLocal: Object.freeze({ x: 0.004, y: -0.088, z: -0.018 }),
             magDropLocal: Object.freeze({ x: -0.028, y: -0.155, z: -0.012 }),
             reloadLeftLocal: Object.freeze({ x: -0.042, y: -0.102, z: -0.055 }),
-            reloadPullY: -0.016,
             rightElbowBend: 1.10,
             leftElbowBend: 1.06
         })
@@ -459,8 +459,8 @@
         const fingerMat = new ThreeMod.MeshStandardMaterial({
             map: gloveTex.map,
             color: 0x1c1e1d,
-            roughness: 0.65,
-            metalness: 0.12,
+            roughness: 0.68,
+            metalness: 0.10,
             depthTest: true,
             depthWrite: true,
             side: ThreeMod.DoubleSide
@@ -550,16 +550,16 @@
     }
 
     function createSculptedPalmGeometry(ThreeMod, geoBucket, palmLen, palmW, palmT) {
-        const nu = 12;
-        const nv = 16;
+        const nu = 14;
+        const nv = 18;
         const positions = new Float32Array(nu * nv * 3);
         const uvs = new Float32Array(nu * nv * 2);
         const indices = [];
 
         for (let i = 0; i < nu; i++) {
             const t = i / (nu - 1);
-            const wProf = palmW * (0.46 + 0.16 * Math.sin(t * Math.PI * 0.8));
-            const arch = 0.004 * Math.sin(t * Math.PI);
+            const wProf = palmW * (0.47 + 0.17 * Math.sin(t * Math.PI * 0.85));
+            const arch = 0.005 * Math.sin(t * Math.PI);
             const zPos = -t * palmLen;
 
             for (let j = 0; j < nv; j++) {
@@ -568,7 +568,7 @@
                 const sinT = Math.sin(th);
 
                 const x = wProf * cosT;
-                const y = palmT * 0.38 + arch + palmT * (0.56 - 0.10 * t) * sinT;
+                const y = palmT * 0.40 + arch + palmT * (0.60 - 0.08 * t) * sinT;
                 const z = zPos;
 
                 const vIdx = i * nv + j;
@@ -578,6 +578,57 @@
 
                 uvs[vIdx * 2] = 0.15 + (0.5 + 0.45 * cosT) * 0.70;
                 uvs[vIdx * 2 + 1] = 0.22 + (1.0 - t) * 0.32;
+            }
+        }
+
+        for (let i = 0; i < nu - 1; i++) {
+            for (let j = 0; j < nv; j++) {
+                const jn = (j + 1) % nv;
+                const a = i * nv + j;
+                const b = (i + 1) * nv + j;
+                const c = (i + 1) * nv + jn;
+                const d = i * nv + jn;
+                indices.push(a, b, d, b, c, d);
+            }
+        }
+
+        const geo = new ThreeMod.BufferGeometry();
+        geo.setAttribute('position', new ThreeMod.BufferAttribute(positions, 3));
+        geo.setAttribute('uv', new ThreeMod.BufferAttribute(uvs, 2));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        geoBucket.push(geo);
+        return geo;
+    }
+
+    function createRoundedPhalanxGeometry(ThreeMod, geoBucket, length, rTop, rBot) {
+        const nu = 8;
+        const nv = 14;
+        const positions = new Float32Array(nu * nv * 3);
+        const uvs = new Float32Array(nu * nv * 2);
+        const indices = [];
+
+        for (let i = 0; i < nu; i++) {
+            const t = i / (nu - 1);
+            const zPos = -t * length;
+            const baseR = lerpNum(rTop, rBot, t);
+            const cushion = 1.0 + 0.14 * Math.sin(t * Math.PI);
+
+            for (let j = 0; j < nv; j++) {
+                const th = (j / nv) * Math.PI * 2.0;
+                const cosT = Math.cos(th);
+                const sinT = Math.sin(th);
+
+                const rx = baseR * cushion * (1.0 + 0.08 * Math.abs(cosT));
+                const ry = baseR * cushion * (0.92 + 0.12 * sinT);
+
+                const vIdx = i * nv + j;
+                positions[vIdx * 3] = rx * cosT;
+                positions[vIdx * 3 + 1] = ry * sinT;
+                positions[vIdx * 3 + 2] = zPos;
+
+                uvs[vIdx * 2] = 0.5 + 0.45 * cosT;
+                uvs[vIdx * 2 + 1] = 1.0 - t;
             }
         }
 
@@ -624,10 +675,10 @@
             0.0022
         );
 
-        const elbowJointGeo = new ThreeMod.SphereGeometry(0.046, 14, 12);
+        const elbowJointGeo = new ThreeMod.SphereGeometry(0.046, 16, 14);
         elbowJointGeo.scale(1.06, 0.94, 1.06);
 
-        const wristStrapGeo = new ThreeMod.CylinderGeometry(0.045, 0.045, 0.016, 16);
+        const wristStrapGeo = new ThreeMod.CylinderGeometry(0.045, 0.045, 0.016, 18);
         wristStrapGeo.rotateX(Math.PI * 0.5);
 
         const palmGeo = createSculptedPalmGeometry(
@@ -638,19 +689,31 @@
             0.025
         );
 
-        const knucklePlateGeo = new ThreeMod.BoxGeometry(0.020, 0.010, 0.025);
-        knucklePlateGeo.translate(0, 0.005, 0);
+        const knucklePlateGeo = new ThreeMod.SphereGeometry(0.012, 12, 10);
+        knucklePlateGeo.scale(1.15, 0.58, 1.35);
 
-        const fingerPadGeo = new ThreeMod.BoxGeometry(0.016, 0.005, 0.014);
-        fingerPadGeo.translate(0, 0.0025, 0);
+        const fingerPadGeo = new ThreeMod.SphereGeometry(0.0095, 10, 8);
+        fingerPadGeo.scale(1.15, 0.45, 1.25);
 
-        const phalanxGeo = new ThreeMod.CylinderGeometry(0.0086, 0.0076, 0.019, 7);
-        phalanxGeo.rotateX(Math.PI * 0.5);
-        phalanxGeo.translate(0, 0, -0.0095);
+        const fingerJointSphereGeo = new ThreeMod.SphereGeometry(0.0092, 12, 10);
 
-        const thumbPhalanxGeo = new ThreeMod.CylinderGeometry(0.0104, 0.0090, 0.021, 7);
-        thumbPhalanxGeo.rotateX(Math.PI * 0.5);
-        thumbPhalanxGeo.translate(0, 0, -0.0105);
+        const phalanxGeo = createRoundedPhalanxGeometry(
+            ThreeMod,
+            geoBucket,
+            0.019,
+            0.0090,
+            0.0080
+        );
+
+        const thumbJointSphereGeo = new ThreeMod.SphereGeometry(0.0110, 12, 10);
+
+        const thumbPhalanxGeo = createRoundedPhalanxGeometry(
+            ThreeMod,
+            geoBucket,
+            0.021,
+            0.0108,
+            0.0094
+        );
 
         geoBucket.push(
             forearmGeo,
@@ -660,7 +723,9 @@
             palmGeo,
             knucklePlateGeo,
             fingerPadGeo,
+            fingerJointSphereGeo,
             phalanxGeo,
+            thumbJointSphereGeo,
             thumbPhalanxGeo
         );
 
@@ -672,14 +737,23 @@
             palmGeo: palmGeo,
             knucklePlateGeo: knucklePlateGeo,
             fingerPadGeo: fingerPadGeo,
+            fingerJointSphereGeo: fingerJointSphereGeo,
             phalanxGeo: phalanxGeo,
+            thumbJointSphereGeo: thumbJointSphereGeo,
             thumbPhalanxGeo: thumbPhalanxGeo
         };
     }
 
-    function buildFingerSegmentChain(ThreeMod, parentJoint, segGeo, padGeo, armorMat, gloveMat, isThumb) {
+    function buildFingerSegmentChain(ThreeMod, parentJoint, segGeo, jointSphereGeo, padGeo, armorMat, gloveMat, isThumb) {
         const p1 = new ThreeMod.Group();
         parentJoint.add(p1);
+
+        if (jointSphereGeo) {
+            const j1 = new ThreeMod.Mesh(jointSphereGeo, gloveMat);
+            j1.frustumCulled = false;
+            p1.add(j1);
+        }
+
         const m1 = new ThreeMod.Mesh(segGeo, isThumb ? armorMat : gloveMat);
         m1.frustumCulled = false;
         p1.add(m1);
@@ -694,6 +768,13 @@
         const p2 = new ThreeMod.Group();
         p2.position.set(0, 0, -0.019);
         p1.add(p2);
+
+        if (jointSphereGeo) {
+            const j2 = new ThreeMod.Mesh(jointSphereGeo, gloveMat);
+            j2.frustumCulled = false;
+            p2.add(j2);
+        }
+
         const m2 = new ThreeMod.Mesh(segGeo, gloveMat);
         m2.frustumCulled = false;
         p2.add(m2);
@@ -708,6 +789,13 @@
         const p3 = new ThreeMod.Group();
         p3.position.set(0, 0, -0.019);
         p2.add(p3);
+
+        if (jointSphereGeo) {
+            const j3 = new ThreeMod.Mesh(jointSphereGeo, gloveMat);
+            j3.frustumCulled = false;
+            p3.add(j3);
+        }
+
         const m3 = new ThreeMod.Mesh(segGeo, gloveMat);
         m3.frustumCulled = false;
         p3.add(m3);
@@ -771,6 +859,7 @@
             ThreeMod,
             palmPosePivot,
             geos.phalanxGeo,
+            geos.fingerJointSphereGeo,
             geos.fingerPadGeo,
             mats.gloveArmorMat,
             mats.fingerMat,
@@ -782,6 +871,7 @@
             ThreeMod,
             palmPosePivot,
             geos.phalanxGeo,
+            geos.fingerJointSphereGeo,
             geos.fingerPadGeo,
             mats.gloveArmorMat,
             mats.fingerMat,
@@ -793,6 +883,7 @@
             ThreeMod,
             palmPosePivot,
             geos.phalanxGeo,
+            geos.fingerJointSphereGeo,
             geos.fingerPadGeo,
             mats.gloveArmorMat,
             mats.fingerMat,
@@ -804,6 +895,7 @@
             ThreeMod,
             palmPosePivot,
             geos.phalanxGeo,
+            geos.fingerJointSphereGeo,
             geos.fingerPadGeo,
             mats.gloveArmorMat,
             mats.fingerMat,
@@ -815,6 +907,7 @@
             ThreeMod,
             palmPosePivot,
             geos.thumbPhalanxGeo,
+            geos.thumbJointSphereGeo,
             null,
             mats.gloveArmorMat,
             mats.fingerMat,
@@ -838,15 +931,19 @@
 
     function computeReloadPhases(prog) {
         const p = clampNum(prog, 0, 1);
-        const pullOut = snapEase(0.00, 0.26, p) * (1.0 - smoothstep(0.28, 0.44, p));
-        const magSwap = smoothstep(0.20, 0.42, p) * (1.0 - smoothstep(0.54, 0.70, p));
-        const seatMag = snapEase(0.52, 0.82, p) * (1.0 - smoothstep(0.84, 1.00, p));
-        const activeMask = smoothstep(0.00, 0.08, p) * (1.0 - smoothstep(0.88, 1.00, p));
+        const releaseTap = pulseWindow(0.02, 0.11, 0.22, p);
+        const magDrop = pulseWindow(0.14, 0.27, 0.42, p);
+        const magFetch = pulseWindow(0.34, 0.48, 0.64, p);
+        const magSeat = pulseWindow(0.56, 0.74, 0.88, p);
+        const regrip = pulseWindow(0.80, 0.90, 1.00, p);
+        const activeMask = smoothstep(0.00, 0.06, p) * (1.0 - smoothstep(0.90, 1.00, p));
         return {
             prog: p,
-            pullOut: pullOut,
-            magSwap: magSwap,
-            seatMag: seatMag,
+            releaseTap: releaseTap,
+            magDrop: magDrop,
+            magFetch: magFetch,
+            magSeat: magSeat,
+            regrip: regrip,
             activeMask: activeMask
         };
     }
@@ -857,62 +954,84 @@
         const aim = clampNum(typeof aimBlend === 'number' ? aimBlend : 0.0, 0.0, 1.0);
         const rp = isReloading && reloadPhases ? reloadPhases : {
             prog: 0,
-            pullOut: 0,
-            magSwap: 0,
-            seatMag: 0,
+            releaseTap: 0,
+            magDrop: 0,
+            magFetch: 0,
+            magSeat: 0,
+            regrip: 0,
             activeMask: 0
         };
 
         const baseBend = clampNum(
-            (typeof elbowBend === 'number' ? elbowBend : 0.96) - aim * 0.10,
+            (typeof elbowBend === 'number' ? elbowBend : 0.96) - aim * 0.08,
             0.35,
             1.55
         );
 
         if (sideSign < 0) {
-            const forearmDrop = rp.pullOut * 0.16 - rp.seatMag * 0.08 + rp.magSwap * 0.12;
-            const forearmYaw = rp.pullOut * 0.18 - rp.magSwap * 0.16 - rp.seatMag * 0.05;
-            const forearmRoll = rp.pullOut * 0.10 - rp.magSwap * 0.12;
+            const fX = lerpNum(0.24 + baseBend * 0.06, 0.14, aim)
+                + rp.releaseTap * 0.06
+                + rp.magDrop * 0.18
+                - rp.magFetch * 0.06
+                - rp.magSeat * 0.10;
+            const fY = lerpNum(-0.62, -0.52, aim)
+                + rp.magDrop * 0.22
+                - rp.magFetch * 0.18
+                - rp.magSeat * 0.06;
+            const fZ = lerpNum(-0.22, -0.16, aim)
+                - rp.magDrop * 0.14
+                + rp.magFetch * 0.12
+                + rp.magSeat * 0.08;
 
-            const elbowSnap = rp.pullOut * 0.24 + rp.magSwap * 0.15 - rp.seatMag * 0.12;
-            const elbowYaw = rp.pullOut * 0.12 - rp.magSwap * 0.10;
-            const elbowRoll = rp.pullOut * 0.06 - rp.magSwap * 0.08;
+            const eX = lerpNum(0.18 + baseBend * 0.08, 0.08, aim)
+                + rp.magDrop * 0.24
+                + rp.magFetch * 0.14
+                - rp.magSeat * 0.14;
+            const eY = lerpNum(-0.58, -0.46, aim)
+                + rp.magDrop * 0.16
+                - rp.magFetch * 0.14
+                - rp.magSeat * 0.05;
+            const eZ = lerpNum(-0.26, -0.18, aim)
+                - rp.magDrop * 0.12
+                + rp.magFetch * 0.10
+                + rp.magSeat * 0.06;
 
-            const upperLift = -rp.pullOut * 0.12 + rp.magSwap * 0.14 - rp.seatMag * 0.06;
-            const upperYaw = rp.pullOut * 0.08 - rp.magSwap * 0.12;
-            const upperRoll = rp.pullOut * 0.05 - rp.magSwap * 0.10;
-
-            const fX = lerpNum(0.18 + baseBend * 0.05, 0.08, aim) + forearmDrop;
-            const fY = lerpNum(-0.68, -0.56, aim) + forearmYaw;
-            const fZ = lerpNum(-0.14, -0.10, aim) + forearmRoll;
-
-            const eX = lerpNum(0.22 + baseBend * 0.08, 0.10, aim) + elbowSnap;
-            const eY = lerpNum(-0.52, -0.42, aim) + elbowYaw;
-            const eZ = lerpNum(-0.12, -0.08, aim) + elbowRoll;
-
-            const uX = lerpNum(-0.22 - baseBend * 0.10, -0.08, aim) + upperLift;
-            const uY = lerpNum(-0.48, -0.38, aim) + upperYaw;
-            const uZ = lerpNum(-0.10, -0.06, aim) + upperRoll;
+            const uX = lerpNum(-0.14 - baseBend * 0.08, -0.04, aim)
+                - rp.magDrop * 0.10
+                + rp.magFetch * 0.16
+                - rp.magSeat * 0.08;
+            const uY = lerpNum(-0.66, -0.54, aim)
+                + rp.magDrop * 0.14
+                - rp.magFetch * 0.16
+                - rp.magSeat * 0.04;
+            const uZ = lerpNum(-0.34, -0.24, aim)
+                - rp.magDrop * 0.16
+                + rp.magFetch * 0.14
+                + rp.magSeat * 0.08;
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
             handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         } else {
-            const rForearmPitch = rp.pullOut * 0.08 - rp.seatMag * 0.10;
-            const rElbowPitch = rp.pullOut * 0.10 - rp.seatMag * 0.12;
-            const rUpperPitch = -rp.pullOut * 0.06 + rp.seatMag * 0.08;
+            const fX = lerpNum(0.36 + baseBend * 0.07, 0.26, aim)
+                + rp.magDrop * 0.07
+                - rp.magSeat * 0.09;
+            const fY = lerpNum(0.24, 0.14, aim)
+                + rp.magFetch * 0.06;
+            const fZ = lerpNum(0.18, 0.14, aim)
+                + rp.magDrop * 0.06;
 
-            const fX = lerpNum(0.42 + baseBend * 0.08, 0.32, aim) + rForearmPitch;
-            const fY = lerpNum(0.16, 0.08, aim) - rp.magSwap * 0.05;
-            const fZ = lerpNum(0.06, 0.08, aim);
+            const eX = lerpNum(0.32 + baseBend * 0.10, 0.22, aim)
+                + rp.magDrop * 0.09
+                - rp.magSeat * 0.11;
+            const eY = lerpNum(0.18, 0.10, aim);
+            const eZ = lerpNum(0.14, 0.10, aim);
 
-            const eX = lerpNum(0.42 + baseBend * 0.12, 0.30, aim) + rElbowPitch;
-            const eY = lerpNum(0.10, 0.04, aim) - rp.magSwap * 0.04;
-            const eZ = lerpNum(0.04, 0.06, aim);
-
-            const uX = lerpNum(-0.34 - baseBend * 0.14, -0.20, aim) + rUpperPitch;
-            const uY = lerpNum(0.06, 0.02, aim);
-            const uZ = lerpNum(0.02, 0.04, aim);
+            const uX = lerpNum(-0.24 - baseBend * 0.12, -0.14, aim)
+                - rp.magDrop * 0.05
+                + rp.magSeat * 0.07;
+            const uY = lerpNum(0.22, 0.12, aim);
+            const uZ = lerpNum(0.16, 0.12, aim);
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
@@ -940,54 +1059,122 @@
         if (!handObj) return;
         const rp = isReloading && reloadPhases ? reloadPhases : {
             prog: 0,
-            pullOut: 0,
-            magSwap: 0,
-            seatMag: 0,
+            releaseTap: 0,
+            magDrop: 0,
+            magFetch: 0,
+            magSeat: 0,
+            regrip: 0,
             activeMask: 0
         };
 
         if (sideSign < 0) {
-            const idxIdle = 1.78;
-            const midIdle = 1.84;
-            const ringIdle = 1.88;
-            const pinkyIdle = 1.92;
-            const thumbIdle = 0.52;
+            const idxCurl = clampNum(
+                1.74
+                - rp.releaseTap * 0.45
+                - rp.magDrop * 0.58
+                + rp.magFetch * 0.48
+                + rp.magSeat * 0.22
+                + rp.regrip * 0.10,
+                0.28,
+                1.96
+            );
 
-            const idxDelta = rp.pullOut * 0.14 - rp.magSwap * 0.68 + rp.seatMag * 0.16;
-            const midDelta = rp.pullOut * 0.08 - rp.magSwap * 0.40 + rp.seatMag * 0.20;
-            const ringDelta = -rp.pullOut * 0.10 - rp.magSwap * 0.22 + rp.seatMag * 0.24;
-            const pinkyDelta = -rp.pullOut * 0.14 - rp.magSwap * 0.12 + rp.seatMag * 0.26;
-            const thumbDelta = rp.pullOut * 0.24 - rp.magSwap * 0.30 + rp.seatMag * 0.18;
+            const midCurl = clampNum(
+                1.80
+                - rp.releaseTap * 0.18
+                - rp.magDrop * 0.46
+                + rp.magFetch * 0.54
+                + rp.magSeat * 0.26
+                + rp.regrip * 0.12,
+                0.32,
+                2.00
+            );
 
-            const idxC = clampNum(idxIdle + idxDelta, 0.24, 1.98);
-            const midC = clampNum(midIdle + midDelta, 0.28, 2.02);
-            const ringC = clampNum(ringIdle + ringDelta, 0.32, 2.05);
-            const pinkyC = clampNum(pinkyIdle + pinkyDelta, 0.36, 2.08);
-            const thumbC = clampNum(thumbIdle + thumbDelta, 0.16, 1.15);
+            const ringCurl = clampNum(
+                1.84
+                - rp.magDrop * 0.34
+                + rp.magFetch * 0.62
+                + rp.magSeat * 0.28
+                + rp.regrip * 0.14,
+                0.36,
+                2.04
+            );
 
-            const tuckYaw = lerpNum(0.34, 0.18, rp.magSwap);
-            const tuckRoll = lerpNum(-0.22, 0.0, rp.magSwap);
+            const pinkyCurl = clampNum(
+                1.88
+                - rp.magDrop * 0.26
+                + rp.magFetch * 0.68
+                + rp.magSeat * 0.30
+                + rp.regrip * 0.16,
+                0.40,
+                2.06
+            );
 
-            curlFinger(handObj.indexChain, idxC * 0.86, idxC * 0.98, idxC * 0.88, tuckYaw + rp.magSwap * 0.14, tuckRoll);
-            curlFinger(handObj.middleChain, midC * 0.88, midC * 1.00, midC * 0.90, tuckYaw + rp.magSwap * 0.08, tuckRoll);
-            curlFinger(handObj.ringChain, ringC * 0.90, ringC * 1.00, ringC * 0.92, tuckYaw, tuckRoll);
-            curlFinger(handObj.pinkyChain, pinkyC * 0.92, pinkyC * 1.02, pinkyC * 0.94, tuckYaw - rp.pullOut * 0.06, tuckRoll);
+            const thumbCurl = clampNum(
+                0.50
+                - rp.releaseTap * 0.24
+                + rp.magDrop * 0.22
+                - rp.magFetch * 0.28
+                + rp.magSeat * 0.28
+                + rp.regrip * 0.12,
+                0.14,
+                1.12
+            );
+
+            const spreadYaw = rp.magDrop * 0.16 - rp.magFetch * 0.08 - rp.magSeat * 0.06;
+            const rollAdj = -0.20 + rp.magDrop * 0.18 - rp.magFetch * 0.10 + rp.magSeat * 0.06;
 
             curlFinger(
+                handObj.indexChain,
+                idxCurl * 0.84,
+                idxCurl * 0.98,
+                idxCurl * 0.88,
+                0.32 + spreadYaw + rp.releaseTap * 0.14,
+                rollAdj
+            );
+            curlFinger(
+                handObj.middleChain,
+                midCurl * 0.86,
+                midCurl * 1.00,
+                midCurl * 0.90,
+                0.32 + spreadYaw * 0.7,
+                rollAdj * 0.92
+            );
+            curlFinger(
+                handObj.ringChain,
+                ringCurl * 0.88,
+                ringCurl * 1.00,
+                ringCurl * 0.92,
+                0.32 - spreadYaw * 0.5,
+                rollAdj * 0.85
+            );
+            curlFinger(
+                handObj.pinkyChain,
+                pinkyCurl * 0.90,
+                pinkyCurl * 1.02,
+                pinkyCurl * 0.94,
+                0.32 - spreadYaw * 0.9,
+                rollAdj * 0.78
+            );
+            curlFinger(
                 handObj.thumbChain,
-                thumbC * 0.68,
-                thumbC * 0.56,
-                0.18 + rp.seatMag * 0.14,
-                lerpNum(0.46, 0.22, rp.magSwap),
-                lerpNum(0.28, 0.0, rp.magSwap)
+                thumbCurl * 0.68,
+                thumbCurl * 0.56,
+                0.16 + rp.magSeat * 0.18,
+                0.44 - rp.releaseTap * 0.18 + rp.magSeat * 0.10,
+                0.24 + rp.magDrop * 0.14
             );
         } else {
-            const gripCurl = 1.34;
-            const idxPull = 0.72 + triggerPull * 0.66 - rp.seatMag * 0.10;
-            const midCurl = gripCurl + rp.seatMag * 0.12 - rp.pullOut * 0.06;
-            const ringCurl = gripCurl + 0.04 + rp.seatMag * 0.14 - rp.pullOut * 0.08;
-            const pinkyCurl = gripCurl + 0.08 + rp.seatMag * 0.16 - rp.pullOut * 0.10;
-            const thumbCurl = 0.88 + rp.pullOut * 0.10 - rp.magSwap * 0.10;
+            const gripBase = 1.32;
+            const idxPull = clampNum(
+                0.70 + triggerPull * 0.68 + rp.releaseTap * 0.16 - rp.magSeat * 0.12,
+                0.35,
+                1.65
+            );
+            const midCurl = clampNum(gripBase + rp.magSeat * 0.14 - rp.magDrop * 0.06, 0.60, 1.85);
+            const ringCurl = clampNum(gripBase + 0.04 + rp.magSeat * 0.16 - rp.magDrop * 0.08, 0.60, 1.90);
+            const pinkyCurl = clampNum(gripBase + 0.08 + rp.magSeat * 0.18 - rp.magDrop * 0.10, 0.60, 1.92);
+            const thumbCurl = clampNum(0.86 + rp.magDrop * 0.12 - rp.magFetch * 0.10, 0.40, 1.45);
 
             curlFinger(handObj.indexChain, idxPull * 0.78, idxPull * 0.96, idxPull * 0.76, -0.06, 0.0);
             curlFinger(handObj.middleChain, midCurl * 0.84, midCurl * 0.96, midCurl * 0.80, -0.04, 0.0);
@@ -1065,8 +1252,6 @@
 
             this.tempRightPos = new ThreeMod.Vector3();
             this.tempLeftPos = new ThreeMod.Vector3();
-            this.twistQuat = new ThreeMod.Quaternion();
-            this.eulerScratch = new ThreeMod.Euler(0, 0, 0, 'YXZ');
 
             this._leftPos = { x: 0, y: 0, z: 0 };
             this._rightPos = { x: 0, y: 0, z: 0 };
@@ -1276,8 +1461,8 @@
                     let rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z + 0.008, aim);
 
                     if (this.isReloadingActive && reloadPhases) {
-                        rx += reloadPhases.activeMask * 0.006 - reloadPhases.seatMag * 0.004;
-                        ry += reloadPhases.activeMask * 0.010 + reloadPhases.seatMag * 0.008;
+                        rx += reloadPhases.activeMask * 0.006 - reloadPhases.magSeat * 0.004;
+                        ry += reloadPhases.activeMask * 0.010 + reloadPhases.magSeat * 0.008;
                         rz += reloadPhases.activeMask * 0.008;
                     }
 
@@ -1298,26 +1483,29 @@
                         const dropY = spec.magDropLocal.y;
                         const dropZ = spec.magDropLocal.z;
 
-                        const swapX = spec.reloadLeftLocal.x - 0.015;
-                        const swapY = spec.reloadLeftLocal.y - 0.025;
-                        const swapZ = spec.reloadLeftLocal.z + 0.015;
+                        const fetchX = spec.reloadLeftLocal.x - 0.016;
+                        const fetchY = spec.reloadLeftLocal.y - 0.028;
+                        const fetchZ = spec.reloadLeftLocal.z + 0.016;
 
-                        const enterMix = smoothstep(0.00, 0.10, reloadPhases.prog) * (1.0 - smoothstep(0.84, 1.00, reloadPhases.prog));
+                        const enterMix = smoothstep(0.00, 0.08, reloadPhases.prog) * (1.0 - smoothstep(0.86, 1.00, reloadPhases.prog));
                         let targetX = lerpNum(lx, wellX, enterMix);
                         let targetY = lerpNum(ly, wellY, enterMix);
                         let targetZ = lerpNum(lz, wellZ, enterMix);
 
-                        targetX = lerpNum(targetX, dropX, reloadPhases.pullOut);
-                        targetY = lerpNum(targetY, dropY, reloadPhases.pullOut);
-                        targetZ = lerpNum(targetZ, dropZ, reloadPhases.pullOut);
+                        targetX = lerpNum(targetX, wellX - 0.006, reloadPhases.releaseTap);
+                        targetY = lerpNum(targetY, wellY - 0.012, reloadPhases.releaseTap);
 
-                        targetX = lerpNum(targetX, swapX, reloadPhases.magSwap);
-                        targetY = lerpNum(targetY, swapY, reloadPhases.magSwap);
-                        targetZ = lerpNum(targetZ, swapZ, reloadPhases.magSwap);
+                        targetX = lerpNum(targetX, dropX, reloadPhases.magDrop);
+                        targetY = lerpNum(targetY, dropY, reloadPhases.magDrop);
+                        targetZ = lerpNum(targetZ, dropZ, reloadPhases.magDrop);
 
-                        targetX = lerpNum(targetX, wellX, reloadPhases.seatMag);
-                        targetY = lerpNum(targetY, wellY + 0.008, reloadPhases.seatMag);
-                        targetZ = lerpNum(targetZ, wellZ, reloadPhases.seatMag);
+                        targetX = lerpNum(targetX, fetchX, reloadPhases.magFetch);
+                        targetY = lerpNum(targetY, fetchY, reloadPhases.magFetch);
+                        targetZ = lerpNum(targetZ, fetchZ, reloadPhases.magFetch);
+
+                        targetX = lerpNum(targetX, wellX, reloadPhases.magSeat);
+                        targetY = lerpNum(targetY, wellY + 0.008, reloadPhases.magSeat);
+                        targetZ = lerpNum(targetZ, wellZ, reloadPhases.magSeat);
 
                         lx = targetX;
                         ly = targetY;
@@ -1350,13 +1538,13 @@
                     const baseLZ = lerpNum(-0.14, -0.10, aim);
 
                     const relLX = reloadPhases
-                        ? baseLX + reloadPhases.pullOut * 0.24 - reloadPhases.magSwap * 0.14 + reloadPhases.seatMag * 0.12
+                        ? baseLX + reloadPhases.releaseTap * 0.08 + reloadPhases.magDrop * 0.24 - reloadPhases.magFetch * 0.14 + reloadPhases.magSeat * 0.12
                         : baseLX;
                     const relLY = reloadPhases
-                        ? baseLY + reloadPhases.pullOut * 0.28 + reloadPhases.magSwap * 0.36 - reloadPhases.seatMag * 0.10
+                        ? baseLY + reloadPhases.releaseTap * 0.06 + reloadPhases.magDrop * 0.26 + reloadPhases.magFetch * 0.34 - reloadPhases.magSeat * 0.10
                         : baseLY;
                     const relLZ = reloadPhases
-                        ? baseLZ - reloadPhases.pullOut * 0.18 + reloadPhases.magSwap * 0.22 - reloadPhases.seatMag * 0.12
+                        ? baseLZ - reloadPhases.magDrop * 0.18 + reloadPhases.magFetch * 0.20 - reloadPhases.magSeat * 0.12
                         : baseLZ;
 
                     leftHand.palmPosePivot.rotation.set(relLX, relLY, relLZ);
