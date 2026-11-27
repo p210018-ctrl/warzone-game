@@ -95,7 +95,8 @@
                     parentGroup: viewParent,
                     weaponCamera: resolved.weaponCamera,
                     camera: resolved.camera,
-                    scene: resolved.scene
+                    scene: resolved.scene,
+                    visible: true
                 });
             }
 
@@ -791,10 +792,10 @@
             if (isLobbyActive) {
                 this._setHandsVisible(false);
                 TacticalWarfare.UiLobby3d.update(dt);
-            } else if (phase === 'combat') {
+            } else {
                 const inputCtrl = this._getInputController();
 
-                if (inputCtrl && typeof inputCtrl.consumeActionPress === 'function' && inputCtrl.consumeActionPress('grenade')) {
+                if (phase === 'combat' && inputCtrl && typeof inputCtrl.consumeActionPress === 'function' && inputCtrl.consumeActionPress('grenade')) {
                     this._throwGrenade();
                 }
 
