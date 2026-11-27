@@ -983,3 +983,15 @@
     TacticalWarfare.MainBootstrap = mainBootstrapInstance;
     TacticalWarfare.registerModule('37_main_bootstrap', moduleExport);
 })(window);
+```[cite: 3]
+
+### 驗證方式
+
+1. 替換 `13` 與 `37` 後重新整理無痕視窗並進場，確認右手握把姿態維持不變，左手位置與角度已往護木內側與微上收調整。
+2. 切換開鏡（ADS）與換彈狀態，確認左手袖口／手套不再突兀垂落或卡歪。
+
+<ElicitationsGroup message="測完這次 13 與 37 同步更新後，左手還要怎麼微調？">
+  <Elicitation label="左手再往護木下靠一點" query="左手角度接近了，但想再往護木下方靠一點，貼合更緊。"/>
+  <Elicitation label="開鏡時左手再收進一點" query="腰射可以了，但開鏡時左手袖子或手套還是想再收進一點。"/>
+  <Elicitation label="雙手握姿已定，下一步" query="目前雙手握姿已經滿意了，我們繼續下一步。"/>
+</ElicitationsGroup>
