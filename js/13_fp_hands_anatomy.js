@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂分節）+ 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
+ * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂明確分節不重疊）+ 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
  * ============================================================================
  */
 (function (globalScope) {
@@ -36,19 +36,19 @@
         M4A1: Object.freeze({
             moduleKeys: ['WeaponM4Urgi', 'WeaponM4A1', 'M4A1'],
             defaultReloadDuration: 1.65,
-            rightGripLocal: Object.freeze({ x: 0.008, y: -0.062, z: 0.020 }),
-            leftHandguardLocal: Object.freeze({ x: -0.022, y: -0.016, z: -0.220 }),
-            reloadLeftLocal: Object.freeze({ x: -0.045, y: -0.095, z: -0.110 }),
+            rightGripLocal: Object.freeze({ x: 0.008, y: -0.064, z: 0.022 }),
+            leftHandguardLocal: Object.freeze({ x: -0.014, y: -0.022, z: -0.215 }),
+            reloadLeftLocal: Object.freeze({ x: -0.055, y: -0.105, z: -0.110 }),
             reloadPullY: -0.035,
             rightElbowBend: 1.05,
-            leftElbowBend: 0.96
+            leftElbowBend: 0.95
         }),
         MP5: Object.freeze({
             moduleKeys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'],
             defaultReloadDuration: 1.45,
-            rightGripLocal: Object.freeze({ x: 0.008, y: -0.054, z: 0.016 }),
-            leftHandguardLocal: Object.freeze({ x: -0.022, y: -0.018, z: -0.205 }),
-            reloadLeftLocal: Object.freeze({ x: -0.042, y: -0.088, z: -0.100 }),
+            rightGripLocal: Object.freeze({ x: 0.008, y: -0.056, z: 0.018 }),
+            leftHandguardLocal: Object.freeze({ x: -0.014, y: -0.024, z: -0.200 }),
+            reloadLeftLocal: Object.freeze({ x: -0.052, y: -0.098, z: -0.100 }),
             reloadPullY: -0.032,
             rightElbowBend: 1.08,
             leftElbowBend: 0.98
@@ -56,22 +56,22 @@
         AX50: Object.freeze({
             moduleKeys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'],
             defaultReloadDuration: 2.20,
-            rightGripLocal: Object.freeze({ x: 0.008, y: -0.068, z: 0.024 }),
-            leftHandguardLocal: Object.freeze({ x: -0.024, y: -0.016, z: -0.265 }),
-            reloadLeftLocal: Object.freeze({ x: -0.048, y: -0.105, z: -0.125 }),
+            rightGripLocal: Object.freeze({ x: 0.008, y: -0.070, z: 0.026 }),
+            leftHandguardLocal: Object.freeze({ x: -0.016, y: -0.022, z: -0.255 }),
+            reloadLeftLocal: Object.freeze({ x: -0.060, y: -0.115, z: -0.125 }),
             reloadPullY: -0.038,
             rightElbowBend: 1.02,
-            leftElbowBend: 0.90
+            leftElbowBend: 0.92
         }),
         X16: Object.freeze({
             moduleKeys: ['WeaponPistolX16', 'WeaponX16', 'X16'],
             defaultReloadDuration: 1.25,
             rightGripLocal: Object.freeze({ x: 0.008, y: -0.038, z: 0.020 }),
-            leftHandguardLocal: Object.freeze({ x: -0.026, y: -0.044, z: -0.045 }),
-            reloadLeftLocal: Object.freeze({ x: -0.042, y: -0.085, z: -0.065 }),
+            leftHandguardLocal: Object.freeze({ x: -0.018, y: -0.046, z: -0.050 }),
+            reloadLeftLocal: Object.freeze({ x: -0.050, y: -0.095, z: -0.065 }),
             reloadPullY: -0.028,
             rightElbowBend: 1.12,
-            leftElbowBend: 1.15
+            leftElbowBend: 1.10
         })
     });
 
@@ -368,17 +368,29 @@
             side: ThreeMod.DoubleSide
         });
 
-        const elbowJointMat = new ThreeMod.MeshStandardMaterial({
+        const upperArmMat = new ThreeMod.MeshStandardMaterial({
             map: sleeveTex.map,
-            color: 0x3b3e3c,
-            roughness: 0.78,
-            metalness: 0.08,
+            normalMap: sleeveTex.normalMap,
+            normalScale: new ThreeMod.Vector2(1.3, 1.3),
+            roughnessMap: sleeveTex.roughnessMap,
+            color: 0xc5c8c4,
+            roughness: 0.80,
+            metalness: 0.05,
             depthTest: true,
             depthWrite: true,
             side: ThreeMod.DoubleSide
         });
 
-        // 深黑戰術手套護甲與掌心材質
+        const elbowJointMat = new ThreeMod.MeshStandardMaterial({
+            map: sleeveTex.map,
+            color: 0x2c2f2d,
+            roughness: 0.78,
+            metalness: 0.10,
+            depthTest: true,
+            depthWrite: true,
+            side: ThreeMod.DoubleSide
+        });
+
         const gloveArmorMat = new ThreeMod.MeshStandardMaterial({
             map: gloveTex.map,
             normalMap: gloveTex.normalMap,
@@ -402,7 +414,6 @@
             side: ThreeMod.DoubleSide
         });
 
-        // 深黑戰術手套手指與腕帶材質
         const fingerMat = new ThreeMod.MeshStandardMaterial({
             map: gloveTex.map,
             color: 0x1c1e1d,
@@ -422,10 +433,11 @@
             side: ThreeMod.DoubleSide
         });
 
-        matBucket.push(sleeveMat, elbowJointMat, gloveArmorMat, glovePalmMat, fingerMat, wristStrapMat);
+        matBucket.push(sleeveMat, upperArmMat, elbowJointMat, gloveArmorMat, glovePalmMat, fingerMat, wristStrapMat);
 
         return {
             sleeveMat: sleeveMat,
+            upperArmMat: upperArmMat,
             elbowJointMat: elbowJointMat,
             gloveArmorMat: gloveArmorMat,
             glovePalmMat: glovePalmMat,
@@ -551,32 +563,31 @@
         const forearmGeo = createLimbSegmentGeometry(
             ThreeMod,
             geoBucket,
-            0.20,
-            0.056,
-            0.050,
-            0.045,
-            0.039,
+            0.16,
+            0.052,
+            0.046,
+            0.042,
+            0.036,
             0.0020
         );
 
         const upperArmGeo = createLimbSegmentGeometry(
             ThreeMod,
             geoBucket,
-            0.22,
-            0.070,
-            0.062,
-            0.057,
-            0.051,
-            0.0024
+            0.19,
+            0.064,
+            0.056,
+            0.052,
+            0.046,
+            0.0022
         );
 
-        const elbowJointGeo = new ThreeMod.SphereGeometry(0.052, 14, 12);
-        elbowJointGeo.scale(1.04, 0.96, 1.04);
+        const elbowJointGeo = new ThreeMod.SphereGeometry(0.048, 14, 12);
+        elbowJointGeo.scale(1.06, 0.94, 1.06);
 
-        const wristStrapGeo = new ThreeMod.CylinderGeometry(0.046, 0.046, 0.016, 16);
+        const wristStrapGeo = new ThreeMod.CylinderGeometry(0.045, 0.045, 0.016, 16);
         wristStrapGeo.rotateX(Math.PI * 0.5);
 
-        // 加粗掌心與戰術指節護塊／指段
         const palmGeo = createSculptedPalmGeometry(
             ThreeMod,
             geoBucket,
@@ -667,13 +678,12 @@
         wristAnchor.frustumCulled = false;
         rootGroup.add(wristAnchor);
 
-        // 手腕黑色戰術束帶
         const wristStrapMesh = new ThreeMod.Mesh(geos.wristStrapGeo, mats.wristStrapMat);
         wristStrapMesh.position.set(0, 0.002, 0.004);
         wristStrapMesh.frustumCulled = false;
         wristAnchor.add(wristStrapMesh);
 
-        // 小臂關節節點（大臂 / 手肘 / 小臂分節）
+        // 小臂關節節點（長度 0.16，沿 +Z 延伸到手肘）
         const forearmPivot = new ThreeMod.Group();
         forearmPivot.frustumCulled = false;
         wristAnchor.add(forearmPivot);
@@ -682,8 +692,9 @@
         forearmMesh.frustumCulled = false;
         forearmPivot.add(forearmMesh);
 
+        // 手肘關節節點（位於小臂末端 z = 0.16）
         const elbowPivot = new ThreeMod.Group();
-        elbowPivot.position.set(0, 0, 0.20);
+        elbowPivot.position.set(0, 0, 0.16);
         elbowPivot.frustumCulled = false;
         forearmPivot.add(elbowPivot);
 
@@ -691,15 +702,15 @@
         elbowJointMesh.frustumCulled = false;
         elbowPivot.add(elbowJointMesh);
 
+        // 大臂關節節點（從手肘向後下方／側方斜伸出去，不與小臂重疊）
         const upperArmPivot = new ThreeMod.Group();
         upperArmPivot.frustumCulled = false;
         elbowPivot.add(upperArmPivot);
 
-        const upperArmMesh = new ThreeMod.Mesh(geos.upperArmGeo, mats.sleeveMat);
+        const upperArmMesh = new ThreeMod.Mesh(geos.upperArmGeo, mats.upperArmMat);
         upperArmMesh.frustumCulled = false;
         upperArmPivot.add(upperArmMesh);
 
-        // 加粗深黑手掌與 4 段指節護甲
         const palmMesh = new ThreeMod.Mesh(geos.palmGeo, mats.glovePalmMat);
         palmMesh.frustumCulled = false;
         wristAnchor.add(palmMesh);
@@ -782,50 +793,52 @@
     }
 
     /**
-     * 左側（sideSign < 0）小臂與大臂往畫面左側／左下方斜伸，右手（sideSign > 0）往右下方收攏
+     * 左側（sideSign < 0）：小臂從護木往左下方延伸到手肘，大臂再從手肘往左下方（紅圈方向）斜折伸出，兩段夾角分明不重疊
+     * 右側（sideSign > 0）：小臂與大臂往右下方分節折出
      */
     function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
         const bend = clampNum(
-            (typeof elbowBend === 'number' ? elbowBend : 0.96) + (isReloading ? 0.14 : 0.0),
+            (typeof elbowBend === 'number' ? elbowBend : 0.95) + (isReloading ? 0.12 : 0.0),
             0.35,
             1.55
         );
 
         if (sideSign < 0) {
-            // 左臂從護木往左後方／左下方斜伸出畫面左側
+            // 左小臂：從護木往左後下方（紅圈方向）斜伸
             handObj.forearmPivot.rotation.set(
-                0.24 + bend * 0.12,
-                -0.46,
-                -0.18
+                0.38 + bend * 0.10,
+                -0.68,
+                -0.22
+            );
+            // 左手肘：明顯折向更左下方，避免大臂折回小臂上方
+            handObj.elbowPivot.rotation.set(
+                0.68 + bend * 0.25,
+                -0.42,
+                -0.24
+            );
+            // 左大臂：往左下方／後方延伸出去（不與小臂重疊）
+            handObj.upperArmPivot.rotation.set(
+                0.52 + bend * 0.20,
+                -0.28,
+                -0.32
+            );
+        } else {
+            handObj.forearmPivot.rotation.set(
+                0.28 + bend * 0.12,
+                0.22,
+                -0.12
             );
             handObj.elbowPivot.rotation.set(
-                0.32 + bend * 0.30,
-                -0.36,
+                0.55 + bend * 0.28,
+                0.26,
                 -0.16
             );
             handObj.upperArmPivot.rotation.set(
-                Math.PI - (0.58 + bend * 0.38),
-                -0.28,
-                -0.26
-            );
-        } else {
-            // 右臂往右下方自然收攏
-            handObj.forearmPivot.rotation.set(
-                0.22 + bend * 0.14,
+                0.42 + bend * 0.22,
                 0.18,
-                -0.10
-            );
-            handObj.elbowPivot.rotation.set(
-                0.35 + bend * 0.35,
-                0.24,
-                -0.14
-            );
-            handObj.upperArmPivot.rotation.set(
-                Math.PI - (0.55 + bend * 0.42),
-                0.20,
-                0.22
+                0.24
             );
         }
     }
@@ -1175,19 +1188,19 @@
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     rightHand.wristAnchor.quaternion.multiply(this.twistQuat);
 
-                    // 左手腕帶偏左斜向扣住護木，讓左手臂從左邊斜伸進來
+                    // 左手扣住護木，手腕朝向左下／後方延伸出去
                     leftHand.wristAnchor.quaternion.identity();
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    this.eulerScratch.set(0.18, 0.42, -0.34);
+                    this.eulerScratch.set(0.22, 0.56, -0.28);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
                     rightHand.wristAnchor.position.set(0.14, -0.17, -0.28);
                     rightHand.wristAnchor.rotation.set(0.24, -0.14, 0.14);
                     leftHand.wristAnchor.position.set(-0.08, -0.13, -0.40);
-                    leftHand.wristAnchor.rotation.set(0.18, 0.42, -0.34);
+                    leftHand.wristAnchor.rotation.set(0.22, 0.56, -0.28);
                 }
 
                 applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive);
