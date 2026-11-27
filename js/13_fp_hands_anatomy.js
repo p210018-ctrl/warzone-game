@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂獨立換彈分節 + 五指獨立抓握換彈動畫 + 精準彈匣路徑）
+ * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂獨立換彈分節 + 五指獨立抓握換彈動畫 + 四指扣右拇指扣左護木握姿）
  * + 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
  * ============================================================================
  */
@@ -30,7 +30,6 @@
     }
 
     function snapEase(edge0, edge1, x) {
-        // 較乾脆的加速-到位曲線
         const t = clampNum((x - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
         const inv = 1 - t;
         return 1 - inv * inv * inv;
@@ -50,7 +49,7 @@
             moduleKeys: ['WeaponM4Urgi', 'WeaponM4A1', 'M4A1'],
             defaultReloadDuration: 1.65,
             rightGripLocal: Object.freeze({ x: 0.008, y: -0.068, z: 0.026 }),
-            leftHandguardLocal: Object.freeze({ x: -0.036, y: -0.030, z: -0.200 }),
+            leftHandguardLocal: Object.freeze({ x: -0.024, y: -0.044, z: -0.195 }),
             magWellLocal: Object.freeze({ x: 0.004, y: -0.105, z: -0.062 }),
             magDropLocal: Object.freeze({ x: -0.035, y: -0.175, z: -0.048 }),
             reloadLeftLocal: Object.freeze({ x: -0.048, y: -0.112, z: -0.115 }),
@@ -62,7 +61,7 @@
             moduleKeys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'],
             defaultReloadDuration: 1.45,
             rightGripLocal: Object.freeze({ x: 0.008, y: -0.060, z: 0.022 }),
-            leftHandguardLocal: Object.freeze({ x: -0.036, y: -0.032, z: -0.185 }),
+            leftHandguardLocal: Object.freeze({ x: -0.024, y: -0.044, z: -0.180 }),
             magWellLocal: Object.freeze({ x: 0.004, y: -0.098, z: -0.072 }),
             magDropLocal: Object.freeze({ x: -0.032, y: -0.168, z: -0.058 }),
             reloadLeftLocal: Object.freeze({ x: -0.045, y: -0.106, z: -0.108 }),
@@ -74,7 +73,7 @@
             moduleKeys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'],
             defaultReloadDuration: 2.20,
             rightGripLocal: Object.freeze({ x: 0.008, y: -0.074, z: 0.030 }),
-            leftHandguardLocal: Object.freeze({ x: -0.038, y: -0.030, z: -0.240 }),
+            leftHandguardLocal: Object.freeze({ x: -0.026, y: -0.044, z: -0.235 }),
             magWellLocal: Object.freeze({ x: 0.004, y: -0.112, z: -0.075 }),
             magDropLocal: Object.freeze({ x: -0.038, y: -0.185, z: -0.060 }),
             reloadLeftLocal: Object.freeze({ x: -0.052, y: -0.120, z: -0.125 }),
@@ -86,7 +85,7 @@
             moduleKeys: ['WeaponPistolX16', 'WeaponX16', 'X16'],
             defaultReloadDuration: 1.25,
             rightGripLocal: Object.freeze({ x: 0.008, y: -0.044, z: 0.024 }),
-            leftHandguardLocal: Object.freeze({ x: -0.038, y: -0.050, z: -0.065 }),
+            leftHandguardLocal: Object.freeze({ x: -0.026, y: -0.056, z: -0.065 }),
             magWellLocal: Object.freeze({ x: 0.004, y: -0.088, z: -0.018 }),
             magDropLocal: Object.freeze({ x: -0.028, y: -0.155, z: -0.012 }),
             reloadLeftLocal: Object.freeze({ x: -0.042, y: -0.102, z: -0.055 }),
@@ -836,13 +835,6 @@
         };
     }
 
-    /**
-     * 計算換彈各階段乾脆關鍵幀（0..1）
-     * p1: 抽出舊彈匣 (0.00 -> 0.28)
-     * p2: 側帶切換新匣 (0.28 -> 0.56)
-     * p3: 乾脆推入新匣 (0.56 -> 0.84)
-     * p4: 收手回握 (0.84 -> 1.00)
-     */
     function computeReloadPhases(prog) {
         const p = clampNum(prog, 0, 1);
         const pullOut = snapEase(0.00, 0.26, p) * (1.0 - smoothstep(0.28, 0.44, p));
@@ -858,9 +850,6 @@
         };
     }
 
-    /**
-     * 大臂、手肘、小臂在換彈期間各自獨立分節動態
-     */
     function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading, aimBlend, reloadPhases) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
@@ -880,7 +869,6 @@
         );
 
         if (sideSign < 0) {
-            // 左臂：小臂、肘部、大臂各自獨立換彈曲線
             const forearmDrop = rp.pullOut * 0.24 - rp.seatMag * 0.12 + rp.magSwap * 0.16;
             const forearmYaw = rp.pullOut * 0.26 - rp.magSwap * 0.22 - rp.seatMag * 0.08;
             const forearmRoll = rp.pullOut * 0.14 - rp.magSwap * 0.18;
@@ -909,7 +897,6 @@
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
             handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         } else {
-            // 右臂：換彈時配合托槍／穩槍做獨立微調，不死板
             const rForearmPitch = rp.pullOut * 0.08 - rp.seatMag * 0.10;
             const rElbowPitch = rp.pullOut * 0.10 - rp.seatMag * 0.12;
             const rUpperPitch = -rp.pullOut * 0.06 + rp.seatMag * 0.08;
@@ -932,12 +919,13 @@
         }
     }
 
-    function curlFinger(chain, baseX, midX, tipX, yawY) {
+    function curlFinger(chain, baseX, midX, tipX, yawY, rollZ) {
         if (!chain || !chain.pivots) return;
         const p = chain.pivots;
         if (p[0]) {
             p[0].rotation.x = baseX;
             p[0].rotation.y = yawY;
+            if (typeof rollZ === 'number') p[0].rotation.z = rollZ;
         }
         if (p[1]) {
             p[1].rotation.x = midX;
@@ -948,7 +936,7 @@
     }
 
     /**
-     * 每根手指在換彈時各自獨立的抓握／夾取／推抵動畫
+     * 左手：正常持槍時「四指扣在右邊／內側，大拇指扣在左邊／外側」；換彈時每根手指獨立開合／抓握
      */
     function applyIndividualFingerPose(handObj, sideSign, triggerPull, isReloading, reloadPhases) {
         if (!handObj) return;
@@ -961,27 +949,70 @@
         };
 
         if (sideSign < 0) {
-            // 左手五指各自獨立動態（抓匣 -> 張開夾取 -> 推入鎖定 -> 回握）
-            const baseCurl = 1.08;
-            const idxOpen = rp.magSwap * 0.52 + rp.pullOut * 0.18 - rp.seatMag * 0.24;
-            const midOpen = rp.magSwap * 0.36 + rp.pullOut * 0.10 - rp.seatMag * 0.28;
-            const ringOpen = rp.magSwap * 0.24 - rp.pullOut * 0.14 - rp.seatMag * 0.30;
-            const pinkyOpen = rp.magSwap * 0.18 - rp.pullOut * 0.18 - rp.seatMag * 0.32;
-            const thumbFlex = rp.pullOut * 0.26 - rp.magSwap * 0.34 + rp.seatMag * 0.22;
+            // 持槍基準：四指扣向右／內側（yawY 往 +Y 偏），大拇指扣向左／外側（yawY 往 +Y 反向扣回）
+            const idxIdle = 1.18;
+            const midIdle = 1.24;
+            const ringIdle = 1.28;
+            const pinkyIdle = 1.32;
+            const thumbIdle = 0.92;
 
-            const idxC = clampNum(baseCurl - idxOpen, 0.22, 1.45);
-            const midC = clampNum(baseCurl - midOpen, 0.26, 1.45);
-            const ringC = clampNum(baseCurl - ringOpen, 0.30, 1.48);
-            const pinkyC = clampNum(baseCurl - pinkyOpen, 0.32, 1.50);
-            const thumbC = clampNum(0.76 + thumbFlex, 0.20, 1.35);
+            // 換彈時每根手指各自獨立動態
+            const idxDelta = rp.pullOut * 0.24 - rp.magSwap * 0.78 + rp.seatMag * 0.26;
+            const midDelta = rp.pullOut * 0.14 - rp.magSwap * 0.44 + rp.seatMag * 0.34;
+            const ringDelta = -rp.pullOut * 0.12 - rp.magSwap * 0.24 + rp.seatMag * 0.38;
+            const pinkyDelta = -rp.pullOut * 0.22 - rp.magSwap * 0.12 + rp.seatMag * 0.40;
+            const thumbDelta = rp.pullOut * 0.32 - rp.magSwap * 0.62 + rp.seatMag * 0.28;
 
-            curlFinger(handObj.indexChain, idxC * 0.70, idxC * 0.90, idxC * 0.68, 0.06 + rp.magSwap * 0.14);
-            curlFinger(handObj.middleChain, midC * 0.78, midC * 0.92, midC * 0.75, 0.02 + rp.magSwap * 0.08);
-            curlFinger(handObj.ringChain, ringC * 0.84, ringC * 0.95, ringC * 0.78, -0.02);
-            curlFinger(handObj.pinkyChain, pinkyC * 0.88, pinkyC * 0.98, pinkyC * 0.82, -0.05 - rp.pullOut * 0.06);
-            curlFinger(handObj.thumbChain, thumbC * 0.75, thumbC * 0.68, 0.24 + rp.seatMag * 0.20, 0.36 - rp.magSwap * 0.18);
+            const idxC = clampNum(idxIdle + idxDelta, 0.15, 1.55);
+            const midC = clampNum(midIdle + midDelta, 0.22, 1.55);
+            const ringC = clampNum(ringIdle + ringDelta, 0.28, 1.58);
+            const pinkyC = clampNum(pinkyIdle + pinkyDelta, 0.32, 1.60);
+            const thumbC = clampNum(thumbIdle + thumbDelta, 0.18, 1.45);
+
+            // 四指扣在右側／內側
+            curlFinger(
+                handObj.indexChain,
+                idxC * 0.74,
+                idxC * 0.92,
+                idxC * 0.72,
+                0.28 + rp.magSwap * 0.24 - rp.seatMag * 0.10,
+                -0.16 * (1.0 - rp.magSwap)
+            );
+            curlFinger(
+                handObj.middleChain,
+                midC * 0.80,
+                midC * 0.95,
+                midC * 0.78,
+                0.26 + rp.magSwap * 0.14,
+                -0.14 * (1.0 - rp.magSwap)
+            );
+            curlFinger(
+                handObj.ringChain,
+                ringC * 0.84,
+                ringC * 0.96,
+                ringC * 0.80,
+                0.24 + rp.magSwap * 0.06,
+                -0.12 * (1.0 - rp.magSwap)
+            );
+            curlFinger(
+                handObj.pinkyChain,
+                pinkyC * 0.88,
+                pinkyC * 0.98,
+                pinkyC * 0.84,
+                0.22 - rp.pullOut * 0.08,
+                -0.10 * (1.0 - rp.magSwap)
+            );
+
+            // 大拇指扣在左側／外側往上包覆
+            curlFinger(
+                handObj.thumbChain,
+                thumbC * 0.78,
+                thumbC * 0.72,
+                0.28 + rp.seatMag * 0.24,
+                0.52 - rp.magSwap * 0.34,
+                0.22 * (1.0 - rp.magSwap)
+            );
         } else {
-            // 右手五指：食指扣扳機，換彈時中／無名／小指與拇指也做各自微調
             const gripCurl = 1.08;
             const idxPull = 0.76 + triggerPull * 0.48 - rp.seatMag * 0.12;
             const midCurl = gripCurl + rp.seatMag * 0.14 - rp.pullOut * 0.06;
@@ -989,11 +1020,11 @@
             const pinkyCurl = gripCurl + rp.seatMag * 0.18 - rp.pullOut * 0.10;
             const thumbCurl = 0.76 + rp.pullOut * 0.12 - rp.magSwap * 0.10;
 
-            curlFinger(handObj.indexChain, idxPull * 0.72, idxPull * 0.88, idxPull * 0.65, -0.04);
-            curlFinger(handObj.middleChain, midCurl * 0.80, midCurl * 0.92, midCurl * 0.75, 0.0);
-            curlFinger(handObj.ringChain, ringCurl * 0.84, ringCurl * 0.95, ringCurl * 0.78, 0.03);
-            curlFinger(handObj.pinkyChain, pinkyCurl * 0.88, pinkyCurl * 0.98, pinkyCurl * 0.82, 0.06);
-            curlFinger(handObj.thumbChain, thumbCurl * 0.74, thumbCurl * 0.68, 0.25, -0.36);
+            curlFinger(handObj.indexChain, idxPull * 0.72, idxPull * 0.88, idxPull * 0.65, -0.04, 0);
+            curlFinger(handObj.middleChain, midCurl * 0.80, midCurl * 0.92, midCurl * 0.75, 0.0, 0);
+            curlFinger(handObj.ringChain, ringCurl * 0.84, ringCurl * 0.95, ringCurl * 0.78, 0.03, 0);
+            curlFinger(handObj.pinkyChain, pinkyCurl * 0.88, pinkyCurl * 0.98, pinkyCurl * 0.82, 0.06, 0);
+            curlFinger(handObj.thumbChain, thumbCurl * 0.74, thumbCurl * 0.68, 0.25, -0.36, 0);
         }
     }
 
@@ -1271,7 +1302,6 @@
                     let rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z, aim);
 
                     if (this.isReloadingActive && reloadPhases) {
-                        // 換彈時右手略微往內／上穩槍，並在推匣瞬間做乾脆頂回微動
                         rx += reloadPhases.activeMask * 0.006 - reloadPhases.seatMag * 0.004;
                         ry += reloadPhases.activeMask * 0.010 + reloadPhases.seatMag * 0.008;
                         rz += reloadPhases.activeMask * 0.008;
@@ -1286,7 +1316,6 @@
                     let lz = spec.leftHandguardLocal.z;
 
                     if (this.isReloadingActive && reloadPhases) {
-                        // 精準走到彈匣井位置 -> 往下抽出彈匣 -> 側帶換匣 -> 往上乾脆推入彈匣井
                         const wellX = spec.magWellLocal.x;
                         const wellY = spec.magWellLocal.y;
                         const wellZ = spec.magWellLocal.z;
@@ -1304,17 +1333,14 @@
                         let targetY = lerpNum(ly, wellY, enterMix);
                         let targetZ = lerpNum(lz, wellZ, enterMix);
 
-                        // 1. 往下抽匣
                         targetX = lerpNum(targetX, dropX, reloadPhases.pullOut);
                         targetY = lerpNum(targetY, dropY, reloadPhases.pullOut);
                         targetZ = lerpNum(targetZ, dropZ, reloadPhases.pullOut);
 
-                        // 2. 側向帶出切換新匣
                         targetX = lerpNum(targetX, swapX, reloadPhases.magSwap);
                         targetY = lerpNum(targetY, swapY, reloadPhases.magSwap);
                         targetZ = lerpNum(targetZ, swapZ, reloadPhases.magSwap);
 
-                        // 3. 乾脆推回彈匣井鎖定
                         targetX = lerpNum(targetX, wellX, reloadPhases.seatMag);
                         targetY = lerpNum(targetY, wellY + 0.008, reloadPhases.seatMag);
                         targetZ = lerpNum(targetZ, wellZ, reloadPhases.seatMag);
@@ -1350,9 +1376,10 @@
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    const baseLX = lerpNum(0.10, 0.04, aim);
-                    const baseLY = lerpNum(-0.20, -0.08, aim);
-                    const baseLZ = lerpNum(0.10, 0.03, aim);
+                    // 正常持槍：手腕略微外傾翻轉，讓四指扣向右側／內側、拇指扣向左側／外側
+                    const baseLX = lerpNum(0.18, 0.10, aim);
+                    const baseLY = lerpNum(-0.14, -0.06, aim);
+                    const baseLZ = lerpNum(0.26, 0.14, aim);
 
                     const relLX = reloadPhases
                         ? baseLX + reloadPhases.pullOut * 0.24 - reloadPhases.magSwap * 0.14 + reloadPhases.seatMag * 0.12
@@ -1371,7 +1398,7 @@
                     rightHand.wristAnchor.position.set(0.14, -0.17, -0.28);
                     rightHand.wristAnchor.rotation.set(0.10, 0.14, -0.08);
                     leftHand.wristAnchor.position.set(-0.10, -0.14, -0.38);
-                    leftHand.wristAnchor.rotation.set(0.10, -0.20, 0.10);
+                    leftHand.wristAnchor.rotation.set(0.18, -0.14, 0.26);
                 }
 
                 applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim, reloadPhases);
