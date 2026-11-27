@@ -34,38 +34,69 @@
 
     const WEAPON_GRIP_SPECS = Object.freeze({
         M4A1: Object.freeze({
-            moduleKey: 'WeaponM4Urgi',
+            moduleKeys: ['WeaponM4Urgi', 'WeaponM4A1', 'M4A1'],
             defaultReloadDuration: 1.65,
-            rightGripLocal: Object.freeze({ x: 0.004, y: -0.056, z: 0.016 }),
-            leftHandguardLocal: Object.freeze({ x: -0.008, y: -0.004, z: -0.255 }),
+            rightGripLocal: Object.freeze({ x: 0.006, y: -0.056, z: 0.015 }),
+            leftHandguardLocal: Object.freeze({ x: -0.010, y: -0.006, z: -0.245 }),
             reloadLeftLocal: Object.freeze({ x: -0.025, y: -0.095, z: -0.115 }),
             reloadPullY: -0.035
         }),
         MP5: Object.freeze({
-            moduleKey: 'WeaponSmgMp5',
+            moduleKeys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'],
             defaultReloadDuration: 1.45,
-            rightGripLocal: Object.freeze({ x: 0.004, y: -0.048, z: 0.012 }),
-            leftHandguardLocal: Object.freeze({ x: -0.008, y: -0.006, z: -0.240 }),
+            rightGripLocal: Object.freeze({ x: 0.006, y: -0.048, z: 0.012 }),
+            leftHandguardLocal: Object.freeze({ x: -0.010, y: -0.008, z: -0.230 }),
             reloadLeftLocal: Object.freeze({ x: -0.022, y: -0.088, z: -0.105 }),
             reloadPullY: -0.032
         }),
         AX50: Object.freeze({
             moduleKey: 'WeaponSniperAx50',
+            moduleKeys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'],
             defaultReloadDuration: 2.20,
-            rightGripLocal: Object.freeze({ x: 0.005, y: -0.062, z: 0.020 }),
-            leftHandguardLocal: Object.freeze({ x: -0.010, y: -0.004, z: -0.305 }),
+            rightGripLocal: Object.freeze({ x: 0.006, y: -0.062, z: 0.020 }),
+            leftHandguardLocal: Object.freeze({ x: -0.012, y: -0.006, z: -0.295 }),
             reloadLeftLocal: Object.freeze({ x: -0.028, y: -0.105, z: -0.130 }),
             reloadPullY: -0.038
         }),
         X16: Object.freeze({
-            moduleKey: 'WeaponPistolX16',
+            moduleKeys: ['WeaponPistolX16', 'WeaponX16', 'X16'],
             defaultReloadDuration: 1.25,
-            rightGripLocal: Object.freeze({ x: 0.004, y: -0.030, z: 0.018 }),
-            leftHandguardLocal: Object.freeze({ x: -0.012, y: -0.036, z: -0.035 }),
+            rightGripLocal: Object.freeze({ x: 0.006, y: -0.032, z: 0.018 }),
+            leftHandguardLocal: Object.freeze({ x: -0.014, y: -0.038, z: -0.035 }),
             reloadLeftLocal: Object.freeze({ x: -0.025, y: -0.085, z: -0.068 }),
             reloadPullY: -0.028
         })
     });
+
+    function extractWeaponObject3D(mod) {
+        if (!mod || typeof mod !== 'object') return null;
+        const candidates = [
+            mod.weaponBodyGroup,
+            mod.rootGroup,
+            mod.group,
+            mod.weaponGroup,
+            mod.mesh,
+            mod.model,
+            mod.container,
+            mod.instance && mod.instance.weaponBodyGroup,
+            mod.instance && mod.instance.rootGroup,
+            mod.instance && mod.instance.group
+        ];
+        for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i];
+            if (c && (c.isObject3D || (typeof c.position === 'object' && typeof c.quaternion === 'object'))) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    function isWeaponObjectVisible(mod, obj3d) {
+        if (obj3d && obj3d.visible === false) return false;
+        if (mod && typeof mod.visible === 'boolean') return mod.visible;
+        if (mod && mod.instance && typeof mod.instance.visible === 'boolean') return mod.instance.visible;
+        return Boolean(obj3d);
+    }
 
     function buildCamoSleeveTextures(ThreeMod, texBucket, seedVal) {
         if (!ThreeMod || typeof document === 'undefined') {
@@ -106,7 +137,6 @@
 
         const cell = 4;
         const bcImg = bcCtx.createImageData(size, size);
-        const nImg = nCtx.createImageData(size, size);
         const rImg = rCtx.createImageData(size, size);
         const heightGrid = new Float32Array(size * size);
 
@@ -149,6 +179,7 @@
             }
         }
 
+        const nImg = nCtx.createImageData(size, size);
         const nStrength = 3.4;
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < size; x++) {
@@ -232,7 +263,7 @@
 
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < size; x++) {
-                let v = 40.0 + (rand() - 0.5) * 9.6;
+                let v = 42.0 + (rand() - 0.5) * 9.6;
                 const hexPat = (((x + y * 2) % 4) === 0) && ((y % 2) === 0);
                 if (hexPat) v += 14.0;
 
@@ -241,21 +272,21 @@
                 const inCuffBand = x >= 22 && x <= 232 && y >= 175 && y <= 230;
 
                 if (inKnuckleBand) {
-                    v = 32;
-                    if (x <= 26 || x >= 208 || y <= 84 || y >= 144) v = 92;
+                    v = 34;
+                    if (x <= 26 || x >= 208 || y <= 84 || y >= 144) v = 96;
                 } else if (inFingerPad) {
-                    v = 36;
-                    if (x <= 32 || x >= 216 || y === 20 || y === 40 || y === 50 || y === 70) v = 94;
+                    v = 38;
+                    if (x <= 32 || x >= 216 || y === 20 || y === 40 || y === 50 || y === 70) v = 98;
                 } else if (inCuffBand) {
-                    v = 28;
+                    v = 30;
                 }
 
-                const c = clampNum(v, 15, 220);
+                const c = clampNum(v, 16, 220);
                 const idx = y * size + x;
                 const o = idx * 4;
                 bcImg.data[o] = c;
-                bcImg.data[o + 1] = clampNum(c + 2, 15, 222);
-                bcImg.data[o + 2] = clampNum(c + 1, 15, 221);
+                bcImg.data[o + 1] = clampNum(c + 2, 16, 222);
+                bcImg.data[o + 2] = clampNum(c + 1, 16, 221);
                 bcImg.data[o + 3] = 255;
 
                 const hVal = c / 255.0;
@@ -325,6 +356,8 @@
             roughnessMap: sleeveTex.roughnessMap,
             roughness: 1.0,
             metalness: 0.06,
+            depthTest: true,
+            depthWrite: true,
             side: ThreeMod.DoubleSide
         });
 
@@ -335,6 +368,8 @@
             roughnessMap: gloveTex.roughnessMap,
             roughness: 1.0,
             metalness: 0.12,
+            depthTest: true,
+            depthWrite: true,
             side: ThreeMod.DoubleSide
         });
 
@@ -343,13 +378,17 @@
             roughness: 0.72,
             metalness: 0.08,
             color: 0xd8dcd9,
+            depthTest: true,
+            depthWrite: true,
             side: ThreeMod.DoubleSide
         });
 
         const fingerMat = new ThreeMod.MeshStandardMaterial({
-            color: 0xb98a6b,
+            color: 0xc29272,
             roughness: 0.62,
             metalness: 0.04,
+            depthTest: true,
+            depthWrite: true,
             side: ThreeMod.DoubleSide
         });
 
@@ -364,8 +403,8 @@
     }
 
     function createSculptedSleeveGeometry(ThreeMod, geoBucket, length, r0W, r0T, r1W, r1T) {
-        const nu = 28;
-        const nv = 24;
+        const nu = 24;
+        const nv = 20;
         const positions = new Float32Array(nu * nv * 3);
         const uvs = new Float32Array(nu * nv * 2);
         const indices = [];
@@ -427,8 +466,8 @@
     }
 
     function createSculptedPalmGeometry(ThreeMod, geoBucket, palmLen, palmW, palmT) {
-        const nu = 14;
-        const nv = 18;
+        const nu = 12;
+        const nv = 16;
         const positions = new Float32Array(nu * nv * 3);
         const uvs = new Float32Array(nu * nv * 2);
         const indices = [];
@@ -533,40 +572,53 @@
     function buildFingerSegmentChain(ThreeMod, parentJoint, segGeo, padGeo, armorMat, skinMat, isThumb) {
         const p1 = new ThreeMod.Group();
         parentJoint.add(p1);
-        p1.add(new ThreeMod.Mesh(segGeo, isThumb ? armorMat : skinMat));
+        const m1 = new ThreeMod.Mesh(segGeo, isThumb ? armorMat : skinMat);
+        m1.frustumCulled = false;
+        p1.add(m1);
+
         if (!isThumb && padGeo) {
             const pad1 = new ThreeMod.Mesh(padGeo, armorMat);
             pad1.position.set(0, 0.005, -0.009);
+            pad1.frustumCulled = false;
             p1.add(pad1);
         }
 
         const p2 = new ThreeMod.Group();
         p2.position.set(0, 0, -0.018);
         p1.add(p2);
-        p2.add(new ThreeMod.Mesh(segGeo, skinMat));
+        const m2 = new ThreeMod.Mesh(segGeo, skinMat);
+        m2.frustumCulled = false;
+        p2.add(m2);
+
         if (!isThumb && padGeo) {
             const pad2 = new ThreeMod.Mesh(padGeo, armorMat);
             pad2.position.set(0, 0.005, -0.009);
+            pad2.frustumCulled = false;
             p2.add(pad2);
         }
 
         const p3 = new ThreeMod.Group();
         p3.position.set(0, 0, -0.018);
         p2.add(p3);
-        p3.add(new ThreeMod.Mesh(segGeo, skinMat));
+        const m3 = new ThreeMod.Mesh(segGeo, skinMat);
+        m3.frustumCulled = false;
+        p3.add(m3);
 
         return { pivots: [p1, p2, p3] };
     }
 
     function buildSingleHandAndSleeve(ThreeMod, rootGroup, sideSign, geos, mats) {
         const wristAnchor = new ThreeMod.Group();
+        wristAnchor.frustumCulled = false;
         rootGroup.add(wristAnchor);
 
         const sleeveMesh = new ThreeMod.Mesh(geos.sleeveGeo, mats.sleeveMat);
         sleeveMesh.position.set(0, -0.002, 0.005);
+        sleeveMesh.frustumCulled = false;
         wristAnchor.add(sleeveMesh);
 
         const palmMesh = new ThreeMod.Mesh(geos.palmGeo, mats.glovePalmMat);
+        palmMesh.frustumCulled = false;
         wristAnchor.add(palmMesh);
 
         for (let k = 0; k < 4; k++) {
@@ -574,6 +626,7 @@
             const kMesh = new ThreeMod.Mesh(geos.knucklePlateGeo, mats.gloveArmorMat);
             kMesh.position.set(xOff, 0.012, -0.068);
             kMesh.rotation.x = -0.14;
+            kMesh.frustumCulled = false;
             wristAnchor.add(kMesh);
         }
 
@@ -703,19 +756,44 @@
     function resolveActiveWeapon(weaponId) {
         const order = ['M4A1', 'MP5', 'AX50', 'X16'];
         const preferred = normalizeWeaponId(weaponId);
-        const spec = WEAPON_GRIP_SPECS[preferred];
-        const mod = spec ? TacticalWarfareNamespace[spec.moduleKey] : null;
-        if (mod && mod.rootGroup && mod.rootGroup.visible) {
-            return { id: preferred, mod: mod };
+
+        const findById = (id) => {
+            const spec = WEAPON_GRIP_SPECS[id];
+            if (!spec) return null;
+            const keys = spec.moduleKeys || (spec.moduleKey ? [spec.moduleKey] : []);
+            for (let k = 0; k < keys.length; k++) {
+                const mod = TacticalWarfareNamespace[keys[k]];
+                if (mod) {
+                    const obj3d = extractWeaponObject3D(mod);
+                    return { id: id, mod: mod, obj3d: obj3d, visible: isWeaponObjectVisible(mod, obj3d) };
+                }
+            }
+            return null;
+        };
+
+        const prefFound = findById(preferred);
+        if (prefFound && prefFound.visible) {
+            return prefFound;
         }
+
         for (let i = 0; i < order.length; i++) {
-            const id = order[i];
-            const m = TacticalWarfareNamespace[WEAPON_GRIP_SPECS[id].moduleKey];
-            if (m && m.rootGroup && m.rootGroup.visible) {
-                return { id: id, mod: m };
+            const found = findById(order[i]);
+            if (found && found.visible) {
+                return found;
             }
         }
-        return { id: preferred, mod: mod || null };
+
+        return prefFound || { id: preferred, mod: null, obj3d: null, visible: false };
+    }
+
+    function ensureObjectVisibleAncestors(obj) {
+        let cur = obj;
+        let guard = 0;
+        while (cur && guard < 12) {
+            cur.visible = true;
+            cur = cur.parent;
+            guard++;
+        }
     }
 
     class FirstPersonTacticalHandsController {
@@ -741,8 +819,6 @@
 
             this.tempRightPos = new ThreeMod.Vector3();
             this.tempLeftPos = new ThreeMod.Vector3();
-            this.tempRightQuat = new ThreeMod.Quaternion();
-            this.tempLeftQuat = new ThreeMod.Quaternion();
             this.twistQuat = new ThreeMod.Quaternion();
             this.eulerScratch = new ThreeMod.Euler(0, 0, 0, 'YXZ');
 
@@ -764,6 +840,7 @@
             if (this.dualArmRig.rigRootGroup.parent !== targetParent) {
                 targetParent.add(this.dualArmRig.rigRootGroup);
             }
+            ensureObjectVisibleAncestors(this.dualArmRig.rigRootGroup);
         }
 
         buildRig() {
@@ -773,6 +850,7 @@
             const rigGroup = new this.ThreeModule.Group();
             rigGroup.name = 'FirstPersonTacticalHandsRig';
             rigGroup.visible = this.isVisible;
+            rigGroup.frustumCulled = false;
 
             const rightHand = buildSingleHandAndSleeve(this.ThreeModule, rigGroup, 1, geos, mats);
             const leftHand = buildSingleHandAndSleeve(this.ThreeModule, rigGroup, -1, geos, mats);
@@ -786,7 +864,7 @@
             };
 
             if (this.parentGroup) {
-                this.parentGroup.add(rigGroup);
+                this._attachToParent(this.parentGroup);
             }
         }
 
@@ -801,6 +879,8 @@
             }
             if (typeof opts.visible === 'boolean') {
                 this.setVisible(opts.visible);
+            } else {
+                this.setVisible(true);
             }
             return this;
         }
@@ -809,6 +889,9 @@
             this.isVisible = Boolean(visible);
             if (this.dualArmRig && this.dualArmRig.rigRootGroup) {
                 this.dualArmRig.rigRootGroup.visible = this.isVisible;
+                if (this.isVisible) {
+                    ensureObjectVisibleAncestors(this.dualArmRig.rigRootGroup);
+                }
             }
         }
 
@@ -841,7 +924,7 @@
             const fireEvt = GameEventsTable.WEAPON_FIRED || GameEventsTable.WEAPON_FIRE || 'weapon:fired';
             const switchEvt = GameEventsTable.WEAPON_SWITCHED || GameEventsTable.WEAPON_EQUIP || 'weapon:switched';
             const rStartEvt = GameEventsTable.RELOAD_STARTED || GameEventsTable.WEAPON_RELOAD_START || 'reload:started';
-            const rEndEvt = GameEventsTable.WEAPON_RELOAD_FINISH || GameEventsTable.RELOAD_COMPLETE || 'reload:complete';
+            const rEndEvt = GameEventsTable.RELOAD_FINISH || GameEventsTable.RELOAD_COMPLETE || 'reload:complete';
 
             this._unsubscribers.push(EventBusInstance.on(fireEvt, onFire));
             this._unsubscribers.push(EventBusInstance.on(switchEvt, onSwitch));
@@ -854,7 +937,15 @@
                 if (!this.dualArmRig) return;
 
                 const isCtx = ctxOrScene && !ctxOrScene.isScene && typeof ctxOrScene === 'object';
-                const targetParent = (isCtx && (ctxOrScene.parentGroup || ctxOrScene.weaponCamera))
+                const resolved = resolveActiveWeapon((isCtx && ctxOrScene.weaponId) || this.activeWeaponCode);
+                this.activeWeaponCode = resolved.id;
+                const weaponMod = resolved.mod;
+                const weaponObj = resolved.obj3d;
+                const spec = WEAPON_GRIP_SPECS[this.activeWeaponCode] || WEAPON_GRIP_SPECS.M4A1;
+
+                // 若槍身掛在某個父節點下，優先跟隨槍身所在父節點（例如 weaponCamera），保證同空間不脫節
+                const targetParent = (weaponObj && weaponObj.parent)
+                    || (isCtx && (ctxOrScene.parentGroup || ctxOrScene.weaponCamera))
                     || (ctxOrScene && ctxOrScene.isObject3D ? ctxOrScene : null)
                     || this.parentGroup
                     || this.cameraInstance
@@ -869,6 +960,7 @@
                     return;
                 }
                 this.dualArmRig.rigRootGroup.visible = true;
+                ensureObjectVisibleAncestors(this.dualArmRig.rigRootGroup);
 
                 const dt = clampNum(
                     typeof rawDeltaSeconds === 'number' && !Number.isNaN(rawDeltaSeconds) ? rawDeltaSeconds : 0.016,
@@ -877,11 +969,6 @@
                 );
                 this.elapsedTimeSeconds += dt;
                 this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - dt * 9.0);
-
-                const resolved = resolveActiveWeapon((isCtx && ctxOrScene.weaponId) || this.activeWeaponCode);
-                this.activeWeaponCode = resolved.id;
-                const weaponMod = resolved.mod;
-                const spec = WEAPON_GRIP_SPECS[this.activeWeaponCode] || WEAPON_GRIP_SPECS.M4A1;
 
                 let reloading = Boolean(isCtx && isCtx.isReloading);
                 if (weaponMod && typeof weaponMod._isReloading === 'boolean' && weaponMod._isReloading) {
@@ -904,17 +991,15 @@
                     }
                 }
 
-                const anchor = (weaponMod && (weaponMod.weaponBodyGroup || weaponMod.rootGroup)) || null;
                 const rightHand = this.dualArmRig.rightHand;
                 const leftHand = this.dualArmRig.leftHand;
 
-                if (anchor && anchor.parent && this.parentGroup) {
-                    anchor.updateMatrixWorld(true);
+                if (weaponObj && weaponObj.parent && this.parentGroup && typeof weaponObj.localToWorld === 'function') {
+                    weaponObj.updateMatrixWorld(true);
                     this.parentGroup.updateMatrixWorld(true);
 
-                    // 取得武器本體在相機／父節點下的相對姿態，確保與槍身完全同步不脫節
                     this.tempRightPos.set(spec.rightGripLocal.x, spec.rightGripLocal.y, spec.rightGripLocal.z);
-                    anchor.localToWorld(this.tempRightPos);
+                    weaponObj.localToWorld(this.tempRightPos);
                     this.parentGroup.worldToLocal(this.tempRightPos);
 
                     let lx = spec.leftHandguardLocal.x;
@@ -930,30 +1015,33 @@
                     }
 
                     this.tempLeftPos.set(lx, ly, lz);
-                    anchor.localToWorld(this.tempLeftPos);
+                    weaponObj.localToWorld(this.tempLeftPos);
                     this.parentGroup.worldToLocal(this.tempLeftPos);
 
                     rightHand.wristAnchor.position.copy(this.tempRightPos);
                     leftHand.wristAnchor.position.copy(this.tempLeftPos);
 
                     rightHand.wristAnchor.quaternion.identity();
-                    if (anchor.quaternion) {
-                        rightHand.wristAnchor.quaternion.copy(anchor.quaternion);
+                    if (weaponObj.quaternion) {
+                        rightHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
                     this.eulerScratch.set(0.12, -0.06, 0.06);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     rightHand.wristAnchor.quaternion.multiply(this.twistQuat);
 
                     leftHand.wristAnchor.quaternion.identity();
-                    if (anchor.quaternion) {
-                        leftHand.wristAnchor.quaternion.copy(anchor.quaternion);
+                    if (weaponObj.quaternion) {
+                        leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
                     this.eulerScratch.set(0.08, 0.14, -0.24);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
-                    rightHand.wristAnchor.position.set(0.16, -0.18, -0.32);
-                    leftHand.wristAnchor.position.set(-0.04, -0.10, -0.50);
+                    // 即使找不到槍身節點，也直接在第一人稱視角前方擺出雙手，確保一定看得見
+                    rightHand.wristAnchor.position.set(0.15, -0.16, -0.32);
+                    rightHand.wristAnchor.rotation.set(0.12, -0.06, 0.06);
+                    leftHand.wristAnchor.position.set(-0.05, -0.11, -0.46);
+                    leftHand.wristAnchor.rotation.set(0.08, 0.14, -0.24);
                 }
 
                 applyGripFingerPose(rightHand, 1, this.triggerPullAmount, this.isReloadingActive);
@@ -1020,7 +1108,7 @@
             || null;
 
         const parent = overrideParent || weaponCam || mainCam || scene || null;
-        return { parent: parent, camera: mainCam, weaponCamera: weaponCam };
+        return { parent: parent, camera: mainCam, weaponCamera: weaponCam, scene: scene };
     }
 
     function createOrReplaceController(overrideParent, overrideCamera) {
@@ -1071,6 +1159,9 @@
     if (EventBusInstance && typeof EventBusInstance.on === 'function') {
         const onStart = () => {
             if (!activeController) createOrReplaceController();
+            if (activeController && typeof activeController.setVisible === 'function') {
+                activeController.setVisible(true);
+            }
         };
         EventBusInstance.on(GameEventsTable.ROUND_START || 'round:start', onStart);
         EventBusInstance.on(GameEventsTable.MATCH_START || 'match:start', onStart);
