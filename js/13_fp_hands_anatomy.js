@@ -789,10 +789,6 @@
         };
     }
 
-    /**
-     * 左側（sideSign < 0）：小臂略微往上抬，肘部與大臂往左後上方延伸，不往下折出
-     * 右側（sideSign > 0）：小臂略微往上抬，肘部與大臂往右後上方延伸，不往下折出
-     */
     function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
@@ -814,9 +810,9 @@
                 0.18
             );
             handObj.upperArmPivot.rotation.set(
-                -0.18 - bend * 0.12,
-                -0.24,
-                0.24
+                -0.68 - bend * 0.24,
+                -0.28,
+                0.34
             );
         } else {
             handObj.forearmPivot.rotation.set(
@@ -830,9 +826,9 @@
                 -0.20
             );
             handObj.upperArmPivot.rotation.set(
-                -0.16 - bend * 0.12,
-                0.22,
-                -0.26
+                -0.66 - bend * 0.24,
+                0.26,
+                -0.36
             );
         }
     }
