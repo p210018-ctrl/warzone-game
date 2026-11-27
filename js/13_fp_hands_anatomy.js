@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂向外折分節）+ 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
+ * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂自然折角 + 舉槍防飛出穩定）+ 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
  * ============================================================================
  */
 (function (globalScope) {
@@ -103,6 +103,33 @@
         if (mod && typeof mod.visible === 'boolean') return mod.visible;
         if (mod && mod.instance && typeof mod.instance.visible === 'boolean') return mod.instance.visible;
         return Boolean(obj3d);
+    }
+
+    function detectAimingState(isCtx, ctxOrScene, weaponMod, weaponObj) {
+        if (isCtx) {
+            if (typeof ctxOrScene.isAiming === 'boolean') return ctxOrScene.isAiming;
+            if (typeof ctxOrScene.ads === 'boolean') return ctxOrScene.ads;
+            if (typeof ctxOrScene.aimProgress === 'number') return ctxOrScene.aimProgress > 0.25;
+        }
+        if (weaponMod && typeof weaponMod.isAiming === 'boolean') return weaponMod.isAiming;
+        if (weaponMod && weaponMod.instance && typeof weaponMod.instance.isAiming === 'boolean') {
+            return weaponMod.instance.isAiming;
+        }
+        if (GameStateStore && typeof GameStateStore.get === 'function') {
+            const sAim = GameStateStore.get('weapons.isAiming', null);
+            if (typeof sAim === 'boolean') return sAim;
+            const sAds = GameStateStore.get('isAiming', null);
+            if (typeof sAds === 'boolean') return sAds;
+            const sFactor = GameStateStore.get('weapons.adsFactor', null);
+            if (typeof sFactor === 'number') return sFactor > 0.25;
+        }
+        // Fallback: 槍身明顯往中心靠攏（x 接近 0）或往前推高時視為舉槍
+        if (weaponObj && weaponObj.position) {
+            const px = Math.abs(weaponObj.position.x || 0);
+            const py = weaponObj.position.y || 0;
+            if (px < 0.045 && py > -0.11) return true;
+        }
+        return false;
     }
 
     function buildCamoSleeveTextures(ThreeMod, texBucket, seedVal) {
@@ -789,47 +816,51 @@
         };
     }
 
-    function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading) {
+    /**
+     * 修正手臂折角：避免過度翻轉或舉槍時飛出
+     */
+    function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading, aimBlend) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
+        const aim = clampNum(typeof aimBlend === 'number' ? aimBlend : 0.0, 0.0, 1.0);
         const bend = clampNum(
-            (typeof elbowBend === 'number' ? elbowBend : 0.96) + (isReloading ? 0.06 : 0.0),
+            (typeof elbowBend === 'number' ? elbowBend : 0.96) + (isReloading ? 0.05 : 0.0) - aim * 0.14,
             0.35,
-            1.55
+            1.45
         );
 
         if (sideSign < 0) {
-            handObj.forearmPivot.rotation.set(
-                0.18 + bend * 0.06,
-                -0.66,
-                0.22
-            );
-            handObj.elbowPivot.rotation.set(
-                0.28 + bend * 0.14,
-                -0.36,
-                0.18
-            );
-            handObj.upperArmPivot.rotation.set(
-                -0.68 - bend * 0.24,
-                -0.28,
-                0.34
-            );
+            const fX = lerpNum(0.16 + bend * 0.06, 0.10, aim);
+            const fY = lerpNum(-0.46, -0.28, aim);
+            const fZ = lerpNum(0.14, 0.06, aim);
+
+            const eX = lerpNum(0.24 + bend * 0.12, 0.14, aim);
+            const eY = lerpNum(-0.24, -0.14, aim);
+            const eZ = lerpNum(0.12, 0.05, aim);
+
+            const uX = lerpNum(-0.34 - bend * 0.14, -0.18, aim);
+            const uY = lerpNum(-0.18, -0.10, aim);
+            const uZ = lerpNum(0.18, 0.08, aim);
+
+            handObj.forearmPivot.rotation.set(fX, fY, fZ);
+            handObj.elbowPivot.rotation.set(eX, eY, eZ);
+            handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         } else {
-            handObj.forearmPivot.rotation.set(
-                0.16 + bend * 0.06,
-                0.58,
-                -0.24
-            );
-            handObj.elbowPivot.rotation.set(
-                0.26 + bend * 0.14,
-                0.34,
-                -0.20
-            );
-            handObj.upperArmPivot.rotation.set(
-                -0.66 - bend * 0.24,
-                0.26,
-                -0.36
-            );
+            const fX = lerpNum(0.14 + bend * 0.06, 0.08, aim);
+            const fY = lerpNum(0.38, 0.22, aim);
+            const fZ = lerpNum(-0.16, -0.06, aim);
+
+            const eX = lerpNum(0.22 + bend * 0.12, 0.12, aim);
+            const eY = lerpNum(0.22, 0.12, aim);
+            const eZ = lerpNum(-0.14, -0.05, aim);
+
+            const uX = lerpNum(-0.32 - bend * 0.14, -0.16, aim);
+            const uY = lerpNum(0.16, 0.08, aim);
+            const uZ = lerpNum(-0.20, -0.08, aim);
+
+            handObj.forearmPivot.rotation.set(fX, fY, fZ);
+            handObj.elbowPivot.rotation.set(eX, eY, eZ);
+            handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         }
     }
 
@@ -950,6 +981,7 @@
             this.triggerPullAmount = 0.0;
             this.elapsedTimeSeconds = 0.0;
             this.isVisible = true;
+            this.aimBlend = 0.0;
 
             this.isReloadingActive = false;
             this.reloadElapsedSeconds = 0.0;
@@ -1119,6 +1151,11 @@
                 this.elapsedTimeSeconds += dt;
                 this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - dt * 9.0);
 
+                const isAimingNow = detectAimingState(isCtx, ctxOrScene, weaponMod, weaponObj);
+                const aimTarget = isAimingNow ? 1.0 : 0.0;
+                const aimStep = clampNum(dt * 14.0, 0.0, 1.0);
+                this.aimBlend = lerpNum(this.aimBlend, aimTarget, aimStep);
+
                 let reloading = Boolean(isCtx && isCtx.isReloading);
                 if (weaponMod && typeof weaponMod._isReloading === 'boolean' && weaponMod._isReloading) {
                     reloading = true;
@@ -1142,12 +1179,18 @@
 
                 const rightHand = this.dualArmRig.rightHand;
                 const leftHand = this.dualArmRig.leftHand;
+                const aim = this.aimBlend;
 
                 if (weaponObj && weaponObj.parent && this.parentGroup && typeof weaponObj.localToWorld === 'function') {
                     weaponObj.updateMatrixWorld(true);
                     this.parentGroup.updateMatrixWorld(true);
 
-                    this.tempRightPos.set(spec.rightGripLocal.x, spec.rightGripLocal.y, spec.rightGripLocal.z);
+                    // 位置維持你原本的掛載點，舉槍時稍微收攏避免穿模／飛出
+                    const rx = lerpNum(spec.rightGripLocal.x, spec.rightGripLocal.x * 0.55, aim);
+                    const ry = lerpNum(spec.rightGripLocal.y, spec.rightGripLocal.y + 0.006, aim);
+                    const rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z, aim);
+
+                    this.tempRightPos.set(rx, ry, rz);
                     weaponObj.localToWorld(this.tempRightPos);
                     this.parentGroup.worldToLocal(this.tempRightPos);
 
@@ -1161,6 +1204,9 @@
                         lx = lerpNum(lx, spec.reloadLeftLocal.x, wave);
                         ly = lerpNum(ly, spec.reloadLeftLocal.y + spec.reloadPullY * Math.abs(Math.sin(prog * Math.PI)), wave);
                         lz = lerpNum(lz, spec.reloadLeftLocal.z, wave);
+                    } else {
+                        lx = lerpNum(lx, lx * 0.72, aim);
+                        ly = lerpNum(ly, ly + 0.008, aim);
                     }
 
                     this.tempLeftPos.set(lx, ly, lz);
@@ -1170,11 +1216,16 @@
                     rightHand.wristAnchor.position.copy(this.tempRightPos);
                     leftHand.wristAnchor.position.copy(this.tempLeftPos);
 
+                    // 修正手腕旋轉角度，舉槍時把額外偏擺收斂，避免整隻手飛出
                     rightHand.wristAnchor.quaternion.identity();
                     if (weaponObj.quaternion) {
                         rightHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    this.eulerScratch.set(0.24, 0.24, -0.18);
+                    this.eulerScratch.set(
+                        lerpNum(0.10, 0.04, aim),
+                        lerpNum(0.14, 0.05, aim),
+                        lerpNum(-0.08, -0.02, aim)
+                    );
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     rightHand.wristAnchor.quaternion.multiply(this.twistQuat);
 
@@ -1182,18 +1233,22 @@
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    this.eulerScratch.set(0.24, -0.34, 0.22);
+                    this.eulerScratch.set(
+                        lerpNum(0.10, 0.04, aim),
+                        lerpNum(-0.20, -0.08, aim),
+                        lerpNum(0.10, 0.03, aim)
+                    );
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
                     rightHand.wristAnchor.position.set(0.14, -0.17, -0.28);
-                    rightHand.wristAnchor.rotation.set(0.24, 0.24, -0.18);
+                    rightHand.wristAnchor.rotation.set(0.10, 0.14, -0.08);
                     leftHand.wristAnchor.position.set(-0.10, -0.14, -0.38);
-                    leftHand.wristAnchor.rotation.set(0.24, -0.34, 0.22);
+                    leftHand.wristAnchor.rotation.set(0.10, -0.20, 0.10);
                 }
 
-                applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive);
-                applyArmLimbAngles(leftHand, -1, spec.leftElbowBend, this.isReloadingActive);
+                applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim);
+                applyArmLimbAngles(leftHand, -1, spec.leftElbowBend, this.isReloadingActive, aim);
 
                 applyGripFingerPose(rightHand, 1, this.triggerPullAmount, this.isReloadingActive);
                 applyGripFingerPose(leftHand, -1, 0.0, this.isReloadingActive);
