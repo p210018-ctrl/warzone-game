@@ -790,8 +790,8 @@
     }
 
     /**
-     * 左側（sideSign < 0）：向畫面左側外方折出
-     * 右側（sideSign > 0）：向畫面右側外方折出（不向內／不往槍身中央折）
+     * 左側（sideSign < 0）：小臂略微往上抬，肘部與大臂往左後上方延伸，不往下折出
+     * 右側（sideSign > 0）：小臂略微往上抬，肘部與大臂往右後上方延伸，不往下折出
      */
     function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
@@ -804,35 +804,35 @@
 
         if (sideSign < 0) {
             handObj.forearmPivot.rotation.set(
-                0.36 + bend * 0.10,
-                -0.76,
-                0.28
+                0.18 + bend * 0.06,
+                -0.66,
+                0.22
             );
             handObj.elbowPivot.rotation.set(
-                0.68 + bend * 0.22,
-                -0.46,
-                0.32
+                0.28 + bend * 0.14,
+                -0.36,
+                0.18
             );
             handObj.upperArmPivot.rotation.set(
-                0.56 + bend * 0.18,
-                -0.32,
-                0.38
+                -0.18 - bend * 0.12,
+                -0.24,
+                0.24
             );
         } else {
             handObj.forearmPivot.rotation.set(
-                0.34 + bend * 0.10,
-                0.68,
-                -0.30
+                0.16 + bend * 0.06,
+                0.58,
+                -0.24
             );
             handObj.elbowPivot.rotation.set(
-                0.66 + bend * 0.22,
-                0.44,
-                -0.34
+                0.26 + bend * 0.14,
+                0.34,
+                -0.20
             );
             handObj.upperArmPivot.rotation.set(
-                0.54 + bend * 0.18,
-                0.30,
-                -0.40
+                -0.16 - bend * 0.12,
+                0.22,
+                -0.26
             );
         }
     }
