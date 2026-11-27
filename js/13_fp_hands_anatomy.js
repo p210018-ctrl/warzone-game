@@ -2,7 +2,6 @@
  * ============================================================================
  * 13_fp_hands_anatomy.js
  * 第一人稱寫實數碼迷彩袖子 + MR3 指節戰術手套骨架、關節解算與四槍聯動模組
- * （轉譯自 FPS 寫實戰術手套＋數碼迷彩袖子建模與 PBR 貼圖規格）
  * ============================================================================
  */
 (function (globalScope) {
@@ -33,43 +32,41 @@
         return 'M4A1';
     }
 
-    // 四把槍在 weaponBodyGroup 局部座標系下的握把（右手）與護木／前握點（左手）
     const WEAPON_GRIP_SPECS = Object.freeze({
         M4A1: Object.freeze({
             moduleKey: 'WeaponM4Urgi',
             defaultReloadDuration: 1.65,
-            rightGripLocal: Object.freeze({ x: 0.004, y: -0.058, z: 0.018 }),
-            leftHandguardLocal: Object.freeze({ x: -0.008, y: -0.006, z: -0.255 }),
+            rightGripLocal: Object.freeze({ x: 0.004, y: -0.056, z: 0.016 }),
+            leftHandguardLocal: Object.freeze({ x: -0.008, y: -0.004, z: -0.255 }),
             reloadLeftLocal: Object.freeze({ x: -0.025, y: -0.095, z: -0.115 }),
             reloadPullY: -0.035
         }),
         MP5: Object.freeze({
             moduleKey: 'WeaponSmgMp5',
             defaultReloadDuration: 1.45,
-            rightGripLocal: Object.freeze({ x: 0.004, y: -0.050, z: 0.014 }),
-            leftHandguardLocal: Object.freeze({ x: -0.008, y: -0.008, z: -0.240 }),
+            rightGripLocal: Object.freeze({ x: 0.004, y: -0.048, z: 0.012 }),
+            leftHandguardLocal: Object.freeze({ x: -0.008, y: -0.006, z: -0.240 }),
             reloadLeftLocal: Object.freeze({ x: -0.022, y: -0.088, z: -0.105 }),
             reloadPullY: -0.032
         }),
         AX50: Object.freeze({
             moduleKey: 'WeaponSniperAx50',
             defaultReloadDuration: 2.20,
-            rightGripLocal: Object.freeze({ x: 0.005, y: -0.064, z: 0.022 }),
-            leftHandguardLocal: Object.freeze({ x: -0.010, y: -0.006, z: -0.305 }),
+            rightGripLocal: Object.freeze({ x: 0.005, y: -0.062, z: 0.020 }),
+            leftHandguardLocal: Object.freeze({ x: -0.010, y: -0.004, z: -0.305 }),
             reloadLeftLocal: Object.freeze({ x: -0.028, y: -0.105, z: -0.130 }),
             reloadPullY: -0.038
         }),
         X16: Object.freeze({
             moduleKey: 'WeaponPistolX16',
             defaultReloadDuration: 1.25,
-            rightGripLocal: Object.freeze({ x: 0.004, y: -0.032, z: 0.020 }),
-            leftHandguardLocal: Object.freeze({ x: -0.012, y: -0.038, z: -0.035 }),
+            rightGripLocal: Object.freeze({ x: 0.004, y: -0.030, z: 0.018 }),
+            leftHandguardLocal: Object.freeze({ x: -0.012, y: -0.036, z: -0.035 }),
             reloadLeftLocal: Object.freeze({ x: -0.025, y: -0.085, z: -0.068 }),
             reloadPullY: -0.028
         })
     });
 
-    // 對應 Python 規格的數碼迷彩袖子與 MR3 手套 PBR 貼圖生成器
     function buildCamoSleeveTextures(ThreeMod, texBucket, seedVal) {
         if (!ThreeMod || typeof document === 'undefined') {
             return { map: null, normalMap: null, roughnessMap: null };
@@ -139,7 +136,7 @@
                         bcImg.data[o + 2] = b;
                         bcImg.data[o + 3] = 255;
 
-                        const hVal = ((r + g + b) / (3 * 255));
+                        const hVal = (r + g + b) / (3 * 255);
                         heightGrid[idx] = hVal;
 
                         const roughVal = clampNum((0.74 - (hVal - 0.35) * 0.25) * 255, 45, 245);
@@ -236,22 +233,19 @@
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < size; x++) {
                 let v = 40.0 + (rand() - 0.5) * 9.6;
-                const hexPat = (((Math.floor(x / 1) + Math.floor(y / 1) * 2) % 4) === 0) && ((y % 2) === 0);
+                const hexPat = (((x + y * 2) % 4) === 0) && ((y % 2) === 0);
                 if (hexPat) v += 14.0;
 
-                // 指節護甲帶區域（中間偏下）與掌心／指墊區域
                 const inKnuckleBand = x >= 24 && x <= 210 && y >= 82 && y <= 146;
                 const inFingerPad = x >= 30 && x <= 218 && ((y >= 20 && y <= 40) || (y >= 50 && y <= 70));
                 const inCuffBand = x >= 22 && x <= 232 && y >= 175 && y <= 230;
 
                 if (inKnuckleBand) {
                     v = 32;
-                    const border = (x <= 26 || x >= 208 || y <= 84 || y >= 144);
-                    if (border) v = 92;
+                    if (x <= 26 || x >= 208 || y <= 84 || y >= 144) v = 92;
                 } else if (inFingerPad) {
                     v = 36;
-                    const border = (x <= 32 || x >= 216 || y === 20 || y === 40 || y === 50 || y === 70);
-                    if (border) v = 94;
+                    if (x <= 32 || x >= 216 || y === 20 || y === 40 || y === 50 || y === 70) v = 94;
                 } else if (inCuffBand) {
                     v = 28;
                 }
@@ -369,7 +363,6 @@
         };
     }
 
-    // 雕塑化袖管：從手腕（z = 0）向後方（z = +length）延伸，帶有立體摺皺與袖口收束
     function createSculptedSleeveGeometry(ThreeMod, geoBucket, length, r0W, r0T, r1W, r1T) {
         const nu = 28;
         const nv = 24;
@@ -378,8 +371,8 @@
         const indices = [];
 
         for (let i = 0; i < nu; i++) {
-            const t = i / (nu - 1); // 0 = 手腕端, 1 = 手肘／後方端
-            const archY = 0.016 * Math.sin(t * Math.PI * 0.85) + 0.008 * Math.pow(t, 1.7);
+            const t = i / (nu - 1);
+            const archY = 0.014 * Math.sin(t * Math.PI * 0.85) + 0.008 * Math.pow(t, 1.7);
             const zPos = t * length;
 
             let rw = lerpNum(r0W, r1W, t);
@@ -433,7 +426,6 @@
         return geo;
     }
 
-    // 雕塑化掌心：從手腕（z = 0）向前（z = -palmLen）延伸
     function createSculptedPalmGeometry(ThreeMod, geoBucket, palmLen, palmW, palmT) {
         const nu = 14;
         const nv = 18;
@@ -442,7 +434,7 @@
         const indices = [];
 
         for (let i = 0; i < nu; i++) {
-            const t = i / (nu - 1); // 0 = 手腕, 1 = 指根
+            const t = i / (nu - 1);
             const wProf = palmW * (0.42 + 0.14 * Math.sin(t * Math.PI * 0.8));
             const arch = 0.0035 * Math.sin(t * Math.PI);
             const zPos = -t * palmLen;
@@ -567,7 +559,6 @@
     }
 
     function buildSingleHandAndSleeve(ThreeMod, rootGroup, sideSign, geos, mats) {
-        // wristAnchor 直接擺在握把或護木世界座標，槍身朝 -Z，手掌／手指朝 -Z，袖管朝 +Z 向後延伸
         const wristAnchor = new ThreeMod.Group();
         rootGroup.add(wristAnchor);
 
@@ -578,15 +569,12 @@
         const palmMesh = new ThreeMod.Mesh(geos.palmGeo, mats.glovePalmMat);
         wristAnchor.add(palmMesh);
 
-        // 4 段式 MR3 圓弧指節護甲殼
-        const knucklePlates = [];
         for (let k = 0; k < 4; k++) {
             const xOff = (-1.5 + k) * 0.0175;
             const kMesh = new ThreeMod.Mesh(geos.knucklePlateGeo, mats.gloveArmorMat);
             kMesh.position.set(xOff, 0.012, -0.068);
             kMesh.rotation.x = -0.14;
             wristAnchor.add(kMesh);
-            knucklePlates.push(kMesh);
         }
 
         const indexChain = buildFingerSegmentChain(
@@ -731,10 +719,11 @@
     }
 
     class FirstPersonTacticalHandsController {
-        constructor(ThreeMod, sceneInst, cameraInst) {
+        constructor(ThreeMod, viewParentInst, cameraInst) {
             this.ThreeModule = ThreeMod;
-            this.sceneInstance = sceneInst;
-            this.cameraInstance = cameraInst;
+            this.parentGroup = viewParentInst || cameraInst || null;
+            this.sceneInstance = this.parentGroup;
+            this.cameraInstance = cameraInst || null;
 
             this.createdGeometries = [];
             this.createdMaterials = [];
@@ -750,12 +739,10 @@
             this.reloadElapsedSeconds = 0.0;
             this.reloadTotalDuration = 1.65;
 
-            this.tempRightLocal = new ThreeMod.Vector3();
-            this.tempLeftLocal = new ThreeMod.Vector3();
-            this.rightWorldPos = new ThreeMod.Vector3();
-            this.leftWorldPos = new ThreeMod.Vector3();
-            this.rightWorldQuat = new ThreeMod.Quaternion();
-            this.leftWorldQuat = new ThreeMod.Quaternion();
+            this.tempRightPos = new ThreeMod.Vector3();
+            this.tempLeftPos = new ThreeMod.Vector3();
+            this.tempRightQuat = new ThreeMod.Quaternion();
+            this.tempLeftQuat = new ThreeMod.Quaternion();
             this.twistQuat = new ThreeMod.Quaternion();
             this.eulerScratch = new ThreeMod.Euler(0, 0, 0, 'YXZ');
 
@@ -765,6 +752,18 @@
             this.dualArmRig = null;
             this.buildRig();
             this.bindEvents();
+        }
+
+        _attachToParent(targetParent) {
+            if (!targetParent || !this.dualArmRig || !this.dualArmRig.rigRootGroup) return;
+            if (this.parentGroup && this.parentGroup !== targetParent && this.dualArmRig.rigRootGroup.parent === this.parentGroup) {
+                this.parentGroup.remove(this.dualArmRig.rigRootGroup);
+            }
+            this.parentGroup = targetParent;
+            this.sceneInstance = targetParent;
+            if (this.dualArmRig.rigRootGroup.parent !== targetParent) {
+                targetParent.add(this.dualArmRig.rigRootGroup);
+            }
         }
 
         buildRig() {
@@ -786,21 +785,16 @@
                 leftHand: leftHand
             };
 
-            if (this.sceneInstance) {
-                this.sceneInstance.add(rigGroup);
+            if (this.parentGroup) {
+                this.parentGroup.add(rigGroup);
             }
         }
 
         init(options) {
             const opts = options && typeof options === 'object' ? options : {};
-            if (opts.scene && this.sceneInstance !== opts.scene) {
-                if (this.sceneInstance && this.dualArmRig && this.dualArmRig.rigRootGroup) {
-                    this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
-                }
-                this.sceneInstance = opts.scene;
-                if (this.dualArmRig && this.dualArmRig.rigRootGroup) {
-                    this.sceneInstance.add(this.dualArmRig.rigRootGroup);
-                }
+            const nextParent = opts.parentGroup || opts.weaponCamera || opts.camera || opts.scene || null;
+            if (nextParent) {
+                this._attachToParent(nextParent);
             }
             if (opts.camera) {
                 this.cameraInstance = opts.camera;
@@ -857,12 +851,17 @@
 
         update(rawDeltaSeconds, ctxOrScene) {
             try {
-                if (!this.sceneInstance || !this.cameraInstance || !this.dualArmRig) return;
+                if (!this.dualArmRig) return;
 
-                if (ctxOrScene && ctxOrScene.isScene && this.sceneInstance !== ctxOrScene) {
-                    this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
-                    this.sceneInstance = ctxOrScene;
-                    this.sceneInstance.add(this.dualArmRig.rigRootGroup);
+                const isCtx = ctxOrScene && !ctxOrScene.isScene && typeof ctxOrScene === 'object';
+                const targetParent = (isCtx && (ctxOrScene.parentGroup || ctxOrScene.weaponCamera))
+                    || (ctxOrScene && ctxOrScene.isObject3D ? ctxOrScene : null)
+                    || this.parentGroup
+                    || this.cameraInstance
+                    || null;
+
+                if (targetParent) {
+                    this._attachToParent(targetParent);
                 }
 
                 if (!this.isVisible) {
@@ -879,7 +878,6 @@
                 this.elapsedTimeSeconds += dt;
                 this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - dt * 9.0);
 
-                const isCtx = ctxOrScene && !ctxOrScene.isScene && typeof ctxOrScene === 'object';
                 const resolved = resolveActiveWeapon((isCtx && ctxOrScene.weaponId) || this.activeWeaponCode);
                 this.activeWeaponCode = resolved.id;
                 const weaponMod = resolved.mod;
@@ -906,23 +904,19 @@
                     }
                 }
 
-                this.cameraInstance.updateMatrixWorld(true);
-
                 const anchor = (weaponMod && (weaponMod.weaponBodyGroup || weaponMod.rootGroup)) || null;
                 const rightHand = this.dualArmRig.rightHand;
                 const leftHand = this.dualArmRig.leftHand;
 
-                if (anchor && typeof anchor.localToWorld === 'function') {
+                if (anchor && anchor.parent && this.parentGroup) {
                     anchor.updateMatrixWorld(true);
-                    anchor.getWorldQuaternion(this.rightWorldQuat);
-                    anchor.getWorldQuaternion(this.leftWorldQuat);
+                    this.parentGroup.updateMatrixWorld(true);
 
-                    // 右手直接扣在握把局部座標上，隨槍身平順移動與後座
-                    this.tempRightLocal.set(spec.rightGripLocal.x, spec.rightGripLocal.y, spec.rightGripLocal.z);
-                    this.rightWorldPos.copy(this.tempRightLocal);
-                    anchor.localToWorld(this.rightWorldPos);
+                    // 取得武器本體在相機／父節點下的相對姿態，確保與槍身完全同步不脫節
+                    this.tempRightPos.set(spec.rightGripLocal.x, spec.rightGripLocal.y, spec.rightGripLocal.z);
+                    anchor.localToWorld(this.tempRightPos);
+                    this.parentGroup.worldToLocal(this.tempRightPos);
 
-                    // 左手扣在護木上（換彈時做換彈軌跡）
                     let lx = spec.leftHandguardLocal.x;
                     let ly = spec.leftHandguardLocal.y;
                     let lz = spec.leftHandguardLocal.z;
@@ -935,38 +929,43 @@
                         lz = lerpNum(lz, spec.reloadLeftLocal.z, wave);
                     }
 
-                    this.tempLeftLocal.set(lx, ly, lz);
-                    this.leftWorldPos.copy(this.tempLeftLocal);
-                    anchor.localToWorld(this.leftWorldPos);
+                    this.tempLeftPos.set(lx, ly, lz);
+                    anchor.localToWorld(this.tempLeftPos);
+                    this.parentGroup.worldToLocal(this.tempLeftPos);
 
-                    rightHand.wristAnchor.position.copy(this.rightWorldPos);
-                    rightHand.wristAnchor.quaternion.copy(this.rightWorldQuat);
+                    rightHand.wristAnchor.position.copy(this.tempRightPos);
+                    leftHand.wristAnchor.position.copy(this.tempLeftPos);
+
+                    rightHand.wristAnchor.quaternion.identity();
+                    if (anchor.quaternion) {
+                        rightHand.wristAnchor.quaternion.copy(anchor.quaternion);
+                    }
                     this.eulerScratch.set(0.12, -0.06, 0.06);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     rightHand.wristAnchor.quaternion.multiply(this.twistQuat);
 
-                    leftHand.wristAnchor.position.copy(this.leftWorldPos);
-                    leftHand.wristAnchor.quaternion.copy(this.leftWorldQuat);
+                    leftHand.wristAnchor.quaternion.identity();
+                    if (anchor.quaternion) {
+                        leftHand.wristAnchor.quaternion.copy(anchor.quaternion);
+                    }
                     this.eulerScratch.set(0.08, 0.14, -0.24);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
-                    rightHand.wristAnchor.position.copy(this.cameraInstance.position);
-                    rightHand.wristAnchor.quaternion.copy(this.cameraInstance.quaternion);
-                    leftHand.wristAnchor.position.copy(this.cameraInstance.position);
-                    leftHand.wristAnchor.quaternion.copy(this.cameraInstance.quaternion);
+                    rightHand.wristAnchor.position.set(0.16, -0.18, -0.32);
+                    leftHand.wristAnchor.position.set(-0.04, -0.10, -0.50);
                 }
 
                 applyGripFingerPose(rightHand, 1, this.triggerPullAmount, this.isReloadingActive);
                 applyGripFingerPose(leftHand, -1, 0.0, this.isReloadingActive);
 
-                this._rightPos.x = Number(this.rightWorldPos.x.toFixed(3));
-                this._rightPos.y = Number(this.rightWorldPos.y.toFixed(3));
-                this._rightPos.z = Number(this.rightWorldPos.z.toFixed(3));
+                this._rightPos.x = Number(rightHand.wristAnchor.position.x.toFixed(3));
+                this._rightPos.y = Number(rightHand.wristAnchor.position.y.toFixed(3));
+                this._rightPos.z = Number(rightHand.wristAnchor.position.z.toFixed(3));
 
-                this._leftPos.x = Number(this.leftWorldPos.x.toFixed(3));
-                this._leftPos.y = Number(this.leftWorldPos.y.toFixed(3));
-                this._leftPos.z = Number(this.leftWorldPos.z.toFixed(3));
+                this._leftPos.x = Number(leftHand.wristAnchor.position.x.toFixed(3));
+                this._leftPos.y = Number(leftHand.wristAnchor.position.y.toFixed(3));
+                this._leftPos.z = Number(leftHand.wristAnchor.position.z.toFixed(3));
             } catch (_err) {
                 // 避免單幀例外中斷主迴圈
             }
@@ -994,8 +993,8 @@
                     this.createdTextures[i].dispose();
                 }
             }
-            if (this.sceneInstance && this.dualArmRig && this.dualArmRig.rigRootGroup) {
-                this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
+            if (this.parentGroup && this.dualArmRig && this.dualArmRig.rigRootGroup) {
+                this.parentGroup.remove(this.dualArmRig.rigRootGroup);
             }
             this.dualArmRig = null;
         }
@@ -1003,48 +1002,52 @@
 
     let activeController = null;
 
-    function resolveSceneAndCamera(overrideScene, overrideCamera) {
+    function resolveViewParentAndCamera(overrideParent, overrideCamera) {
         const rendererCore = TacticalWarfareNamespace.RendererCore || null;
-        const scene = overrideScene
-            || (rendererCore && typeof rendererCore.getScene === 'function' ? rendererCore.getScene() : null)
-            || (rendererCore && rendererCore.scene)
-            || TacticalWarfareNamespace.scene
-            || globalScope.scene
+        const weaponCam = (rendererCore && typeof rendererCore.getWeaponCamera === 'function' ? rendererCore.getWeaponCamera() : null)
+            || (rendererCore && rendererCore.weaponCamera)
             || null;
-        const camera = overrideCamera
+        const mainCam = overrideCamera
             || (rendererCore && typeof rendererCore.getCamera === 'function' ? rendererCore.getCamera() : null)
             || (rendererCore && rendererCore.camera)
             || TacticalWarfareNamespace.camera
             || globalScope.camera
             || null;
-        return { scene: scene, camera: camera };
+        const scene = (rendererCore && typeof rendererCore.getScene === 'function' ? rendererCore.getScene() : null)
+            || (rendererCore && rendererCore.scene)
+            || TacticalWarfareNamespace.scene
+            || globalScope.scene
+            || null;
+
+        const parent = overrideParent || weaponCam || mainCam || scene || null;
+        return { parent: parent, camera: mainCam, weaponCamera: weaponCam };
     }
 
-    function createOrReplaceController(overrideScene, overrideCamera) {
+    function createOrReplaceController(overrideParent, overrideCamera) {
         const ThreeMod = globalScope.THREE || TacticalWarfareNamespace.THREE || null;
         if (!ThreeMod) return null;
-        const pair = resolveSceneAndCamera(overrideScene, overrideCamera);
-        if (!pair.scene || !pair.camera) return null;
+        const pair = resolveViewParentAndCamera(overrideParent, overrideCamera);
+        if (!pair.parent) return null;
 
         if (activeController && typeof activeController.dispose === 'function') {
             activeController.dispose();
             activeController = null;
         }
 
-        activeController = new FirstPersonTacticalHandsController(ThreeMod, pair.scene, pair.camera);
+        activeController = new FirstPersonTacticalHandsController(ThreeMod, pair.parent, pair.camera);
         TacticalWarfareNamespace.FpHandsAnatomy = activeController;
         TacticalWarfareNamespace.fpHandsAnatomy = activeController;
         TacticalWarfareNamespace.FirstPersonTacticalHandsController = FirstPersonTacticalHandsController;
         return activeController;
     }
 
-    function updateController(deltaSeconds, overrideScene, overrideCamera) {
+    function updateController(deltaSeconds, overrideParent, overrideCamera) {
         if (!activeController) {
-            createOrReplaceController(overrideScene, overrideCamera);
+            createOrReplaceController(overrideParent, overrideCamera);
         }
         if (activeController && typeof activeController.update === 'function') {
             if (overrideCamera) activeController.cameraInstance = overrideCamera;
-            activeController.update(deltaSeconds, overrideScene);
+            activeController.update(deltaSeconds, overrideParent);
         }
         return activeController;
     }
