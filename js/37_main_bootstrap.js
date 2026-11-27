@@ -1,15 +1,9 @@
-/**
- * ============================================================================
- * 37_main_bootstrap.js
- * 戰術 FPS 引擎總啟動編排器與主更新迴圈協調器（Main Bootstrap）
- * ============================================================================
- */
 (function (global) {
     'use strict';
 
     const TacticalWarfare = global.TacticalWarfare;
     if (!TacticalWarfare) {
-        throw new Error('37_main_bootstrap.js 必須在 01_event_bus_state.js 之後載入');
+        throw new Error('37_main_bootstrap.js must load after 01_event_bus_state.js');
     }
 
     const Events = TacticalWarfare.Events || {};
@@ -39,7 +33,6 @@
             this.initialized = false;
             this.running = false;
             this.paused = false;
-            this.lastStepCount = 0;
 
             this._rafId = null;
             this._lastTimeMs = 0;
@@ -756,7 +749,6 @@
                         this.step(dt);
                     }
                 } catch (_err) {
-                    // 防止單幀例外中斷 requestAnimationFrame 主迴圈
                 }
             };
 
@@ -776,8 +768,6 @@
         }
 
         step(deltaTime) {
-            this.lastStepCount += 1;
-
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const phase = GameState && typeof GameState.get === 'function'
                 ? GameState.get('phase', 'lobby')
