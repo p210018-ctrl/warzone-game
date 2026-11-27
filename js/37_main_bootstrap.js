@@ -865,6 +865,7 @@
                         parentGroup: resolvedView.weaponCamera || camera || resolvedView.scene,
                         weaponCamera: resolvedView.weaponCamera,
                         bobOffset: bobArg,
+                        speedRatio: moveRes && typeof moveRes.speedRatio === 'number' ? moveRes.speedRatio : 0,
                         isAiming: isAiming,
                         isSprinting: isSprinting,
                         isReloading: isReloading,
