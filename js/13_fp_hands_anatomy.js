@@ -995,78 +995,62 @@
         };
         const sh = shake || { x: 0, y: 0, z: 0, rotZ: 0 };
 
-        const baseBend = clampNum(
-            (typeof elbowBend === 'number' ? elbowBend : 0.96) - aim * 0.08,
-            0.35,
-            1.55
-        );
+        const straightFactor = lerpNum(0.32, 0.24, aim);
 
         if (sideSign < 0) {
-            const fX = lerpNum(0.24 + baseBend * 0.06, 0.14, aim)
-                + rp.releaseTap * 0.05
-                + rp.magDrop * 0.16
-                - rp.magFetch * 0.06
-                - rp.magSeat * 0.08
-                + sh.rotZ * 0.6;
-            const fY = lerpNum(-0.62, -0.52, aim)
-                + rp.magDrop * 0.20
-                - rp.magFetch * 0.16
-                - rp.magSeat * 0.06;
-            const fZ = lerpNum(-0.22, -0.16, aim)
-                - rp.magDrop * 0.12
-                + rp.magFetch * 0.10
-                + rp.magSeat * 0.07
-                + sh.rotZ * 0.8;
-
-            const eX = lerpNum(0.18 + baseBend * 0.08, 0.08, aim)
-                + rp.magDrop * 0.22
-                + rp.magFetch * 0.12
-                - rp.magSeat * 0.12;
-            const eY = lerpNum(-0.58, -0.46, aim)
+            const fX = lerpNum(0.14, 0.09, aim)
+                + rp.releaseTap * 0.04
                 + rp.magDrop * 0.14
+                - rp.magFetch * 0.05
+                - rp.magSeat * 0.07
+                + sh.rotZ * 0.5;
+            const fY = lerpNum(-0.18, -0.14, aim)
+                + rp.magDrop * 0.16
                 - rp.magFetch * 0.12
                 - rp.magSeat * 0.05;
-            const eZ = lerpNum(-0.26, -0.18, aim)
-                - rp.magDrop * 0.10
-                + rp.magFetch * 0.08
-                + rp.magSeat * 0.05;
+            const fZ = lerpNum(-0.08, -0.06, aim)
+                - rp.magDrop * 0.08
+                + rp.magFetch * 0.06
+                + rp.magSeat * 0.04
+                + sh.rotZ * 0.6;
 
-            const uX = lerpNum(-0.14 - baseBend * 0.08, -0.04, aim)
-                - rp.magDrop * 0.10
-                + rp.magFetch * 0.14
-                - rp.magSeat * 0.08;
-            const uY = lerpNum(-0.66, -0.54, aim)
+            const eX = lerpNum(0.06 * straightFactor, 0.04 * straightFactor, aim)
                 + rp.magDrop * 0.12
-                - rp.magFetch * 0.14
-                - rp.magSeat * 0.04;
-            const uZ = lerpNum(-0.34, -0.24, aim)
-                - rp.magDrop * 0.14
-                + rp.magFetch * 0.12
-                + rp.magSeat * 0.07;
+                + rp.magFetch * 0.07
+                - rp.magSeat * 0.07;
+            const eY = lerpNum(-0.06 * straightFactor, -0.04 * straightFactor, aim)
+                + rp.magDrop * 0.08
+                - rp.magFetch * 0.06;
+            const eZ = lerpNum(-0.04 * straightFactor, -0.03 * straightFactor, aim);
+
+            const uX = lerpNum(-0.05 * straightFactor, -0.03 * straightFactor, aim)
+                - rp.magDrop * 0.06
+                + rp.magFetch * 0.08;
+            const uY = lerpNum(-0.06 * straightFactor, -0.04 * straightFactor, aim)
+                + rp.magDrop * 0.07
+                - rp.magFetch * 0.07;
+            const uZ = lerpNum(-0.04 * straightFactor, -0.03 * straightFactor, aim);
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
             handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         } else {
-            const fX = lerpNum(0.36 + baseBend * 0.07, 0.26, aim)
-                + rp.magDrop * 0.06
-                - rp.magSeat * 0.08;
-            const fY = lerpNum(0.24, 0.14, aim)
-                + rp.magFetch * 0.05;
-            const fZ = lerpNum(0.18, 0.14, aim)
-                + rp.magDrop * 0.05;
+            const fX = lerpNum(0.18, 0.12, aim)
+                + rp.magDrop * 0.05
+                - rp.magSeat * 0.06;
+            const fY = lerpNum(0.12, 0.08, aim)
+                + rp.magFetch * 0.04;
+            const fZ = lerpNum(0.08, 0.06, aim);
 
-            const eX = lerpNum(0.32 + baseBend * 0.10, 0.22, aim)
-                + rp.magDrop * 0.08
-                - rp.magSeat * 0.10;
-            const eY = lerpNum(0.18, 0.10, aim);
-            const eZ = lerpNum(0.14, 0.10, aim);
+            const eX = lerpNum(0.06 * straightFactor, 0.04 * straightFactor, aim)
+                + rp.magDrop * 0.05
+                - rp.magSeat * 0.06;
+            const eY = lerpNum(0.05 * straightFactor, 0.03 * straightFactor, aim);
+            const eZ = lerpNum(0.04 * straightFactor, 0.03 * straightFactor, aim);
 
-            const uX = lerpNum(-0.24 - baseBend * 0.12, -0.14, aim)
-                - rp.magDrop * 0.05
-                + rp.magSeat * 0.06;
-            const uY = lerpNum(0.22, 0.12, aim);
-            const uZ = lerpNum(0.16, 0.12, aim);
+            const uX = lerpNum(-0.05 * straightFactor, -0.03 * straightFactor, aim);
+            const uY = lerpNum(0.05 * straightFactor, 0.03 * straightFactor, aim);
+            const uZ = lerpNum(0.04 * straightFactor, 0.03 * straightFactor, aim);
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
