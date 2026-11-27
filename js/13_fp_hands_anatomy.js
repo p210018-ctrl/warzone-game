@@ -6,6 +6,8 @@
     const GameEventsTable = TacticalWarfareNamespace.Events || {};
     const GameStateStore = TacticalWarfareNamespace.GameState || globalScope.GameState || null;
 
+    const HAND_RIG_SCALE = 1.38;
+
     function clampNum(v, lo, hi) {
         if (typeof v !== 'number' || Number.isNaN(v)) return lo;
         if (v < lo) return lo;
@@ -82,8 +84,8 @@
         })
     });
 
-    const FOREARM_LENGTH = 0.21;
-    const UPPER_ARM_LENGTH = 0.24;
+    const FOREARM_LENGTH = 0.25;
+    const UPPER_ARM_LENGTH = 0.26;
 
     function extractWeaponObject3D(mod) {
         if (!mod || typeof mod !== 'object') return null;
@@ -651,10 +653,10 @@
             ThreeMod,
             geoBucket,
             FOREARM_LENGTH,
-            0.050,
+            0.054,
+            0.048,
             0.044,
-            0.041,
-            0.035,
+            0.038,
             0.0020
         );
 
@@ -662,17 +664,17 @@
             ThreeMod,
             geoBucket,
             UPPER_ARM_LENGTH,
-            0.062,
+            0.064,
+            0.056,
             0.054,
-            0.050,
-            0.044,
+            0.048,
             0.0022
         );
 
-        const elbowJointGeo = new ThreeMod.SphereGeometry(0.046, 16, 14);
+        const elbowJointGeo = new ThreeMod.SphereGeometry(0.048, 16, 14);
         elbowJointGeo.scale(1.06, 0.94, 1.06);
 
-        const wristStrapGeo = new ThreeMod.CylinderGeometry(0.045, 0.045, 0.016, 18);
+        const wristStrapGeo = new ThreeMod.CylinderGeometry(0.046, 0.046, 0.016, 18);
         wristStrapGeo.rotateX(Math.PI * 0.5);
 
         const palmGeo = createSculptedPalmGeometry(
@@ -691,8 +693,8 @@
 
         const fingerJointSphereGeo = new ThreeMod.SphereGeometry(0.0092, 12, 10);
 
-        const fingerTipSphereGeo = new ThreeMod.SphereGeometry(0.0086, 14, 12);
-        fingerTipSphereGeo.scale(1.02, 0.96, 1.16);
+        const fingerTipSphereGeo = new ThreeMod.SphereGeometry(0.0088, 14, 12);
+        fingerTipSphereGeo.scale(1.04, 0.98, 1.18);
 
         const phalanxGeo = createRoundedPhalanxGeometry(
             ThreeMod,
@@ -704,8 +706,8 @@
 
         const thumbJointSphereGeo = new ThreeMod.SphereGeometry(0.0110, 12, 10);
 
-        const thumbTipSphereGeo = new ThreeMod.SphereGeometry(0.0102, 14, 12);
-        thumbTipSphereGeo.scale(1.04, 0.98, 1.18);
+        const thumbTipSphereGeo = new ThreeMod.SphereGeometry(0.0104, 14, 12);
+        thumbTipSphereGeo.scale(1.06, 1.0, 1.20);
 
         const thumbPhalanxGeo = createRoundedPhalanxGeometry(
             ThreeMod,
@@ -817,6 +819,7 @@
     function buildSingleHandAndSleeve(ThreeMod, rootGroup, sideSign, geos, mats) {
         const wristAnchor = new ThreeMod.Group();
         wristAnchor.frustumCulled = false;
+        wristAnchor.scale.set(HAND_RIG_SCALE, HAND_RIG_SCALE, HAND_RIG_SCALE);
         rootGroup.add(wristAnchor);
 
         const palmPosePivot = new ThreeMod.Group();
@@ -964,39 +967,20 @@
         };
     }
 
-    function computeShoulderBumpPulse(bumpTimer) {
-        if (typeof bumpTimer !== 'number' || bumpTimer <= 0) return 0;
-        const duration = 0.24;
-        const t = clampNum(1.0 - bumpTimer / duration, 0, 1);
-        const snapUp = pulseWindow(0.0, 0.32, 0.72, t);
-        const settleBounce = pulseWindow(0.58, 0.80, 1.0, t) * 0.45;
-        return snapUp - settleBounce;
+    function computeReloadOnlyShake(elapsed, isReloading, reloadPhases) {
+        if (!isReloading || !reloadPhases || reloadPhases.activeMask <= 0.01) {
+            return { x: 0, y: 0, z: 0, rotZ: 0 };
+        }
+        const amp = reloadPhases.activeMask * (0.65 + reloadPhases.magSeat * 0.55);
+        return {
+            x: Math.sin(elapsed * 24.0) * 0.0022 * amp,
+            y: Math.cos(elapsed * 28.0) * 0.0024 * amp,
+            z: Math.sin(elapsed * 20.0) * 0.0018 * amp,
+            rotZ: Math.sin(elapsed * 26.0) * 0.012 * amp
+        };
     }
 
-    function computeCodMicroTremor(elapsed, aimBlend, shoulderBump) {
-        const tremorScale = lerpNum(1.0, 0.55, aimBlend) + Math.abs(shoulderBump) * 1.4;
-        const x = (
-            Math.sin(elapsed * 29.0) * 0.0014 +
-            Math.cos(elapsed * 47.0 + 0.9) * 0.0008 +
-            Math.sin(elapsed * 7.3) * 0.0018
-        ) * tremorScale;
-        const y = (
-            Math.cos(elapsed * 33.0 + 0.4) * 0.0015 +
-            Math.sin(elapsed * 53.0) * 0.0008 +
-            Math.cos(elapsed * 6.1 + 1.2) * 0.0016
-        ) * tremorScale;
-        const z = (
-            Math.sin(elapsed * 23.0 + 1.7) * 0.0012 +
-            Math.cos(elapsed * 41.0) * 0.0007
-        ) * tremorScale;
-        const rotZ = (
-            Math.sin(elapsed * 31.0 + 0.5) * 0.0065 +
-            Math.cos(elapsed * 49.0) * 0.0035
-        ) * tremorScale;
-        return { x: x, y: y, z: z, rotZ: rotZ };
-    }
-
-    function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading, aimBlend, reloadPhases, shoulderBump, tremor) {
+    function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading, aimBlend, reloadPhases, shake) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
         const aim = clampNum(typeof aimBlend === 'number' ? aimBlend : 0.0, 0.0, 1.0);
@@ -1009,8 +993,7 @@
             regrip: 0,
             activeMask: 0
         };
-        const bump = typeof shoulderBump === 'number' ? shoulderBump : 0;
-        const tr = tremor || { x: 0, y: 0, z: 0, rotZ: 0 };
+        const sh = shake || { x: 0, y: 0, z: 0, rotZ: 0 };
 
         const baseBend = clampNum(
             (typeof elbowBend === 'number' ? elbowBend : 0.96) - aim * 0.08,
@@ -1019,95 +1002,71 @@
         );
 
         if (sideSign < 0) {
-            const fX = lerpNum(0.22 + baseBend * 0.05, 0.12, aim)
-                + rp.releaseTap * 0.06
-                + rp.magDrop * 0.18
+            const fX = lerpNum(0.24 + baseBend * 0.06, 0.14, aim)
+                + rp.releaseTap * 0.05
+                + rp.magDrop * 0.16
                 - rp.magFetch * 0.06
-                - rp.magSeat * 0.10
-                - bump * 0.05
-                + tr.rotZ * 0.7;
-            const fY = lerpNum(0.58, 0.46, aim)
-                + rp.magDrop * 0.18
-                - rp.magFetch * 0.14
-                - rp.magSeat * 0.06
-                + bump * 0.06
-                + tr.rotZ * 0.5;
-            const fZ = lerpNum(-0.24, -0.18, aim)
-                - rp.magDrop * 0.14
-                + rp.magFetch * 0.12
-                + rp.magSeat * 0.08
-                - bump * 0.04
-                + tr.rotZ;
-
-            const eX = lerpNum(0.16 + baseBend * 0.07, 0.07, aim)
-                + rp.magDrop * 0.22
-                + rp.magFetch * 0.12
-                - rp.magSeat * 0.12
-                - bump * 0.04
-                + tr.rotZ * 0.6;
-            const eY = lerpNum(0.54, 0.42, aim)
-                + rp.magDrop * 0.14
-                - rp.magFetch * 0.10
-                - rp.magSeat * 0.05
-                + bump * 0.05;
-            const eZ = lerpNum(-0.28, -0.20, aim)
+                - rp.magSeat * 0.08
+                + sh.rotZ * 0.6;
+            const fY = lerpNum(-0.62, -0.52, aim)
+                + rp.magDrop * 0.20
+                - rp.magFetch * 0.16
+                - rp.magSeat * 0.06;
+            const fZ = lerpNum(-0.22, -0.16, aim)
                 - rp.magDrop * 0.12
                 + rp.magFetch * 0.10
-                + rp.magSeat * 0.06
-                - bump * 0.04
-                + tr.rotZ * 0.8;
+                + rp.magSeat * 0.07
+                + sh.rotZ * 0.8;
 
-            const uX = lerpNum(-0.12 - baseBend * 0.07, -0.03, aim)
+            const eX = lerpNum(0.18 + baseBend * 0.08, 0.08, aim)
+                + rp.magDrop * 0.22
+                + rp.magFetch * 0.12
+                - rp.magSeat * 0.12;
+            const eY = lerpNum(-0.58, -0.46, aim)
+                + rp.magDrop * 0.14
+                - rp.magFetch * 0.12
+                - rp.magSeat * 0.05;
+            const eZ = lerpNum(-0.26, -0.18, aim)
+                - rp.magDrop * 0.10
+                + rp.magFetch * 0.08
+                + rp.magSeat * 0.05;
+
+            const uX = lerpNum(-0.14 - baseBend * 0.08, -0.04, aim)
                 - rp.magDrop * 0.10
                 + rp.magFetch * 0.14
-                - rp.magSeat * 0.08
-                - bump * 0.03;
-            const uY = lerpNum(0.64, 0.50, aim)
+                - rp.magSeat * 0.08;
+            const uY = lerpNum(-0.66, -0.54, aim)
                 + rp.magDrop * 0.12
-                - rp.magFetch * 0.12
-                - rp.magSeat * 0.04
-                + bump * 0.06;
-            const uZ = lerpNum(-0.36, -0.26, aim)
+                - rp.magFetch * 0.14
+                - rp.magSeat * 0.04;
+            const uZ = lerpNum(-0.34, -0.24, aim)
                 - rp.magDrop * 0.14
                 + rp.magFetch * 0.12
-                + rp.magSeat * 0.08
-                - bump * 0.05
-                + tr.rotZ * 0.6;
+                + rp.magSeat * 0.07;
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
             handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         } else {
             const fX = lerpNum(0.36 + baseBend * 0.07, 0.26, aim)
-                + rp.magDrop * 0.07
-                - rp.magSeat * 0.09
-                - bump * 0.04
-                + tr.rotZ * 0.5;
-            const fY = lerpNum(0.26, 0.16, aim)
-                + rp.magFetch * 0.06
-                + bump * 0.04;
-            const fZ = lerpNum(0.20, 0.15, aim)
                 + rp.magDrop * 0.06
-                + bump * 0.04
-                + tr.rotZ * 0.7;
+                - rp.magSeat * 0.08;
+            const fY = lerpNum(0.24, 0.14, aim)
+                + rp.magFetch * 0.05;
+            const fZ = lerpNum(0.18, 0.14, aim)
+                + rp.magDrop * 0.05;
 
             const eX = lerpNum(0.32 + baseBend * 0.10, 0.22, aim)
-                + rp.magDrop * 0.09
-                - rp.magSeat * 0.11
-                - bump * 0.04;
-            const eY = lerpNum(0.20, 0.12, aim)
-                + bump * 0.03;
-            const eZ = lerpNum(0.16, 0.12, aim)
-                + tr.rotZ * 0.5;
+                + rp.magDrop * 0.08
+                - rp.magSeat * 0.10;
+            const eY = lerpNum(0.18, 0.10, aim);
+            const eZ = lerpNum(0.14, 0.10, aim);
 
             const uX = lerpNum(-0.24 - baseBend * 0.12, -0.14, aim)
                 - rp.magDrop * 0.05
-                + rp.magSeat * 0.07
-                - bump * 0.03;
-            const uY = lerpNum(0.24, 0.14, aim)
-                + bump * 0.04;
-            const uZ = lerpNum(0.18, 0.14, aim)
-                + bump * 0.04;
+                + rp.magSeat * 0.06;
+            const uY = lerpNum(0.22, 0.12, aim);
+            const uZ = lerpNum(0.16, 0.12, aim);
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
@@ -1131,7 +1090,7 @@
         }
     }
 
-    function applyIndividualFingerPose(handObj, sideSign, triggerPull, isReloading, reloadPhases, tremor) {
+    function applyIndividualFingerPose(handObj, sideSign, triggerPull, isReloading, reloadPhases) {
         if (!handObj) return;
         const rp = isReloading && reloadPhases ? reloadPhases : {
             prog: 0,
@@ -1142,7 +1101,6 @@
             regrip: 0,
             activeMask: 0
         };
-        const tr = tremor || { x: 0, y: 0, z: 0, rotZ: 0 };
 
         if (sideSign < 0) {
             const idxCurl = clampNum(
@@ -1151,8 +1109,7 @@
                 - rp.magDrop * 0.58
                 + rp.magFetch * 0.48
                 + rp.magSeat * 0.22
-                + rp.regrip * 0.10
-                + tr.rotZ * 1.4,
+                + rp.regrip * 0.10,
                 0.28,
                 1.96
             );
@@ -1163,8 +1120,7 @@
                 - rp.magDrop * 0.46
                 + rp.magFetch * 0.54
                 + rp.magSeat * 0.26
-                + rp.regrip * 0.12
-                + tr.rotZ * 1.2,
+                + rp.regrip * 0.12,
                 0.32,
                 2.00
             );
@@ -1174,8 +1130,7 @@
                 - rp.magDrop * 0.34
                 + rp.magFetch * 0.62
                 + rp.magSeat * 0.28
-                + rp.regrip * 0.14
-                + tr.rotZ * 1.0,
+                + rp.regrip * 0.14,
                 0.36,
                 2.04
             );
@@ -1185,8 +1140,7 @@
                 - rp.magDrop * 0.26
                 + rp.magFetch * 0.68
                 + rp.magSeat * 0.30
-                + rp.regrip * 0.16
-                + tr.rotZ * 0.9,
+                + rp.regrip * 0.16,
                 0.40,
                 2.06
             );
@@ -1197,8 +1151,7 @@
                 + rp.magDrop * 0.22
                 - rp.magFetch * 0.28
                 + rp.magSeat * 0.28
-                + rp.regrip * 0.12
-                + tr.rotZ * 1.1,
+                + rp.regrip * 0.12,
                 0.14,
                 1.12
             );
@@ -1253,9 +1206,9 @@
                 0.35,
                 1.65
             );
-            const midCurl = clampNum(gripBase + rp.magSeat * 0.14 - rp.magDrop * 0.06 + tr.rotZ * 0.8, 0.60, 1.85);
-            const ringCurl = clampNum(gripBase + 0.04 + rp.magSeat * 0.16 - rp.magDrop * 0.08 + tr.rotZ * 0.8, 0.60, 1.90);
-            const pinkyCurl = clampNum(gripBase + 0.08 + rp.magSeat * 0.18 - rp.magDrop * 0.10 + tr.rotZ * 0.8, 0.60, 1.92);
+            const midCurl = clampNum(gripBase + rp.magSeat * 0.14 - rp.magDrop * 0.06, 0.60, 1.85);
+            const ringCurl = clampNum(gripBase + 0.04 + rp.magSeat * 0.16 - rp.magDrop * 0.08, 0.60, 1.90);
+            const pinkyCurl = clampNum(gripBase + 0.08 + rp.magSeat * 0.18 - rp.magDrop * 0.10, 0.60, 1.92);
             const thumbCurl = clampNum(0.86 + rp.magDrop * 0.12 - rp.magFetch * 0.10, 0.40, 1.45);
 
             curlFinger(handObj.indexChain, idxPull * 0.78, idxPull * 0.96, idxPull * 0.76, -0.06, 0.0);
@@ -1332,9 +1285,6 @@
             this.reloadElapsedSeconds = 0.0;
             this.reloadTotalDuration = 1.65;
 
-            this.wasInspectingActive = false;
-            this.shoulderBumpTimer = 0.0;
-
             this.tempRightPos = new ThreeMod.Vector3();
             this.tempLeftPos = new ThreeMod.Vector3();
 
@@ -1357,10 +1307,6 @@
                 targetParent.add(this.dualArmRig.rigRootGroup);
             }
             ensureObjectVisibleAncestors(this.dualArmRig.rigRootGroup);
-        }
-
-        triggerShoulderBump() {
-            this.shoulderBumpTimer = 0.24;
         }
 
         buildRig() {
@@ -1453,23 +1399,17 @@
             const onReloadEnd = () => {
                 this.isReloadingActive = false;
                 this.reloadElapsedSeconds = 0.0;
-                this.triggerShoulderBump();
-            };
-            const onInspectEnd = () => {
-                this.triggerShoulderBump();
             };
 
             const fireEvt = GameEventsTable.WEAPON_FIRED || GameEventsTable.WEAPON_FIRE || 'weapon:fired';
             const switchEvt = GameEventsTable.WEAPON_SWITCHED || GameEventsTable.WEAPON_EQUIP || 'weapon:switched';
             const rStartEvt = GameEventsTable.RELOAD_STARTED || GameEventsTable.WEAPON_RELOAD_START || 'reload:started';
             const rEndEvt = GameEventsTable.RELOAD_FINISH || GameEventsTable.RELOAD_COMPLETE || 'reload:complete';
-            const iEndEvt = GameEventsTable.INSPECT_END || GameEventsTable.WEAPON_INSPECT_END || 'inspect:end';
 
             this._unsubscribers.push(EventBusInstance.on(fireEvt, onFire));
             this._unsubscribers.push(EventBusInstance.on(switchEvt, onSwitch));
             this._unsubscribers.push(EventBusInstance.on(rStartEvt, onReloadStart));
             this._unsubscribers.push(EventBusInstance.on(rEndEvt, onReloadEnd));
-            this._unsubscribers.push(EventBusInstance.on(iEndEvt, onInspectEnd));
         }
 
         update(rawDeltaSeconds, ctxOrScene) {
@@ -1510,9 +1450,6 @@
                 );
                 this.elapsedTimeSeconds += dt;
                 this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - dt * 9.0);
-                if (this.shoulderBumpTimer > 0) {
-                    this.shoulderBumpTimer = Math.max(0.0, this.shoulderBumpTimer - dt);
-                }
 
                 const isAimingNow = detectAimingState(isCtx, ctxOrScene, weaponMod, weaponObj);
                 const aimTarget = isAimingNow ? 1.0 : 0.0;
@@ -1537,24 +1474,12 @@
                     if (!reloading && this.reloadElapsedSeconds >= this.reloadTotalDuration) {
                         this.isReloadingActive = false;
                         this.reloadElapsedSeconds = 0.0;
-                        this.triggerShoulderBump();
                     }
                 }
-
-                const inspectMod = TacticalWarfareNamespace.FpReloadInspect || null;
-                const inspectingNow = Boolean(
-                    inspectMod && (inspectMod.isInspecting || inspectMod.inspecting || inspectMod.isInspected)
-                );
-                if (this.wasInspectingActive && !inspectingNow) {
-                    this.triggerShoulderBump();
-                }
-                this.wasInspectingActive = inspectingNow;
 
                 const rightHand = this.dualArmRig.rightHand;
                 const leftHand = this.dualArmRig.leftHand;
                 const aim = this.aimBlend;
-                const shoulderBump = computeShoulderBumpPulse(this.shoulderBumpTimer);
-                const tremor = computeCodMicroTremor(this.elapsedTimeSeconds, aim, shoulderBump);
 
                 let reloadPhases = null;
                 if (this.isReloadingActive) {
@@ -1562,13 +1487,15 @@
                     reloadPhases = computeReloadPhases(prog);
                 }
 
+                const reloadShake = computeReloadOnlyShake(this.elapsedTimeSeconds, this.isReloadingActive, reloadPhases);
+
                 if (weaponObj && weaponObj.parent && this.parentGroup && typeof weaponObj.localToWorld === 'function') {
                     weaponObj.updateMatrixWorld(true);
                     this.parentGroup.updateMatrixWorld(true);
 
-                    let rx = lerpNum(spec.rightGripLocal.x, spec.rightGripLocal.x * 0.85, aim) + tremor.x;
-                    let ry = lerpNum(spec.rightGripLocal.y, spec.rightGripLocal.y + 0.004, aim) + tremor.y + shoulderBump * 0.008;
-                    let rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z + 0.008, aim) + tremor.z - shoulderBump * 0.012;
+                    let rx = lerpNum(spec.rightGripLocal.x, spec.rightGripLocal.x * 0.85, aim) + reloadShake.x;
+                    let ry = lerpNum(spec.rightGripLocal.y, spec.rightGripLocal.y + 0.004, aim) + reloadShake.y;
+                    let rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z + 0.008, aim) + reloadShake.z;
 
                     if (this.isReloadingActive && reloadPhases) {
                         rx += reloadPhases.activeMask * 0.006 - reloadPhases.magSeat * 0.004;
@@ -1580,9 +1507,9 @@
                     weaponObj.localToWorld(this.tempRightPos);
                     this.parentGroup.worldToLocal(this.tempRightPos);
 
-                    let lx = spec.leftHandguardLocal.x - aim * 0.010 + tremor.x;
-                    let ly = spec.leftHandguardLocal.y + aim * 0.004 + tremor.y + shoulderBump * 0.009;
-                    let lz = spec.leftHandguardLocal.z - aim * 0.012 + tremor.z - shoulderBump * 0.014;
+                    let lx = spec.leftHandguardLocal.x - aim * 0.010 + reloadShake.x;
+                    let ly = spec.leftHandguardLocal.y + aim * 0.004 + reloadShake.y;
+                    let lz = spec.leftHandguardLocal.z - aim * 0.012 + reloadShake.z;
 
                     if (this.isReloadingActive && reloadPhases) {
                         const wellX = spec.magWellLocal.x;
@@ -1617,9 +1544,9 @@
                         targetY = lerpNum(targetY, wellY + 0.008, reloadPhases.magSeat);
                         targetZ = lerpNum(targetZ, wellZ, reloadPhases.magSeat);
 
-                        lx = targetX + tremor.x;
-                        ly = targetY + tremor.y + shoulderBump * 0.008;
-                        lz = targetZ + tremor.z - shoulderBump * 0.012;
+                        lx = targetX + reloadShake.x;
+                        ly = targetY + reloadShake.y;
+                        lz = targetZ + reloadShake.z;
                     }
 
                     this.tempLeftPos.set(lx, ly, lz);
@@ -1634,9 +1561,9 @@
                         rightHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
                     rightHand.palmPosePivot.rotation.set(
-                        shoulderBump * 0.05,
                         0.0,
-                        Math.PI * 0.5 + this.triggerPullAmount * 0.05 + tremor.rotZ
+                        0.0,
+                        Math.PI * 0.5 + this.triggerPullAmount * 0.05 + reloadShake.rotZ * 0.5
                     );
 
                     leftHand.wristAnchor.quaternion.identity();
@@ -1657,23 +1584,19 @@
                         ? baseLZ - reloadPhases.magDrop * 0.18 + reloadPhases.magFetch * 0.20 - reloadPhases.magSeat * 0.12
                         : baseLZ;
 
-                    leftHand.palmPosePivot.rotation.set(
-                        relLX + shoulderBump * 0.06,
-                        relLY - shoulderBump * 0.05,
-                        relLZ + tremor.rotZ + shoulderBump * 0.04
-                    );
+                    leftHand.palmPosePivot.rotation.set(relLX, relLY, relLZ + reloadShake.rotZ);
                 } else {
                     rightHand.wristAnchor.position.set(0.12, -0.18, -0.24);
                     rightHand.palmPosePivot.rotation.set(0.0, 0.0, Math.PI * 0.5);
                     leftHand.wristAnchor.position.set(-0.095, -0.135, -0.405);
-                    leftHand.palmPosePivot.rotation.set(0.24, 0.22, -0.14);
+                    leftHand.palmPosePivot.rotation.set(0.24, -0.22, -0.14);
                 }
 
-                applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim, reloadPhases, shoulderBump, tremor);
-                applyArmLimbAngles(leftHand, -1, spec.leftElbowBend, this.isReloadingActive, aim, reloadPhases, shoulderBump, tremor);
+                applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim, reloadPhases, reloadShake);
+                applyArmLimbAngles(leftHand, -1, spec.leftElbowBend, this.isReloadingActive, aim, reloadPhases, reloadShake);
 
-                applyIndividualFingerPose(rightHand, 1, this.triggerPullAmount, this.isReloadingActive, reloadPhases, tremor);
-                applyIndividualFingerPose(leftHand, -1, 0.0, this.isReloadingActive, reloadPhases, tremor);
+                applyIndividualFingerPose(rightHand, 1, this.triggerPullAmount, this.isReloadingActive, reloadPhases);
+                applyIndividualFingerPose(leftHand, -1, 0.0, this.isReloadingActive, reloadPhases);
 
                 this._rightPos.x = Number(rightHand.wristAnchor.position.x.toFixed(3));
                 this._rightPos.y = Number(rightHand.wristAnchor.position.y.toFixed(3));
