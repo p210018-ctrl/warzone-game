@@ -44,6 +44,7 @@
             this._rafId = null;
             this._lastTimeMs = 0;
             this._unsubscribers = [];
+            this._handsInitialized = false;
 
             this._activeWeaponId = 'M4A1';
             this._isAiming = false;
@@ -76,7 +77,7 @@
             };
         }
 
-        _ensureHandsController(scene, camera, weaponCamera) {
+        _ensureHandsController(scene, camera, weaponCamera, forceInit) {
             const fallbackView = this._resolveSceneAndCamera();
             const resolved = {
                 scene: scene || fallbackView.scene,
@@ -91,7 +92,7 @@
                 handsCtrl = TacticalWarfare.createTacticalHandsController(viewParent, resolved.camera);
             }
 
-            if (handsCtrl && typeof handsCtrl.init === 'function') {
+            if (handsCtrl && typeof handsCtrl.init === 'function' && (forceInit || !this._handsInitialized)) {
                 handsCtrl.init({
                     parentGroup: viewParent,
                     weaponCamera: resolved.weaponCamera,
@@ -99,6 +100,7 @@
                     scene: resolved.scene,
                     visible: true
                 });
+                this._handsInitialized = true;
             }
 
             return handsCtrl;
@@ -239,7 +241,7 @@
                 });
             }
 
-            this._ensureHandsController(scene, camera, weaponCamera);
+            this._ensureHandsController(scene, camera, weaponCamera, true);
 
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.init === 'function') {
                 TacticalWarfare.BallisticsRecoil.init({
@@ -686,7 +688,7 @@
             }
 
             const resolvedView = this._resolveSceneAndCamera();
-            this._ensureHandsController(resolvedView.scene, resolvedView.camera, resolvedView.weaponCamera);
+            this._ensureHandsController(resolvedView.scene, resolvedView.camera, resolvedView.weaponCamera, false);
             this._setHandsVisible(true);
 
             const activeId = (TacticalWarfare.BallisticsRecoil && TacticalWarfare.BallisticsRecoil.activeWeaponId) || this._activeWeaponId || 'M4A1';
@@ -872,7 +874,7 @@
                     }
                 }
 
-                const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera);
+                const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera, false);
                 if (handsCtrl) {
                     this._setHandsVisible(true);
                     const handsCtx = {
@@ -970,6 +972,7 @@
             }
             this._unsubscribers = [];
             this.initialized = false;
+            this._handsInitialized = false;
         }
     }
 
@@ -985,13 +988,21 @@
 })(window);
 ```[cite: 3]
 
-### 驗證方式
+### 排查步驟
 
-1. 替換 `13` 與 `37` 後重新整理無痕視窗並進場，確認右手握把姿態維持不變，左手位置與角度已往護木內側與微上收調整。
-2. 切換開鏡（ADS）與換彈狀態，確認左手袖口／手套不再突兀垂落或卡歪。
+<Steps>
+  <Step subtitle="立即釋放主執行緒" title="結束卡死分頁並重開">
+    關閉無回應的 Chrome 分頁或從工作管理員結束該分頁，再重新載入頁面。
+    *Verification:* 瀏覽器分頁可正常操作且不會跳出「網頁無回應」。
+  </Step>
+  <Step subtitle="避免每幀重複呼叫 handsCtrl.init" title="替換安全版 37_main_bootstrap.js">
+    將上方安全版 `37_main_bootstrap.js` 放回專案並重新整理測試[cite: 3]。
+    *Verification:* 進場與開鏡換彈時畫面流暢，`TacticalWarfare.MainBootstrap.lastStepCount` 持續穩定增加。
+  </Step>
+</Steps>
 
-<ElicitationsGroup message="測完這次 13 與 37 同步更新後，左手還要怎麼微調？">
-  <Elicitation label="左手再往護木下靠一點" query="左手角度接近了，但想再往護木下方靠一點，貼合更緊。"/>
-  <Elicitation label="開鏡時左手再收進一點" query="腰射可以了，但開鏡時左手袖子或手套還是想再收進一點。"/>
-  <Elicitation label="雙手握姿已定，下一步" query="目前雙手握姿已經滿意了，我們繼續下一步。"/>
+<ElicitationsGroup message="重開並套用這份 37_main_bootstrap.js 後，現在情況如何？">
+  <Elicitation label="已經不卡了，看左手" query="已經不卡了，我們繼續看左手的調整。"/>
+  <Elicitation label="還是會卡死或變慢" query="套用後還是會卡死或掉幀，幫我再查是哪裡吃掉效能。"/>
+  <Elicitation label="貼 Console 錯誤" query="Console 有跳出錯誤訊息，我貼給你一起看。"/>
 </ElicitationsGroup>
