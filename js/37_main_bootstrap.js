@@ -860,22 +860,6 @@
                     (inputCtrl && typeof inputCtrl.isActionActive === 'function' && inputCtrl.isActionActive('sprint')) ||
                     (moveRes && moveRes.isSprinting)
                 );
-                const bobOffsetArg = moveRes && moveRes.bobOffset ? moveRes.bobOffset : null;
-                const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera);
-                if (handsCtrl) {
-                    this._setHandsVisible(true);
-                    if (typeof handsCtrl.update === 'function') {
-                        handsCtrl.update(dt, {
-                            bobOffset: bobOffsetArg,
-                            isAiming: isAiming,
-                            isSprinting: isSprinting,
-                            isReloading: isReloading,
-                            weaponId: currentWeaponId
-                        });
-                    } else if (typeof TacticalWarfare.updateTacticalHandsController === 'function') {
-                        TacticalWarfare.updateTacticalHandsController(dt, resolvedView.scene, camera);
-                    }
-                }
 
                 if (TacticalWarfare.WeaponController && typeof TacticalWarfare.WeaponController.update === 'function') {
                     TacticalWarfare.WeaponController.update(dt, moveRes);
@@ -893,6 +877,23 @@
                     }
                     if (entry.id === currentWeaponId && typeof entry.mod.update === 'function') {
                         entry.mod.update(dt, bobArg);
+                    }
+                }
+
+                // 槍身位置與後座力更新後，再更新雙手 IK 與握持姿態，避免延遲或抽搐
+                const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera);
+                if (handsCtrl) {
+                    this._setHandsVisible(true);
+                    if (typeof handsCtrl.update === 'function') {
+                        handsCtrl.update(dt, {
+                            bobOffset: bobArg,
+                            isAiming: isAiming,
+                            isSprinting: isSprinting,
+                            isReloading: isReloading,
+                            weaponId: currentWeaponId
+                        });
+                    } else if (typeof TacticalWarfare.updateTacticalHandsController === 'function') {
+                        TacticalWarfare.updateTacticalHandsController(dt, resolvedView.scene, camera);
                     }
                 }
 
