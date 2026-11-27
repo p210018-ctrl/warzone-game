@@ -44,7 +44,6 @@
             this._rafId = null;
             this._lastTimeMs = 0;
             this._unsubscribers = [];
-            this._handsInitialized = false;
 
             this._activeWeaponId = 'M4A1';
             this._isAiming = false;
@@ -77,7 +76,7 @@
             };
         }
 
-        _ensureHandsController(scene, camera, weaponCamera, forceInit) {
+        _ensureHandsController(scene, camera, weaponCamera) {
             const fallbackView = this._resolveSceneAndCamera();
             const resolved = {
                 scene: scene || fallbackView.scene,
@@ -92,15 +91,13 @@
                 handsCtrl = TacticalWarfare.createTacticalHandsController(viewParent, resolved.camera);
             }
 
-            if (handsCtrl && typeof handsCtrl.init === 'function' && (forceInit || !this._handsInitialized)) {
+            if (handsCtrl && typeof handsCtrl.init === 'function') {
                 handsCtrl.init({
                     parentGroup: viewParent,
                     weaponCamera: resolved.weaponCamera,
                     camera: resolved.camera,
-                    scene: resolved.scene,
-                    visible: true
+                    scene: resolved.scene
                 });
-                this._handsInitialized = true;
             }
 
             return handsCtrl;
@@ -109,14 +106,11 @@
         _setHandsVisible(visible) {
             const isVisible = Boolean(visible);
             const handsCtrl = TacticalWarfare.FpHandsAnatomy || TacticalWarfare.fpHandsAnatomy || null;
-            if (!handsCtrl) {
-                return;
-            }
+            if (!handsCtrl) return;
 
             if (typeof handsCtrl.setVisible === 'function') {
                 handsCtrl.setVisible(isVisible);
             }
-
             if (handsCtrl.dualArmRig && handsCtrl.dualArmRig.rigRootGroup) {
                 handsCtrl.dualArmRig.rigRootGroup.visible = isVisible;
             }
@@ -241,7 +235,7 @@
                 });
             }
 
-            this._ensureHandsController(scene, camera, weaponCamera, true);
+            this._ensureHandsController(scene, camera, weaponCamera);
 
             if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.init === 'function') {
                 TacticalWarfare.BallisticsRecoil.init({
@@ -688,7 +682,7 @@
             }
 
             const resolvedView = this._resolveSceneAndCamera();
-            this._ensureHandsController(resolvedView.scene, resolvedView.camera, resolvedView.weaponCamera, false);
+            this._ensureHandsController(resolvedView.scene, resolvedView.camera, resolvedView.weaponCamera);
             this._setHandsVisible(true);
 
             const activeId = (TacticalWarfare.BallisticsRecoil && TacticalWarfare.BallisticsRecoil.activeWeaponId) || this._activeWeaponId || 'M4A1';
@@ -874,7 +868,7 @@
                     }
                 }
 
-                const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera, false);
+                const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera);
                 if (handsCtrl) {
                     this._setHandsVisible(true);
                     const handsCtx = {
@@ -972,7 +966,6 @@
             }
             this._unsubscribers = [];
             this.initialized = false;
-            this._handsInitialized = false;
         }
     }
 
@@ -986,23 +979,3 @@
     TacticalWarfare.MainBootstrap = mainBootstrapInstance;
     TacticalWarfare.registerModule('37_main_bootstrap', moduleExport);
 })(window);
-```[cite: 3]
-
-### 排查步驟
-
-<Steps>
-  <Step subtitle="立即釋放主執行緒" title="結束卡死分頁並重開">
-    關閉無回應的 Chrome 分頁或從工作管理員結束該分頁，再重新載入頁面。
-    *Verification:* 瀏覽器分頁可正常操作且不會跳出「網頁無回應」。
-  </Step>
-  <Step subtitle="避免每幀重複呼叫 handsCtrl.init" title="替換安全版 37_main_bootstrap.js">
-    將上方安全版 `37_main_bootstrap.js` 放回專案並重新整理測試[cite: 3]。
-    *Verification:* 進場與開鏡換彈時畫面流暢，`TacticalWarfare.MainBootstrap.lastStepCount` 持續穩定增加。
-  </Step>
-</Steps>
-
-<ElicitationsGroup message="重開並套用這份 37_main_bootstrap.js 後，現在情況如何？">
-  <Elicitation label="已經不卡了，看左手" query="已經不卡了，我們繼續看左手的調整。"/>
-  <Elicitation label="還是會卡死或變慢" query="套用後還是會卡死或掉幀，幫我再查是哪裡吃掉效能。"/>
-  <Elicitation label="貼 Console 錯誤" query="Console 有跳出錯誤訊息，我貼給你一起看。"/>
-</ElicitationsGroup>
