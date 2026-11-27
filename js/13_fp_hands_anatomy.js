@@ -37,38 +37,38 @@
             moduleKeys: ['WeaponM4Urgi', 'WeaponM4A1', 'M4A1'],
             defaultReloadDuration: 1.65,
             rightGripLocal: Object.freeze({ x: 0.006, y: -0.068, z: 0.026 }),
-            leftHandguardLocal: Object.freeze({ x: -0.020, y: -0.036, z: -0.205 }),
-            reloadLeftLocal: Object.freeze({ x: -0.035, y: -0.085, z: -0.135 }),
-            reloadPullY: -0.015,
+            leftHandguardLocal: Object.freeze({ x: -0.028, y: -0.032, z: -0.205 }),
+            reloadLeftLocal: Object.freeze({ x: -0.045, y: -0.088, z: -0.145 }),
+            reloadPullY: -0.014,
             rightElbowBend: 1.02,
-            leftElbowBend: 0.92
+            leftElbowBend: 0.96
         }),
         MP5: Object.freeze({
             moduleKeys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'],
             defaultReloadDuration: 1.45,
             rightGripLocal: Object.freeze({ x: 0.006, y: -0.060, z: 0.022 }),
-            leftHandguardLocal: Object.freeze({ x: -0.020, y: -0.038, z: -0.190 }),
-            reloadLeftLocal: Object.freeze({ x: -0.032, y: -0.080, z: -0.125 }),
-            reloadPullY: -0.014,
+            leftHandguardLocal: Object.freeze({ x: -0.028, y: -0.034, z: -0.190 }),
+            reloadLeftLocal: Object.freeze({ x: -0.042, y: -0.084, z: -0.135 }),
+            reloadPullY: -0.013,
             rightElbowBend: 1.05,
-            leftElbowBend: 0.95
+            leftElbowBend: 0.98
         }),
         AX50: Object.freeze({
             moduleKeys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'],
             defaultReloadDuration: 2.20,
             rightGripLocal: Object.freeze({ x: 0.006, y: -0.074, z: 0.030 }),
-            leftHandguardLocal: Object.freeze({ x: -0.022, y: -0.036, z: -0.245 }),
-            reloadLeftLocal: Object.freeze({ x: -0.038, y: -0.095, z: -0.155 }),
-            reloadPullY: -0.016,
+            leftHandguardLocal: Object.freeze({ x: -0.030, y: -0.032, z: -0.245 }),
+            reloadLeftLocal: Object.freeze({ x: -0.048, y: -0.098, z: -0.165 }),
+            reloadPullY: -0.015,
             rightElbowBend: 1.00,
-            leftElbowBend: 0.90
+            leftElbowBend: 0.94
         }),
         X16: Object.freeze({
             moduleKeys: ['WeaponPistolX16', 'WeaponX16', 'X16'],
             defaultReloadDuration: 1.25,
             rightGripLocal: Object.freeze({ x: 0.006, y: -0.044, z: 0.024 }),
-            leftHandguardLocal: Object.freeze({ x: -0.024, y: -0.056, z: -0.055 }),
-            reloadLeftLocal: Object.freeze({ x: -0.036, y: -0.088, z: -0.075 }),
+            leftHandguardLocal: Object.freeze({ x: -0.030, y: -0.052, z: -0.065 }),
+            reloadLeftLocal: Object.freeze({ x: -0.045, y: -0.090, z: -0.085 }),
             reloadPullY: -0.012,
             rightElbowBend: 1.10,
             leftElbowBend: 1.08
@@ -373,7 +373,7 @@
             normalMap: sleeveTex.normalMap,
             normalScale: new ThreeMod.Vector2(1.3, 1.3),
             roughnessMap: sleeveTex.roughnessMap,
-            color: 0xc5c8c4,
+            color: 0xb8bcb8,
             roughness: 0.80,
             metalness: 0.05,
             depthTest: true,
@@ -383,7 +383,7 @@
 
         const elbowJointMat = new ThreeMod.MeshStandardMaterial({
             map: sleeveTex.map,
-            color: 0x2c2f2d,
+            color: 0x262927,
             roughness: 0.78,
             metalness: 0.10,
             depthTest: true,
@@ -563,26 +563,26 @@
         const forearmGeo = createLimbSegmentGeometry(
             ThreeMod,
             geoBucket,
-            0.16,
-            0.052,
-            0.046,
-            0.042,
-            0.036,
+            0.15,
+            0.050,
+            0.044,
+            0.041,
+            0.035,
             0.0020
         );
 
         const upperArmGeo = createLimbSegmentGeometry(
             ThreeMod,
             geoBucket,
-            0.19,
-            0.064,
-            0.056,
-            0.052,
-            0.046,
+            0.18,
+            0.062,
+            0.054,
+            0.050,
+            0.044,
             0.0022
         );
 
-        const elbowJointGeo = new ThreeMod.SphereGeometry(0.048, 14, 12);
+        const elbowJointGeo = new ThreeMod.SphereGeometry(0.046, 14, 12);
         elbowJointGeo.scale(1.06, 0.94, 1.06);
 
         const wristStrapGeo = new ThreeMod.CylinderGeometry(0.045, 0.045, 0.016, 16);
@@ -692,7 +692,7 @@
         forearmPivot.add(forearmMesh);
 
         const elbowPivot = new ThreeMod.Group();
-        elbowPivot.position.set(0, 0, 0.16);
+        elbowPivot.position.set(0, 0, 0.15);
         elbowPivot.frustumCulled = false;
         forearmPivot.add(elbowPivot);
 
@@ -789,30 +789,34 @@
         };
     }
 
+    /**
+     * 左側（sideSign < 0）：小臂往左下方延伸，手肘折向更左下方，大臂再往左下方（紅圈方向）伸出，兩段分開不重疊
+     * 右側（sideSign > 0）：小臂與大臂往右下方分節折出
+     */
     function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
         const bend = clampNum(
-            (typeof elbowBend === 'number' ? elbowBend : 0.95) + (isReloading ? 0.06 : 0.0),
+            (typeof elbowBend === 'number' ? elbowBend : 0.96) + (isReloading ? 0.06 : 0.0),
             0.35,
             1.55
         );
 
         if (sideSign < 0) {
             handObj.forearmPivot.rotation.set(
-                0.34 + bend * 0.08,
-                -0.62,
-                -0.18
+                0.42 + bend * 0.10,
+                -0.78,
+                -0.24
             );
             handObj.elbowPivot.rotation.set(
-                0.62 + bend * 0.22,
-                -0.38,
-                -0.20
+                0.78 + bend * 0.24,
+                -0.48,
+                -0.26
             );
             handObj.upperArmPivot.rotation.set(
-                0.48 + bend * 0.18,
-                -0.24,
-                -0.28
+                0.62 + bend * 0.18,
+                -0.30,
+                -0.34
             );
         } else {
             handObj.forearmPivot.rotation.set(
@@ -1182,14 +1186,14 @@
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    this.eulerScratch.set(0.20, 0.50, -0.24);
+                    this.eulerScratch.set(0.24, 0.62, -0.26);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
                     rightHand.wristAnchor.position.set(0.14, -0.17, -0.28);
                     rightHand.wristAnchor.rotation.set(0.22, -0.10, 0.12);
-                    leftHand.wristAnchor.position.set(-0.08, -0.14, -0.38);
-                    leftHand.wristAnchor.rotation.set(0.20, 0.50, -0.24);
+                    leftHand.wristAnchor.position.set(-0.10, -0.14, -0.38);
+                    leftHand.wristAnchor.rotation.set(0.24, 0.62, -0.26);
                 }
 
                 applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive);
