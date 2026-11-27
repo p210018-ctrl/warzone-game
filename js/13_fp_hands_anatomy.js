@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱寫實數碼迷彩袖子（持槍視角：右手包扣握把、左手四指內扣拇指扣托護木）
+ * 第一人稱寫實數碼迷彩袖子（左手順時針微轉、右手逆時針轉向握住握把／槍托與扣板機）
  * + 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
  * ============================================================================
  */
@@ -48,7 +48,7 @@
         M4A1: Object.freeze({
             moduleKeys: ['WeaponM4Urgi', 'WeaponM4A1', 'M4A1'],
             defaultReloadDuration: 1.65,
-            rightGripLocal: Object.freeze({ x: 0.022, y: -0.056, z: 0.032 }),
+            rightGripLocal: Object.freeze({ x: 0.016, y: -0.058, z: 0.048 }),
             leftHandguardLocal: Object.freeze({ x: -0.004, y: -0.052, z: -0.195 }),
             magWellLocal: Object.freeze({ x: 0.004, y: -0.105, z: -0.062 }),
             magDropLocal: Object.freeze({ x: -0.035, y: -0.175, z: -0.048 }),
@@ -60,7 +60,7 @@
         MP5: Object.freeze({
             moduleKeys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'],
             defaultReloadDuration: 1.45,
-            rightGripLocal: Object.freeze({ x: 0.022, y: -0.050, z: 0.028 }),
+            rightGripLocal: Object.freeze({ x: 0.016, y: -0.052, z: 0.044 }),
             leftHandguardLocal: Object.freeze({ x: -0.004, y: -0.052, z: -0.180 }),
             magWellLocal: Object.freeze({ x: 0.004, y: -0.098, z: -0.072 }),
             magDropLocal: Object.freeze({ x: -0.032, y: -0.168, z: -0.058 }),
@@ -72,7 +72,7 @@
         AX50: Object.freeze({
             moduleKeys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'],
             defaultReloadDuration: 2.20,
-            rightGripLocal: Object.freeze({ x: 0.024, y: -0.062, z: 0.036 }),
+            rightGripLocal: Object.freeze({ x: 0.018, y: -0.064, z: 0.054 }),
             leftHandguardLocal: Object.freeze({ x: -0.006, y: -0.052, z: -0.235 }),
             magWellLocal: Object.freeze({ x: 0.004, y: -0.112, z: -0.075 }),
             magDropLocal: Object.freeze({ x: -0.038, y: -0.185, z: -0.060 }),
@@ -84,7 +84,7 @@
         X16: Object.freeze({
             moduleKeys: ['WeaponPistolX16', 'WeaponX16', 'X16'],
             defaultReloadDuration: 1.25,
-            rightGripLocal: Object.freeze({ x: 0.020, y: -0.038, z: 0.028 }),
+            rightGripLocal: Object.freeze({ x: 0.014, y: -0.040, z: 0.042 }),
             leftHandguardLocal: Object.freeze({ x: -0.006, y: -0.062, z: -0.065 }),
             magWellLocal: Object.freeze({ x: 0.004, y: -0.088, z: -0.018 }),
             magDropLocal: Object.freeze({ x: -0.028, y: -0.155, z: -0.012 }),
@@ -881,38 +881,39 @@
             const upperYaw = rp.pullOut * 0.12 - rp.magSwap * 0.16;
             const upperRoll = rp.pullOut * 0.08 - rp.magSwap * 0.14;
 
+            // 左手順時針微轉（Z 軸負向微調）
             const fX = lerpNum(0.18 + baseBend * 0.06, 0.12, aim) + forearmDrop;
             const fY = lerpNum(-0.42, -0.26, aim) + forearmYaw;
-            const fZ = lerpNum(0.10, 0.04, aim) + forearmRoll;
+            const fZ = lerpNum(0.02, -0.02, aim) + forearmRoll;
 
             const eX = lerpNum(0.24 + baseBend * 0.12, 0.14, aim) + elbowSnap;
             const eY = lerpNum(-0.22, -0.12, aim) + elbowYaw;
-            const eZ = lerpNum(0.08, 0.04, aim) + elbowRoll;
+            const eZ = lerpNum(0.01, -0.02, aim) + elbowRoll;
 
             const uX = lerpNum(-0.34 - baseBend * 0.14, -0.18, aim) + upperLift;
             const uY = lerpNum(-0.16, -0.08, aim) + upperYaw;
-            const uZ = lerpNum(0.14, 0.06, aim) + upperRoll;
+            const uZ = lerpNum(0.06, 0.00, aim) + upperRoll;
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
             handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         } else {
-            // 右臂：收斂向外翻出的角度，讓手臂往槍身／握把後方自然收靠
+            // 右手逆時針轉向（Z 軸正向調整），扣握握把與槍托銜接處
             const rForearmPitch = rp.pullOut * 0.08 - rp.seatMag * 0.10;
             const rElbowPitch = rp.pullOut * 0.10 - rp.seatMag * 0.12;
             const rUpperPitch = -rp.pullOut * 0.06 + rp.seatMag * 0.08;
 
-            const fX = lerpNum(0.20 + baseBend * 0.06, 0.12, aim) + rForearmPitch;
-            const fY = lerpNum(0.24, 0.14, aim) - rp.magSwap * 0.05;
-            const fZ = lerpNum(-0.08, -0.04, aim);
+            const fX = lerpNum(0.16 + baseBend * 0.06, 0.08, aim) + rForearmPitch;
+            const fY = lerpNum(0.18, 0.10, aim) - rp.magSwap * 0.05;
+            const fZ = lerpNum(0.08, 0.12, aim);
 
-            const eX = lerpNum(0.26 + baseBend * 0.12, 0.16, aim) + rElbowPitch;
-            const eY = lerpNum(0.14, 0.08, aim) - rp.magSwap * 0.04;
-            const eZ = lerpNum(-0.06, -0.03, aim);
+            const eX = lerpNum(0.22 + baseBend * 0.12, 0.12, aim) + rElbowPitch;
+            const eY = lerpNum(0.10, 0.06, aim) - rp.magSwap * 0.04;
+            const eZ = lerpNum(0.06, 0.10, aim);
 
-            const uX = lerpNum(-0.30 - baseBend * 0.14, -0.16, aim) + rUpperPitch;
-            const uY = lerpNum(0.10, 0.06, aim);
-            const uZ = lerpNum(-0.10, -0.05, aim);
+            const uX = lerpNum(-0.32 - baseBend * 0.14, -0.18, aim) + rUpperPitch;
+            const uY = lerpNum(0.06, 0.04, aim);
+            const uZ = lerpNum(0.04, 0.08, aim);
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
             handObj.elbowPivot.rotation.set(eX, eY, eZ);
@@ -936,11 +937,6 @@
         }
     }
 
-    /**
-     * 持槍視角：
-     * - 左手：四指內扣藏於護木／槍身下方，大拇指托扣護木左側且不向外翻
-     * - 右手：手掌向內包扣握把，四指朝內彎扣握把前側，大拇指扣向內側
-     */
     function applyIndividualFingerPose(handObj, sideSign, triggerPull, isReloading, reloadPhases) {
         if (!handObj) return;
         const rp = isReloading && reloadPhases ? reloadPhases : {
@@ -971,7 +967,7 @@
             const thumbC = clampNum(thumbIdle + thumbDelta, 0.18, 1.25);
 
             const tuckYaw = lerpNum(0.42, 0.24, rp.magSwap);
-            const tuckRoll = lerpNum(-0.22, 0.0, rp.magSwap);
+            const tuckRoll = lerpNum(-0.28, 0.0, rp.magSwap);
 
             curlFinger(handObj.indexChain, idxC * 0.78, idxC * 0.96, idxC * 0.80, tuckYaw + rp.magSwap * 0.16, tuckRoll);
             curlFinger(handObj.middleChain, midC * 0.82, midC * 0.98, midC * 0.84, tuckYaw + rp.magSwap * 0.08, tuckRoll);
@@ -984,22 +980,22 @@
                 thumbC * 0.64,
                 0.20 + rp.seatMag * 0.18,
                 lerpNum(0.56, 0.25, rp.magSwap),
-                lerpNum(0.20, 0.0, rp.magSwap)
+                lerpNum(0.14, 0.0, rp.magSwap)
             );
         } else {
-            // 右手：四指朝內包扣握把，拇指往內扣合
-            const gripCurl = 1.24;
-            const idxPull = 0.86 + triggerPull * 0.45 - rp.seatMag * 0.10;
+            // 右手：扣板機時食指明顯扣入，其餘手指扣握握把／槍托
+            const gripCurl = 1.26;
+            const idxPull = 0.78 + triggerPull * 0.56 - rp.seatMag * 0.10;
             const midCurl = gripCurl + rp.seatMag * 0.12 - rp.pullOut * 0.06;
             const ringCurl = gripCurl + 0.04 + rp.seatMag * 0.14 - rp.pullOut * 0.08;
             const pinkyCurl = gripCurl + 0.08 + rp.seatMag * 0.16 - rp.pullOut * 0.10;
-            const thumbCurl = 0.88 + rp.pullOut * 0.10 - rp.magSwap * 0.10;
+            const thumbCurl = 0.90 + rp.pullOut * 0.10 - rp.magSwap * 0.10;
 
-            curlFinger(handObj.indexChain, idxPull * 0.76, idxPull * 0.92, idxPull * 0.70, -0.24, 0.10);
-            curlFinger(handObj.middleChain, midCurl * 0.82, midCurl * 0.95, midCurl * 0.78, -0.22, 0.10);
-            curlFinger(handObj.ringChain, ringCurl * 0.86, ringCurl * 0.97, ringCurl * 0.82, -0.20, 0.10);
-            curlFinger(handObj.pinkyChain, pinkyCurl * 0.88, pinkyCurl * 0.99, pinkyCurl * 0.84, -0.18, 0.10);
-            curlFinger(handObj.thumbChain, thumbCurl * 0.78, thumbCurl * 0.72, 0.28, -0.52, -0.18);
+            curlFinger(handObj.indexChain, idxPull * 0.76, idxPull * 0.94, idxPull * 0.72, -0.18, 0.16);
+            curlFinger(handObj.middleChain, midCurl * 0.82, midCurl * 0.95, midCurl * 0.78, -0.16, 0.16);
+            curlFinger(handObj.ringChain, ringCurl * 0.86, ringCurl * 0.97, ringCurl * 0.82, -0.14, 0.16);
+            curlFinger(handObj.pinkyChain, pinkyCurl * 0.88, pinkyCurl * 0.99, pinkyCurl * 0.84, -0.12, 0.16);
+            curlFinger(handObj.thumbChain, thumbCurl * 0.78, thumbCurl * 0.72, 0.28, -0.46, 0.10);
         }
     }
 
@@ -1272,9 +1268,9 @@
                     weaponObj.updateMatrixWorld(true);
                     this.parentGroup.updateMatrixWorld(true);
 
-                    let rx = lerpNum(spec.rightGripLocal.x, spec.rightGripLocal.x * 0.65, aim);
+                    let rx = lerpNum(spec.rightGripLocal.x, spec.rightGripLocal.x * 0.70, aim);
                     let ry = lerpNum(spec.rightGripLocal.y, spec.rightGripLocal.y + 0.004, aim);
-                    let rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z, aim);
+                    let rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z + 0.012, aim);
 
                     if (this.isReloadingActive && reloadPhases) {
                         rx += reloadPhases.activeMask * 0.006 - reloadPhases.seatMag * 0.004;
@@ -1335,27 +1331,27 @@
                     rightHand.wristAnchor.position.copy(this.tempRightPos);
                     leftHand.wristAnchor.position.copy(this.tempLeftPos);
 
-                    // 右手：修正外翻撐起，改為手掌向內／向前包扣握把
+                    // 右手：逆時針轉向（正 Z），扣握握把／槍托並配合扣板機
                     rightHand.wristAnchor.quaternion.identity();
                     if (weaponObj.quaternion) {
                         rightHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
                     this.eulerScratch.set(
-                        lerpNum(0.36, 0.24, aim) + (reloadPhases ? reloadPhases.seatMag * 0.06 : 0),
-                        lerpNum(-0.22, -0.12, aim) - (reloadPhases ? reloadPhases.pullOut * 0.05 : 0),
-                        lerpNum(-0.34, -0.18, aim)
+                        lerpNum(0.28, 0.18, aim) + (reloadPhases ? reloadPhases.seatMag * 0.06 : 0),
+                        lerpNum(-0.10, -0.04, aim) - (reloadPhases ? reloadPhases.pullOut * 0.05 : 0),
+                        lerpNum(0.18, 0.24, aim) + this.triggerPullAmount * 0.04
                     );
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     rightHand.wristAnchor.quaternion.multiply(this.twistQuat);
 
-                    // 左手：修正外翻，掌心貼護木底／內側，大拇指在左側扣托護木
+                    // 左手：順時針微轉（負 Z），貼合護木與拇指扣托
                     leftHand.wristAnchor.quaternion.identity();
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
                     const baseLX = lerpNum(0.08, 0.04, aim);
-                    const baseLY = lerpNum(-0.06, -0.03, aim);
-                    const baseLZ = lerpNum(0.28, 0.16, aim);
+                    const baseLY = lerpNum(-0.04, -0.02, aim);
+                    const baseLZ = lerpNum(0.14, 0.06, aim);
 
                     const relLX = reloadPhases
                         ? baseLX + reloadPhases.pullOut * 0.24 - reloadPhases.magSwap * 0.14 + reloadPhases.seatMag * 0.12
@@ -1372,9 +1368,9 @@
                     leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
                     rightHand.wristAnchor.position.set(0.14, -0.17, -0.28);
-                    rightHand.wristAnchor.rotation.set(0.36, -0.22, -0.34);
+                    rightHand.wristAnchor.rotation.set(0.28, -0.10, 0.18);
                     leftHand.wristAnchor.position.set(-0.06, -0.14, -0.38);
-                    leftHand.wristAnchor.rotation.set(0.08, -0.06, 0.28);
+                    leftHand.wristAnchor.rotation.set(0.08, -0.04, 0.14);
                 }
 
                 applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim, reloadPhases);
