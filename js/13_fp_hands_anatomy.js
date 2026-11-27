@@ -1,7 +1,8 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱戰術雙手骨架、雙關節解算與四把槍械（M4A1 / MP5 / AX50 / X16）聯動模組
+ * 第一人稱寫實數碼迷彩袖子 + MR3 指節戰術手套骨架、關節解算與四槍聯動模組
+ * （轉譯自 FPS 寫實戰術手套＋數碼迷彩袖子建模與 PBR 貼圖規格）
  * ============================================================================
  */
 (function (globalScope) {
@@ -12,565 +13,735 @@
     const GameEventsTable = TacticalWarfareNamespace.Events || {};
     const GameStateStore = TacticalWarfareNamespace.GameState || globalScope.GameState || null;
 
-    function clampNumericValue(value, minValue, maxValue) {
-        if (typeof value !== 'number' || Number.isNaN(value)) {
-            return minValue;
-        }
-        if (value < minValue) return minValue;
-        if (value > maxValue) return maxValue;
-        return value;
+    function clampNum(v, lo, hi) {
+        if (typeof v !== 'number' || Number.isNaN(v)) return lo;
+        if (v < lo) return lo;
+        if (v > hi) return hi;
+        return v;
     }
 
-    function linearInterpolateValue(startValue, endValue, blendFactor) {
-        return startValue + (endValue - startValue) * blendFactor;
+    function lerpNum(a, b, t) {
+        return a + (b - a) * t;
     }
 
-    function readSafeCoordinateAxis(sourceObject, axisName, fallbackNumber) {
-        if (!sourceObject || typeof sourceObject !== 'object') {
-            return fallbackNumber;
-        }
-        const axisValue = sourceObject[axisName];
-        return typeof axisValue === 'number' && !Number.isNaN(axisValue)
-            ? axisValue
-            : fallbackNumber;
-    }
-
-    function normalizeWeaponCode(rawCode) {
-        if (!rawCode || typeof rawCode !== 'string') return 'M4A1';
-        const upper = rawCode.toUpperCase();
-        if (upper.indexOf('X16') !== -1 || upper.indexOf('PISTOL') !== -1) return 'X16';
-        if (upper.indexOf('MP5') !== -1 || upper.indexOf('SMG') !== -1) return 'MP5';
-        if (upper.indexOf('AX50') !== -1 || upper.indexOf('SNIPER') !== -1) return 'AX50';
+    function normalizeWeaponId(raw) {
+        if (!raw || typeof raw !== 'string') return 'M4A1';
+        const u = raw.toUpperCase();
+        if (u.indexOf('X16') !== -1 || u.indexOf('PISTOL') !== -1) return 'X16';
+        if (u.indexOf('MP5') !== -1 || u.indexOf('SMG') !== -1) return 'MP5';
+        if (u.indexOf('AX50') !== -1 || u.indexOf('SNIPER') !== -1) return 'AX50';
         return 'M4A1';
     }
 
-    // 精準對齊四把槍 weaponBodyGroup 下的握把（右手）與護木／前框（左手）
-    const WeaponGripAlignmentTable = Object.freeze({
+    // 四把槍在 weaponBodyGroup 局部座標系下的握把（右手）與護木／前握點（左手）
+    const WEAPON_GRIP_SPECS = Object.freeze({
         M4A1: Object.freeze({
             moduleKey: 'WeaponM4Urgi',
             defaultReloadDuration: 1.65,
-            bodyRightGrip: Object.freeze({ x: 0.004, y: -0.052, z: 0.022 }),
-            bodyLeftHandguard: Object.freeze({ x: -0.008, y: 0.004, z: -0.255 }),
-            reloadLeftHand: Object.freeze({ x: -0.025, y: -0.095, z: -0.115 }),
+            rightGripLocal: Object.freeze({ x: 0.004, y: -0.058, z: 0.018 }),
+            leftHandguardLocal: Object.freeze({ x: -0.008, y: -0.006, z: -0.255 }),
+            reloadLeftLocal: Object.freeze({ x: -0.025, y: -0.095, z: -0.115 }),
             reloadPullY: -0.035
         }),
         MP5: Object.freeze({
             moduleKey: 'WeaponSmgMp5',
             defaultReloadDuration: 1.45,
-            bodyRightGrip: Object.freeze({ x: 0.004, y: -0.045, z: 0.018 }),
-            bodyLeftHandguard: Object.freeze({ x: -0.008, y: 0.002, z: -0.230 }),
-            reloadLeftHand: Object.freeze({ x: -0.022, y: -0.088, z: -0.105 }),
+            rightGripLocal: Object.freeze({ x: 0.004, y: -0.050, z: 0.014 }),
+            leftHandguardLocal: Object.freeze({ x: -0.008, y: -0.008, z: -0.240 }),
+            reloadLeftLocal: Object.freeze({ x: -0.022, y: -0.088, z: -0.105 }),
             reloadPullY: -0.032
         }),
         AX50: Object.freeze({
             moduleKey: 'WeaponSniperAx50',
             defaultReloadDuration: 2.20,
-            bodyRightGrip: Object.freeze({ x: 0.005, y: -0.058, z: 0.025 }),
-            bodyLeftHandguard: Object.freeze({ x: -0.010, y: 0.004, z: -0.305 }),
-            reloadLeftHand: Object.freeze({ x: -0.028, y: -0.105, z: -0.130 }),
+            rightGripLocal: Object.freeze({ x: 0.005, y: -0.064, z: 0.022 }),
+            leftHandguardLocal: Object.freeze({ x: -0.010, y: -0.006, z: -0.305 }),
+            reloadLeftLocal: Object.freeze({ x: -0.028, y: -0.105, z: -0.130 }),
             reloadPullY: -0.038
         }),
         X16: Object.freeze({
             moduleKey: 'WeaponPistolX16',
             defaultReloadDuration: 1.25,
-            bodyRightGrip: Object.freeze({ x: 0.004, y: -0.028, z: 0.024 }),
-            bodyLeftHandguard: Object.freeze({ x: -0.012, y: -0.036, z: -0.032 }),
-            reloadLeftHand: Object.freeze({ x: -0.025, y: -0.085, z: -0.068 }),
+            rightGripLocal: Object.freeze({ x: 0.004, y: -0.032, z: 0.020 }),
+            leftHandguardLocal: Object.freeze({ x: -0.012, y: -0.038, z: -0.035 }),
+            reloadLeftLocal: Object.freeze({ x: -0.025, y: -0.085, z: -0.068 }),
             reloadPullY: -0.028
         })
     });
 
-    const StancePoseDefinitions = Object.freeze({
-        rifle_hip: Object.freeze({
-            rightWristBend: Object.freeze({ x: 0.14, y: -0.08, z: 0.04 }),
-            leftWristBend: Object.freeze({ x: 0.18, y: 0.22, z: -0.14 }),
-            indexCurl: Object.freeze({ x: 0.72 }),
-            gripCurl: Object.freeze({ x: 1.05 })
-        }),
-        rifle_ads: Object.freeze({
-            rightWristBend: Object.freeze({ x: 0.15, y: -0.06, z: 0.03 }),
-            leftWristBend: Object.freeze({ x: 0.20, y: 0.20, z: -0.12 }),
-            indexCurl: Object.freeze({ x: 0.68 }),
-            gripCurl: Object.freeze({ x: 1.08 })
-        }),
-        pistol_hip: Object.freeze({
-            rightWristBend: Object.freeze({ x: 0.12, y: -0.05, z: 0.03 }),
-            leftWristBend: Object.freeze({ x: 0.16, y: 0.28, z: -0.12 }),
-            indexCurl: Object.freeze({ x: 0.70 }),
-            gripCurl: Object.freeze({ x: 1.06 })
-        }),
-        reload: Object.freeze({
-            rightWristBend: Object.freeze({ x: 0.18, y: -0.06, z: 0.08 }),
-            leftWristBend: Object.freeze({ x: 0.24, y: 0.18, z: -0.08 }),
-            indexCurl: Object.freeze({ x: 0.74 }),
-            gripCurl: Object.freeze({ x: 1.04 })
-        }),
-        plate: Object.freeze({
-            rightWristBend: Object.freeze({ x: 0.14, y: -0.08, z: 0.05 }),
-            leftWristBend: Object.freeze({ x: 0.18, y: 0.20, z: -0.08 }),
-            indexCurl: Object.freeze({ x: 0.78 }),
-            gripCurl: Object.freeze({ x: 1.08 })
-        })
-    });
-
-    function createCamoCanvasTexture(ThreeModule, textureBucket) {
-        if (!ThreeModule || typeof document === 'undefined') return null;
+    // 對應 Python 規格的數碼迷彩袖子與 MR3 手套 PBR 貼圖生成器
+    function buildCamoSleeveTextures(ThreeMod, texBucket, seedVal) {
+        if (!ThreeMod || typeof document === 'undefined') {
+            return { map: null, normalMap: null, roughnessMap: null };
+        }
         const size = 256;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
+        const bcCanvas = document.createElement('canvas');
+        bcCanvas.width = size;
+        bcCanvas.height = size;
+        const bcCtx = bcCanvas.getContext('2d');
 
-        let seed = 1876;
-        const nextRand = () => {
+        const nCanvas = document.createElement('canvas');
+        nCanvas.width = size;
+        nCanvas.height = size;
+        const nCtx = nCanvas.getContext('2d');
+
+        const rCanvas = document.createElement('canvas');
+        rCanvas.width = size;
+        rCanvas.height = size;
+        const rCtx = rCanvas.getContext('2d');
+
+        if (!bcCtx || !nCtx || !rCtx) {
+            return { map: null, normalMap: null, roughnessMap: null };
+        }
+
+        let seed = (seedVal || 1876) >>> 0;
+        const rand = () => {
             seed = (seed * 1664525 + 1013904223) >>> 0;
             return seed / 4294967296;
         };
 
-        const palette = ['#222423', '#3a3d3b', '#525552', '#6a6d69'];
-        const cell = 8;
+        const palette = [
+            [30, 32, 31],
+            [54, 57, 55],
+            [78, 81, 79],
+            [104, 107, 104]
+        ];
+
+        const cell = 4;
+        const bcImg = bcCtx.createImageData(size, size);
+        const nImg = nCtx.createImageData(size, size);
+        const rImg = rCtx.createImageData(size, size);
+        const heightGrid = new Float32Array(size * size);
+
         for (let y = 0; y < size; y += cell) {
             for (let x = 0; x < size; x += cell) {
-                ctx.fillStyle = palette[Math.floor(nextRand() * palette.length)];
-                ctx.fillRect(x, y, cell, cell);
+                const cIdx = Math.floor(rand() * 4);
+                const base = palette[cIdx];
+                const patchJitter = (rand() - 0.5) * 24;
+                for (let dy = 0; dy < cell && y + dy < size; dy++) {
+                    for (let dx = 0; dx < cell && x + dx < size; dx++) {
+                        const px = x + dx;
+                        const py = y + dy;
+                        const idx = py * size + px;
+                        const fold =
+                            Math.sin(px * 0.07 + py * 0.11) * 18 +
+                            Math.cos(px * 0.17 - py * 0.09) * 10 +
+                            Math.sin(py * 0.35) * 5;
+                        const grain = (rand() - 0.5) * 10;
+
+                        const r = clampNum(base[0] + patchJitter * 0.65 + fold + grain, 14, 215);
+                        const g = clampNum(base[1] + patchJitter * 0.65 + fold + grain, 14, 215);
+                        const b = clampNum(base[2] + patchJitter * 0.65 + fold + grain, 14, 215);
+
+                        const o = idx * 4;
+                        bcImg.data[o] = r;
+                        bcImg.data[o + 1] = g;
+                        bcImg.data[o + 2] = b;
+                        bcImg.data[o + 3] = 255;
+
+                        const hVal = ((r + g + b) / (3 * 255));
+                        heightGrid[idx] = hVal;
+
+                        const roughVal = clampNum((0.74 - (hVal - 0.35) * 0.25) * 255, 45, 245);
+                        rImg.data[o] = roughVal;
+                        rImg.data[o + 1] = roughVal;
+                        rImg.data[o + 2] = roughVal;
+                        rImg.data[o + 3] = 255;
+                    }
+                }
             }
         }
 
-        const tex = new ThreeModule.CanvasTexture(canvas);
-        if (ThreeModule.SRGBColorSpace) {
-            tex.colorSpace = ThreeModule.SRGBColorSpace;
+        const nStrength = 3.4;
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const idx = y * size + x;
+                const hL = heightGrid[y * size + Math.max(0, x - 1)];
+                const hR = heightGrid[y * size + Math.min(size - 1, x + 1)];
+                const hU = heightGrid[Math.max(0, y - 1) * size + x];
+                const hD = heightGrid[Math.min(size - 1, y + 1) * size + x];
+
+                let nx = -(hR - hL) * nStrength;
+                let ny = -(hD - hU) * nStrength;
+                let nz = 1.0;
+                const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1.0;
+                nx /= len;
+                ny /= len;
+                nz /= len;
+
+                const o = idx * 4;
+                nImg.data[o] = clampNum((nx * 0.5 + 0.5) * 255, 0, 255);
+                nImg.data[o + 1] = clampNum((ny * 0.5 + 0.5) * 255, 0, 255);
+                nImg.data[o + 2] = clampNum((nz * 0.5 + 0.5) * 255, 0, 255);
+                nImg.data[o + 3] = 255;
+            }
         }
-        tex.wrapS = ThreeModule.RepeatWrapping;
-        tex.wrapT = ThreeModule.RepeatWrapping;
-        tex.repeat.set(2, 2);
-        tex.needsUpdate = true;
-        textureBucket.push(tex);
-        return tex;
+
+        bcCtx.putImageData(bcImg, 0, 0);
+        nCtx.putImageData(nImg, 0, 0);
+        rCtx.putImageData(rImg, 0, 0);
+
+        const mapTex = new ThreeMod.CanvasTexture(bcCanvas);
+        const normTex = new ThreeMod.CanvasTexture(nCanvas);
+        const roughTex = new ThreeMod.CanvasTexture(rCanvas);
+
+        if (ThreeMod.SRGBColorSpace) {
+            mapTex.colorSpace = ThreeMod.SRGBColorSpace;
+        }
+        mapTex.wrapS = mapTex.wrapT = ThreeMod.RepeatWrapping;
+        normTex.wrapS = normTex.wrapT = ThreeMod.RepeatWrapping;
+        roughTex.wrapS = roughTex.wrapT = ThreeMod.RepeatWrapping;
+        mapTex.repeat.set(2, 2);
+        normTex.repeat.set(2, 2);
+        roughTex.repeat.set(2, 2);
+
+        texBucket.push(mapTex, normTex, roughTex);
+        return { map: mapTex, normalMap: normTex, roughnessMap: roughTex };
     }
 
-    function createLightweightTacticalMaterials(ThreeModule, materialBucket, textureBucket) {
-        const camoTex = createCamoCanvasTexture(ThreeModule, textureBucket);
+    function buildMr3GloveTextures(ThreeMod, texBucket, seedVal) {
+        if (!ThreeMod || typeof document === 'undefined') {
+            return { map: null, normalMap: null, roughnessMap: null };
+        }
+        const size = 256;
+        const bcCanvas = document.createElement('canvas');
+        bcCanvas.width = size;
+        bcCanvas.height = size;
+        const bcCtx = bcCanvas.getContext('2d');
 
-        const sleeveMat = new ThreeModule.MeshStandardMaterial({
-            map: camoTex || null,
-            color: camoTex ? 0xffffff : 0x262b30,
-            roughness: 0.76,
-            metalness: 0.10
+        const nCanvas = document.createElement('canvas');
+        nCanvas.width = size;
+        nCanvas.height = size;
+        const nCtx = nCanvas.getContext('2d');
+
+        const rCanvas = document.createElement('canvas');
+        rCanvas.width = size;
+        rCanvas.height = size;
+        const rCtx = rCanvas.getContext('2d');
+
+        if (!bcCtx || !nCtx || !rCtx) {
+            return { map: null, normalMap: null, roughnessMap: null };
+        }
+
+        let seed = (seedVal || 1877) >>> 0;
+        const rand = () => {
+            seed = (seed * 1664525 + 1013904223) >>> 0;
+            return seed / 4294967296;
+        };
+
+        const bcImg = bcCtx.createImageData(size, size);
+        const rImg = rCtx.createImageData(size, size);
+        const hGrid = new Float32Array(size * size);
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                let v = 40.0 + (rand() - 0.5) * 9.6;
+                const hexPat = (((Math.floor(x / 1) + Math.floor(y / 1) * 2) % 4) === 0) && ((y % 2) === 0);
+                if (hexPat) v += 14.0;
+
+                // 指節護甲帶區域（中間偏下）與掌心／指墊區域
+                const inKnuckleBand = x >= 24 && x <= 210 && y >= 82 && y <= 146;
+                const inFingerPad = x >= 30 && x <= 218 && ((y >= 20 && y <= 40) || (y >= 50 && y <= 70));
+                const inCuffBand = x >= 22 && x <= 232 && y >= 175 && y <= 230;
+
+                if (inKnuckleBand) {
+                    v = 32;
+                    const border = (x <= 26 || x >= 208 || y <= 84 || y >= 144);
+                    if (border) v = 92;
+                } else if (inFingerPad) {
+                    v = 36;
+                    const border = (x <= 32 || x >= 216 || y === 20 || y === 40 || y === 50 || y === 70);
+                    if (border) v = 94;
+                } else if (inCuffBand) {
+                    v = 28;
+                }
+
+                const c = clampNum(v, 15, 220);
+                const idx = y * size + x;
+                const o = idx * 4;
+                bcImg.data[o] = c;
+                bcImg.data[o + 1] = clampNum(c + 2, 15, 222);
+                bcImg.data[o + 2] = clampNum(c + 1, 15, 221);
+                bcImg.data[o + 3] = 255;
+
+                const hVal = c / 255.0;
+                hGrid[idx] = hVal;
+
+                const roughVal = clampNum((0.54 - (hVal - 0.35) * 0.25) * 255, 45, 245);
+                rImg.data[o] = roughVal;
+                rImg.data[o + 1] = roughVal;
+                rImg.data[o + 2] = roughVal;
+                rImg.data[o + 3] = 255;
+            }
+        }
+
+        const nImg = nCtx.createImageData(size, size);
+        const nStrength = 3.6;
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const idx = y * size + x;
+                const hL = hGrid[y * size + Math.max(0, x - 1)];
+                const hR = hGrid[y * size + Math.min(size - 1, x + 1)];
+                const hU = hGrid[Math.max(0, y - 1) * size + x];
+                const hD = hGrid[Math.min(size - 1, y + 1) * size + x];
+
+                let nx = -(hR - hL) * nStrength;
+                let ny = -(hD - hU) * nStrength;
+                let nz = 1.0;
+                const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1.0;
+                nx /= len;
+                ny /= len;
+                nz /= len;
+
+                const o = idx * 4;
+                nImg.data[o] = clampNum((nx * 0.5 + 0.5) * 255, 0, 255);
+                nImg.data[o + 1] = clampNum((ny * 0.5 + 0.5) * 255, 0, 255);
+                nImg.data[o + 2] = clampNum((nz * 0.5 + 0.5) * 255, 0, 255);
+                nImg.data[o + 3] = 255;
+            }
+        }
+
+        bcCtx.putImageData(bcImg, 0, 0);
+        nCtx.putImageData(nImg, 0, 0);
+        rCtx.putImageData(rImg, 0, 0);
+
+        const mapTex = new ThreeMod.CanvasTexture(bcCanvas);
+        const normTex = new ThreeMod.CanvasTexture(nCanvas);
+        const roughTex = new ThreeMod.CanvasTexture(rCanvas);
+
+        if (ThreeMod.SRGBColorSpace) {
+            mapTex.colorSpace = ThreeMod.SRGBColorSpace;
+        }
+        mapTex.wrapS = mapTex.wrapT = ThreeMod.RepeatWrapping;
+        normTex.wrapS = normTex.wrapT = ThreeMod.RepeatWrapping;
+        roughTex.wrapS = roughTex.wrapT = ThreeMod.RepeatWrapping;
+
+        texBucket.push(mapTex, normTex, roughTex);
+        return { map: mapTex, normalMap: normTex, roughnessMap: roughTex };
+    }
+
+    function createMaterialsBundle(ThreeMod, matBucket, texBucket) {
+        const sleeveTex = buildCamoSleeveTextures(ThreeMod, texBucket, 1876);
+        const gloveTex = buildMr3GloveTextures(ThreeMod, texBucket, 1877);
+
+        const sleeveMat = new ThreeMod.MeshStandardMaterial({
+            map: sleeveTex.map,
+            normalMap: sleeveTex.normalMap,
+            normalScale: new ThreeMod.Vector2(1.3, 1.3),
+            roughnessMap: sleeveTex.roughnessMap,
+            roughness: 1.0,
+            metalness: 0.06,
+            side: ThreeMod.DoubleSide
         });
-        const cuffMat = new ThreeModule.MeshStandardMaterial({
-            color: 0x171a1d,
+
+        const gloveArmorMat = new ThreeMod.MeshStandardMaterial({
+            map: gloveTex.map,
+            normalMap: gloveTex.normalMap,
+            normalScale: new ThreeMod.Vector2(1.3, 1.3),
+            roughnessMap: gloveTex.roughnessMap,
+            roughness: 1.0,
+            metalness: 0.12,
+            side: ThreeMod.DoubleSide
+        });
+
+        const glovePalmMat = new ThreeMod.MeshStandardMaterial({
+            map: gloveTex.map,
+            roughness: 0.72,
+            metalness: 0.08,
+            color: 0xd8dcd9,
+            side: ThreeMod.DoubleSide
+        });
+
+        const fingerMat = new ThreeMod.MeshStandardMaterial({
+            color: 0xb98a6b,
             roughness: 0.62,
-            metalness: 0.18
-        });
-        const gloveKnuckleMat = new ThreeModule.MeshStandardMaterial({
-            color: 0x30363c,
-            roughness: 0.50,
-            metalness: 0.28
-        });
-        const glovePalmMat = new ThreeModule.MeshStandardMaterial({
-            color: 0x1c2024,
-            roughness: 0.70,
-            metalness: 0.14
-        });
-        const skinFingerMat = new ThreeModule.MeshStandardMaterial({
-            color: 0xc59373,
-            roughness: 0.60,
-            metalness: 0.04
+            metalness: 0.04,
+            side: ThreeMod.DoubleSide
         });
 
-        materialBucket.push(sleeveMat, cuffMat, gloveKnuckleMat, glovePalmMat, skinFingerMat);
+        matBucket.push(sleeveMat, gloveArmorMat, glovePalmMat, fingerMat);
 
         return {
             sleeveMat: sleeveMat,
-            cuffMat: cuffMat,
-            gloveKnuckleMat: gloveKnuckleMat,
+            gloveArmorMat: gloveArmorMat,
             glovePalmMat: glovePalmMat,
-            skinFingerMat: skinFingerMat
+            fingerMat: fingerMat
         };
     }
 
-    function createSharedLightweightGeometries(ThreeModule, geometryBucket) {
-        const upperArmGeo = new ThreeModule.CylinderGeometry(0.042, 0.036, 0.22, 8);
-        upperArmGeo.rotateX(Math.PI * 0.5);
-        upperArmGeo.translate(0, 0, -0.11);
+    // 雕塑化袖管：從手腕（z = 0）向後方（z = +length）延伸，帶有立體摺皺與袖口收束
+    function createSculptedSleeveGeometry(ThreeMod, geoBucket, length, r0W, r0T, r1W, r1T) {
+        const nu = 28;
+        const nv = 24;
+        const positions = new Float32Array(nu * nv * 3);
+        const uvs = new Float32Array(nu * nv * 2);
+        const indices = [];
 
-        const forearmGeo = new ThreeModule.CylinderGeometry(0.036, 0.028, 0.23, 8);
-        forearmGeo.rotateX(Math.PI * 0.5);
-        forearmGeo.translate(0, 0, -0.115);
+        for (let i = 0; i < nu; i++) {
+            const t = i / (nu - 1); // 0 = 手腕端, 1 = 手肘／後方端
+            const archY = 0.016 * Math.sin(t * Math.PI * 0.85) + 0.008 * Math.pow(t, 1.7);
+            const zPos = t * length;
 
-        const cuffGeo = new ThreeModule.CylinderGeometry(0.030, 0.032, 0.022, 8);
-        cuffGeo.rotateX(Math.PI * 0.5);
-        cuffGeo.translate(0, 0, -0.011);
+            let rw = lerpNum(r0W, r1W, t);
+            let rt = lerpNum(r0T, r1T, t);
 
-        const palmCoreGeo = new ThreeModule.BoxGeometry(0.052, 0.016, 0.056);
-        palmCoreGeo.translate(0, 0, -0.028);
+            if (t < 0.14) {
+                const cuffK = 1.0 - t / 0.14;
+                rw *= (1.0 - 0.07 * Math.sin(cuffK * Math.PI));
+                rt *= (1.0 - 0.07 * Math.sin(cuffK * Math.PI));
+            }
 
-        const knuckleArmorGeo = new ThreeModule.BoxGeometry(0.048, 0.008, 0.016);
-        knuckleArmorGeo.translate(0, 0.010, -0.046);
+            for (let j = 0; j < nv; j++) {
+                const th = (j / nv) * Math.PI * 2.0;
+                const cosT = Math.cos(th);
+                const sinT = Math.sin(th);
+                const crease =
+                    0.0032 * Math.sin(t * 22.0 + cosT * 2.2) +
+                    0.0016 * Math.cos(t * 39.0 - sinT * 3.1);
 
-        const fingerSegGeo = new ThreeModule.CylinderGeometry(0.0068, 0.0060, 0.018, 6);
-        fingerSegGeo.rotateX(Math.PI * 0.5);
-        fingerSegGeo.translate(0, 0, -0.009);
+                const x = (rw + crease * 0.7) * cosT;
+                const y = archY + (rt + crease * 0.7) * sinT;
+                const z = zPos;
 
-        const thumbSegGeo = new ThreeModule.CylinderGeometry(0.0075, 0.0068, 0.018, 6);
-        thumbSegGeo.rotateX(Math.PI * 0.5);
-        thumbSegGeo.translate(0, 0, -0.009);
+                const vIdx = i * nv + j;
+                positions[vIdx * 3] = x;
+                positions[vIdx * 3 + 1] = y;
+                positions[vIdx * 3 + 2] = z;
 
-        geometryBucket.push(
-            upperArmGeo,
-            forearmGeo,
-            cuffGeo,
-            palmCoreGeo,
-            knuckleArmorGeo,
-            fingerSegGeo,
-            thumbSegGeo
+                uvs[vIdx * 2] = 0.5 + 0.45 * cosT;
+                uvs[vIdx * 2 + 1] = 1.0 - t;
+            }
+        }
+
+        for (let i = 0; i < nu - 1; i++) {
+            for (let j = 0; j < nv; j++) {
+                const jn = (j + 1) % nv;
+                const a = i * nv + j;
+                const b = (i + 1) * nv + j;
+                const c = (i + 1) * nv + jn;
+                const d = i * nv + jn;
+                indices.push(a, d, b, b, d, c);
+            }
+        }
+
+        const geo = new ThreeMod.BufferGeometry();
+        geo.setAttribute('position', new ThreeMod.BufferAttribute(positions, 3));
+        geo.setAttribute('uv', new ThreeMod.BufferAttribute(uvs, 2));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        geoBucket.push(geo);
+        return geo;
+    }
+
+    // 雕塑化掌心：從手腕（z = 0）向前（z = -palmLen）延伸
+    function createSculptedPalmGeometry(ThreeMod, geoBucket, palmLen, palmW, palmT) {
+        const nu = 14;
+        const nv = 18;
+        const positions = new Float32Array(nu * nv * 3);
+        const uvs = new Float32Array(nu * nv * 2);
+        const indices = [];
+
+        for (let i = 0; i < nu; i++) {
+            const t = i / (nu - 1); // 0 = 手腕, 1 = 指根
+            const wProf = palmW * (0.42 + 0.14 * Math.sin(t * Math.PI * 0.8));
+            const arch = 0.0035 * Math.sin(t * Math.PI);
+            const zPos = -t * palmLen;
+
+            for (let j = 0; j < nv; j++) {
+                const th = (j / nv) * Math.PI * 2.0;
+                const cosT = Math.cos(th);
+                const sinT = Math.sin(th);
+
+                const x = wProf * cosT;
+                const y = palmT * 0.35 + arch + palmT * (0.50 - 0.10 * t) * sinT;
+                const z = zPos;
+
+                const vIdx = i * nv + j;
+                positions[vIdx * 3] = x;
+                positions[vIdx * 3 + 1] = y;
+                positions[vIdx * 3 + 2] = z;
+
+                uvs[vIdx * 2] = 0.15 + (0.5 + 0.45 * cosT) * 0.70;
+                uvs[vIdx * 2 + 1] = 0.22 + (1.0 - t) * 0.32;
+            }
+        }
+
+        for (let i = 0; i < nu - 1; i++) {
+            for (let j = 0; j < nv; j++) {
+                const jn = (j + 1) % nv;
+                const a = i * nv + j;
+                const b = (i + 1) * nv + j;
+                const c = (i + 1) * nv + jn;
+                const d = i * nv + jn;
+                indices.push(a, b, d, b, c, d);
+            }
+        }
+
+        const geo = new ThreeMod.BufferGeometry();
+        geo.setAttribute('position', new ThreeMod.BufferAttribute(positions, 3));
+        geo.setAttribute('uv', new ThreeMod.BufferAttribute(uvs, 2));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        geoBucket.push(geo);
+        return geo;
+    }
+
+    function createSharedGeometriesBundle(ThreeMod, geoBucket) {
+        const sleeveGeo = createSculptedSleeveGeometry(
+            ThreeMod,
+            geoBucket,
+            0.34,
+            0.044,
+            0.038,
+            0.068,
+            0.062
+        );
+
+        const palmGeo = createSculptedPalmGeometry(
+            ThreeMod,
+            geoBucket,
+            0.082,
+            0.078,
+            0.020
+        );
+
+        const knucklePlateGeo = new ThreeMod.BoxGeometry(0.017, 0.008, 0.022);
+        knucklePlateGeo.translate(0, 0.004, 0);
+
+        const fingerPadGeo = new ThreeMod.BoxGeometry(0.013, 0.004, 0.012);
+        fingerPadGeo.translate(0, 0.002, 0);
+
+        const phalanxGeo = new ThreeMod.CylinderGeometry(0.0068, 0.0060, 0.018, 6);
+        phalanxGeo.rotateX(Math.PI * 0.5);
+        phalanxGeo.translate(0, 0, -0.009);
+
+        const thumbPhalanxGeo = new ThreeMod.CylinderGeometry(0.0078, 0.0068, 0.018, 6);
+        thumbPhalanxGeo.rotateX(Math.PI * 0.5);
+        thumbPhalanxGeo.translate(0, 0, -0.009);
+
+        geoBucket.push(
+            sleeveGeo,
+            palmGeo,
+            knucklePlateGeo,
+            fingerPadGeo,
+            phalanxGeo,
+            thumbPhalanxGeo
         );
 
         return {
-            upperArmGeo: upperArmGeo,
-            forearmGeo: forearmGeo,
-            cuffGeo: cuffGeo,
-            palmCoreGeo: palmCoreGeo,
-            knuckleArmorGeo: knuckleArmorGeo,
-            fingerSegGeo: fingerSegGeo,
-            thumbSegGeo: thumbSegGeo
+            sleeveGeo: sleeveGeo,
+            palmGeo: palmGeo,
+            knucklePlateGeo: knucklePlateGeo,
+            fingerPadGeo: fingerPadGeo,
+            phalanxGeo: phalanxGeo,
+            thumbPhalanxGeo: thumbPhalanxGeo
         };
     }
 
-    function buildFingerChain(
-        ThreeModule,
-        parentWristJoint,
-        segmentGeo,
-        gloveMat,
-        skinMat,
-        localX,
-        localY,
-        localZ,
-        isThumb
-    ) {
-        const basePivot = new ThreeModule.Group();
-        basePivot.position.set(localX, localY, localZ);
-        parentWristJoint.add(basePivot);
+    function buildFingerSegmentChain(ThreeMod, parentJoint, segGeo, padGeo, armorMat, skinMat, isThumb) {
+        const p1 = new ThreeMod.Group();
+        parentJoint.add(p1);
+        p1.add(new ThreeMod.Mesh(segGeo, isThumb ? armorMat : skinMat));
+        if (!isThumb && padGeo) {
+            const pad1 = new ThreeMod.Mesh(padGeo, armorMat);
+            pad1.position.set(0, 0.005, -0.009);
+            p1.add(pad1);
+        }
 
-        const baseMesh = new ThreeModule.Mesh(segmentGeo, isThumb ? gloveMat : skinMat);
-        basePivot.add(baseMesh);
+        const p2 = new ThreeMod.Group();
+        p2.position.set(0, 0, -0.018);
+        p1.add(p2);
+        p2.add(new ThreeMod.Mesh(segGeo, skinMat));
+        if (!isThumb && padGeo) {
+            const pad2 = new ThreeMod.Mesh(padGeo, armorMat);
+            pad2.position.set(0, 0.005, -0.009);
+            p2.add(pad2);
+        }
 
-        const midPivot = new ThreeModule.Group();
-        midPivot.position.set(0, 0, -0.018);
-        basePivot.add(midPivot);
+        const p3 = new ThreeMod.Group();
+        p3.position.set(0, 0, -0.018);
+        p2.add(p3);
+        p3.add(new ThreeMod.Mesh(segGeo, skinMat));
 
-        const midMesh = new ThreeModule.Mesh(segmentGeo, skinMat);
-        midPivot.add(midMesh);
-
-        const tipPivot = new ThreeModule.Group();
-        tipPivot.position.set(0, 0, -0.018);
-        midPivot.add(tipPivot);
-
-        const tipMesh = new ThreeModule.Mesh(segmentGeo, skinMat);
-        tipPivot.add(tipMesh);
-
-        return {
-            jointPivots: [basePivot, midPivot, tipPivot]
-        };
+        return { pivots: [p1, p2, p3] };
     }
 
-    function buildSingleTacticalArmSide(
-        ThreeModule,
-        rigRootGroup,
-        handSideSign,
-        geos,
-        mats
-    ) {
-        const shoulderRoot = new ThreeModule.Group();
-        rigRootGroup.add(shoulderRoot);
+    function buildSingleHandAndSleeve(ThreeMod, rootGroup, sideSign, geos, mats) {
+        // wristAnchor 直接擺在握把或護木世界座標，槍身朝 -Z，手掌／手指朝 -Z，袖管朝 +Z 向後延伸
+        const wristAnchor = new ThreeMod.Group();
+        rootGroup.add(wristAnchor);
 
-        const upperArmMesh = new ThreeModule.Mesh(geos.upperArmGeo, mats.sleeveMat);
-        shoulderRoot.add(upperArmMesh);
+        const sleeveMesh = new ThreeMod.Mesh(geos.sleeveGeo, mats.sleeveMat);
+        sleeveMesh.position.set(0, -0.002, 0.005);
+        wristAnchor.add(sleeveMesh);
 
-        const elbowJoint = new ThreeModule.Group();
-        elbowJoint.position.set(0, 0, -0.22);
-        shoulderRoot.add(elbowJoint);
+        const palmMesh = new ThreeMod.Mesh(geos.palmGeo, mats.glovePalmMat);
+        wristAnchor.add(palmMesh);
 
-        const forearmMesh = new ThreeModule.Mesh(geos.forearmGeo, mats.sleeveMat);
-        elbowJoint.add(forearmMesh);
+        // 4 段式 MR3 圓弧指節護甲殼
+        const knucklePlates = [];
+        for (let k = 0; k < 4; k++) {
+            const xOff = (-1.5 + k) * 0.0175;
+            const kMesh = new ThreeMod.Mesh(geos.knucklePlateGeo, mats.gloveArmorMat);
+            kMesh.position.set(xOff, 0.012, -0.068);
+            kMesh.rotation.x = -0.14;
+            wristAnchor.add(kMesh);
+            knucklePlates.push(kMesh);
+        }
 
-        const wristJoint = new ThreeModule.Group();
-        wristJoint.position.set(0, 0, -0.23);
-        elbowJoint.add(wristJoint);
+        const indexChain = buildFingerSegmentChain(
+            ThreeMod,
+            wristAnchor,
+            geos.phalanxGeo,
+            geos.fingerPadGeo,
+            mats.gloveArmorMat,
+            mats.fingerMat,
+            false
+        );
+        indexChain.pivots[0].position.set(sideSign * 0.025, 0.002, -0.078);
 
-        const cuffMesh = new ThreeModule.Mesh(geos.cuffGeo, mats.cuffMat);
-        wristJoint.add(cuffMesh);
+        const middleChain = buildFingerSegmentChain(
+            ThreeMod,
+            wristAnchor,
+            geos.phalanxGeo,
+            geos.fingerPadGeo,
+            mats.gloveArmorMat,
+            mats.fingerMat,
+            false
+        );
+        middleChain.pivots[0].position.set(sideSign * 0.008, 0.002, -0.080);
 
-        const palmMesh = new ThreeModule.Mesh(geos.palmCoreGeo, mats.glovePalmMat);
-        palmMesh.position.set(0, -0.002, -0.018);
-        wristJoint.add(palmMesh);
+        const ringChain = buildFingerSegmentChain(
+            ThreeMod,
+            wristAnchor,
+            geos.phalanxGeo,
+            geos.fingerPadGeo,
+            mats.gloveArmorMat,
+            mats.fingerMat,
+            false
+        );
+        ringChain.pivots[0].position.set(-sideSign * 0.009, 0.001, -0.078);
 
-        const knuckleMesh = new ThreeModule.Mesh(geos.knuckleArmorGeo, mats.gloveKnuckleMat);
-        knuckleMesh.position.set(0, 0.002, -0.024);
-        wristJoint.add(knuckleMesh);
+        const pinkyChain = buildFingerSegmentChain(
+            ThreeMod,
+            wristAnchor,
+            geos.phalanxGeo,
+            geos.fingerPadGeo,
+            mats.gloveArmorMat,
+            mats.fingerMat,
+            false
+        );
+        pinkyChain.pivots[0].position.set(-sideSign * 0.025, 0.000, -0.074);
 
-        const thumbChain = buildFingerChain(
-            ThreeModule,
-            wristJoint,
-            geos.thumbSegGeo,
-            mats.gloveKnuckleMat,
-            mats.skinFingerMat,
-            handSideSign * 0.025,
-            -0.004,
-            -0.032,
+        const thumbChain = buildFingerSegmentChain(
+            ThreeMod,
+            wristAnchor,
+            geos.thumbPhalanxGeo,
+            null,
+            mats.gloveArmorMat,
+            mats.fingerMat,
             true
         );
-
-        const indexFingerChain = buildFingerChain(
-            ThreeModule,
-            wristJoint,
-            geos.fingerSegGeo,
-            mats.gloveKnuckleMat,
-            mats.skinFingerMat,
-            handSideSign * 0.017,
-            0.001,
-            -0.072,
-            false
-        );
-
-        const middleFingerChain = buildFingerChain(
-            ThreeModule,
-            wristJoint,
-            geos.fingerSegGeo,
-            mats.gloveKnuckleMat,
-            mats.skinFingerMat,
-            handSideSign * 0.005,
-            0.001,
-            -0.074,
-            false
-        );
-
-        const ringFingerChain = buildFingerChain(
-            ThreeModule,
-            wristJoint,
-            geos.fingerSegGeo,
-            mats.gloveKnuckleMat,
-            mats.skinFingerMat,
-            -handSideSign * 0.006,
-            0.000,
-            -0.072,
-            false
-        );
-
-        const pinkyFingerChain = buildFingerChain(
-            ThreeModule,
-            wristJoint,
-            geos.fingerSegGeo,
-            mats.gloveKnuckleMat,
-            mats.skinFingerMat,
-            -handSideSign * 0.018,
-            -0.001,
-            -0.068,
-            false
-        );
+        thumbChain.pivots[0].position.set(sideSign * 0.032, -0.004, -0.032);
 
         return {
-            armAssembly: {
-                shoulderRoot: shoulderRoot,
-                elbowJoint: elbowJoint,
-                wristJoint: wristJoint
-            },
-            fingerChains: {
-                thumbChain: thumbChain,
-                indexFingerChain: indexFingerChain,
-                middleFingerChain: middleFingerChain,
-                ringFingerChain: ringFingerChain,
-                pinkyFingerChain: pinkyFingerChain
-            }
+            wristAnchor: wristAnchor,
+            indexChain: indexChain,
+            middleChain: middleChain,
+            ringChain: ringChain,
+            pinkyChain: pinkyChain,
+            thumbChain: thumbChain
         };
     }
 
-    function solveTwoSegmentArmJointAngles(
-        shoulderWorldAnchor,
-        targetWristPosition,
-        upperArmLength,
-        forearmAndWristReachLength,
-        handSideSign,
-        scratchVectors
-    ) {
-        const directionVector = scratchVectors.directionVector;
-        directionVector.subVectors(targetWristPosition, shoulderWorldAnchor);
-
-        const rawDistance = directionVector.length();
-        const minimumReach = Math.abs(upperArmLength - forearmAndWristReachLength) + 0.015;
-        const maximumReach = (upperArmLength + forearmAndWristReachLength) - 0.008;
-        const clampedDistance = clampNumericValue(rawDistance, minimumReach, maximumReach);
-
-        if (rawDistance > 0.00001) {
-            directionVector.divideScalar(rawDistance);
-        } else {
-            directionVector.set(handSideSign * 0.10, -0.15, -0.98).normalize();
+    function curlFinger(chain, baseX, midX, tipX, yawY) {
+        if (!chain || !chain.pivots) return;
+        const p = chain.pivots;
+        if (p[0]) {
+            p[0].rotation.x = baseX;
+            p[0].rotation.y = yawY;
         }
-
-        const cosShoulderChord = clampNumericValue(
-            (upperArmLength * upperArmLength + clampedDistance * clampedDistance - forearmAndWristReachLength * forearmAndWristReachLength)
-            / (2.0 * upperArmLength * clampedDistance),
-            -1.0,
-            1.0
-        );
-        const shoulderToChordAngle = Math.acos(cosShoulderChord);
-
-        const cosElbowBend = clampNumericValue(
-            (upperArmLength * upperArmLength + forearmAndWristReachLength * forearmAndWristReachLength - clampedDistance * clampedDistance)
-            / (2.0 * upperArmLength * forearmAndWristReachLength),
-            -1.0,
-            1.0
-        );
-        const elbowInteriorAngle = Math.acos(cosElbowBend);
-        const elbowFlexionAngleX = -(Math.PI - elbowInteriorAngle);
-
-        const horizontalProjectionLength = Math.sqrt(
-            Math.max(0.0001, directionVector.x * directionVector.x + directionVector.z * directionVector.z)
-        );
-        const baseYawAngleY = Math.atan2(-directionVector.x, -directionVector.z);
-        const basePitchAngleX = Math.atan2(directionVector.y, horizontalProjectionLength);
-
-        return {
-            shoulderPitchX: basePitchAngleX + shoulderToChordAngle * 0.5,
-            shoulderYawY: baseYawAngleY,
-            shoulderRollZ: -handSideSign * 0.08,
-            elbowPitchX: elbowFlexionAngleX,
-            elbowYawY: 0,
-            elbowRollZ: 0
-        };
-    }
-
-    function applyFingerChainCurlAngles(
-        fingerChainObject,
-        baseCurlAngle,
-        middleCurlAngle,
-        tipCurlAngle,
-        spreadYawAngle
-    ) {
-        if (!fingerChainObject || !fingerChainObject.jointPivots) {
-            return;
+        if (p[1]) {
+            p[1].rotation.x = midX;
         }
-        const pivots = fingerChainObject.jointPivots;
-        if (pivots[0]) {
-            pivots[0].rotation.x = baseCurlAngle;
-            pivots[0].rotation.y = spreadYawAngle;
-        }
-        if (pivots[1]) {
-            pivots[1].rotation.x = middleCurlAngle;
-        }
-        if (pivots[2]) {
-            pivots[2].rotation.x = tipCurlAngle;
+        if (p[2]) {
+            p[2].rotation.x = tipX;
         }
     }
 
-    function applyTacticalHandPoseToSide(
-        sideRigObject,
-        handSideSign,
-        poseDefinition,
-        triggerPullAmount,
-        breathPhaseValue
-    ) {
-        if (
-            !sideRigObject
-            || !sideRigObject.fingerChains
-            || !sideRigObject.armAssembly
-            || !sideRigObject.armAssembly.wristJoint
-        ) {
-            return;
-        }
+    function applyGripFingerPose(handObj, sideSign, triggerPull, isReloading) {
+        const gripCurl = isReloading ? 0.72 : 1.08;
+        const idxBase = sideSign > 0
+            ? (0.76 + triggerPull * 0.45)
+            : (gripCurl * 0.94);
 
-        const safePose = poseDefinition && typeof poseDefinition === 'object' ? poseDefinition : {};
-        const fingerChains = sideRigObject.fingerChains;
-        const wristRotation = sideRigObject.armAssembly.wristJoint.rotation;
-
-        const baseIndexCurlX = readSafeCoordinateAxis(safePose.indexCurl, 'x', 0.70);
-        const baseGripCurlX = readSafeCoordinateAxis(safePose.gripCurl, 'x', 1.05);
-
-        // 右手扣扳機時食指明顯向後勾動，其餘手指穩固包覆握把或護木
-        const indexHook = handSideSign > 0
-            ? baseIndexCurlX + triggerPullAmount * 0.48
-            : baseGripCurlX * 0.92;
-        const gripHook = baseGripCurlX;
-
-        applyFingerChainCurlAngles(
-            fingerChains.thumbChain,
-            0.52 + gripHook * 0.20,
-            0.56 + gripHook * 0.18,
-            0.25,
-            -handSideSign * 0.32
+        curlFinger(
+            handObj.indexChain,
+            idxBase * 0.72,
+            idxBase * 0.88,
+            idxBase * 0.65,
+            -sideSign * 0.04
         );
-        applyFingerChainCurlAngles(
-            fingerChains.indexFingerChain,
-            indexHook * 0.75,
-            indexHook * 0.88,
-            indexHook * 0.68,
-            -handSideSign * 0.03
-        );
-        applyFingerChainCurlAngles(
-            fingerChains.middleFingerChain,
-            gripHook * 0.82,
-            gripHook * 0.94,
-            gripHook * 0.76,
+        curlFinger(
+            handObj.middleChain,
+            gripCurl * 0.80,
+            gripCurl * 0.92,
+            gripCurl * 0.75,
             0.0
         );
-        applyFingerChainCurlAngles(
-            fingerChains.ringFingerChain,
-            gripHook * 0.85,
-            gripHook * 0.96,
-            gripHook * 0.78,
-            handSideSign * 0.02
+        curlFinger(
+            handObj.ringChain,
+            gripCurl * 0.84,
+            gripCurl * 0.95,
+            gripCurl * 0.78,
+            sideSign * 0.03
         );
-        applyFingerChainCurlAngles(
-            fingerChains.pinkyFingerChain,
-            gripHook * 0.88,
-            gripHook * 0.98,
-            gripHook * 0.82,
-            handSideSign * 0.04
+        curlFinger(
+            handObj.pinkyChain,
+            gripCurl * 0.88,
+            gripCurl * 0.98,
+            gripCurl * 0.82,
+            sideSign * 0.06
         );
-
-        const rawWristBend = handSideSign > 0 ? safePose.rightWristBend : safePose.leftWristBend;
-        const subtleBreath = Math.sin(breathPhaseValue) * 0.004;
-        wristRotation.x = readSafeCoordinateAxis(rawWristBend, 'x', 0.14) + subtleBreath;
-        wristRotation.y = readSafeCoordinateAxis(rawWristBend, 'y', -handSideSign * 0.08);
-        wristRotation.z = readSafeCoordinateAxis(rawWristBend, 'z', handSideSign * 0.04);
+        curlFinger(
+            handObj.thumbChain,
+            0.55 + gripCurl * 0.22,
+            0.52 + gripCurl * 0.20,
+            0.25,
+            -sideSign * 0.36
+        );
     }
 
-    function resolveActiveWeaponModule(weaponCode) {
+    function resolveActiveWeapon(weaponId) {
         const order = ['M4A1', 'MP5', 'AX50', 'X16'];
-        const preferredCode = normalizeWeaponCode(weaponCode);
-        const preferredAlign = WeaponGripAlignmentTable[preferredCode];
-        const preferredMod = preferredAlign ? TacticalWarfareNamespace[preferredAlign.moduleKey] : null;
-
-        if (preferredMod && preferredMod.rootGroup && preferredMod.rootGroup.visible) {
-            return { code: preferredCode, mod: preferredMod };
+        const preferred = normalizeWeaponId(weaponId);
+        const spec = WEAPON_GRIP_SPECS[preferred];
+        const mod = spec ? TacticalWarfareNamespace[spec.moduleKey] : null;
+        if (mod && mod.rootGroup && mod.rootGroup.visible) {
+            return { id: preferred, mod: mod };
         }
-
-        for (let i = 0; i < order.length; i = i + 1) {
-            const code = order[i];
-            const mod = TacticalWarfareNamespace[WeaponGripAlignmentTable[code].moduleKey];
-            if (mod && mod.rootGroup && mod.rootGroup.visible) {
-                return { code: code, mod: mod };
+        for (let i = 0; i < order.length; i++) {
+            const id = order[i];
+            const m = TacticalWarfareNamespace[WEAPON_GRIP_SPECS[id].moduleKey];
+            if (m && m.rootGroup && m.rootGroup.visible) {
+                return { id: id, mod: m };
             }
         }
-
-        return { code: preferredCode, mod: preferredMod || null };
+        return { id: preferred, mod: mod || null };
     }
 
     class FirstPersonTacticalHandsController {
-        constructor(ThreeModule, sceneInstance, cameraInstance) {
-            this.ThreeModule = ThreeModule;
-            this.sceneInstance = sceneInstance;
-            this.cameraInstance = cameraInstance;
+        constructor(ThreeMod, sceneInst, cameraInst) {
+            this.ThreeModule = ThreeMod;
+            this.sceneInstance = sceneInst;
+            this.cameraInstance = cameraInst;
 
             this.createdGeometries = [];
             this.createdMaterials = [];
             this.createdTextures = [];
             this._unsubscribers = [];
 
-            this.currentPoseKey = 'rifle_hip';
             this.activeWeaponCode = 'M4A1';
-            this.aimDownSightBlend = 0.0;
             this.triggerPullAmount = 0.0;
             this.elapsedTimeSeconds = 0.0;
             this.isVisible = true;
@@ -579,70 +750,45 @@
             this.reloadElapsedSeconds = 0.0;
             this.reloadTotalDuration = 1.65;
 
-            this.isPlatingActive = false;
-            this.plateElapsedSeconds = 0.0;
-            this.plateTotalDuration = 1.55;
+            this.tempRightLocal = new ThreeMod.Vector3();
+            this.tempLeftLocal = new ThreeMod.Vector3();
+            this.rightWorldPos = new ThreeMod.Vector3();
+            this.leftWorldPos = new ThreeMod.Vector3();
+            this.rightWorldQuat = new ThreeMod.Quaternion();
+            this.leftWorldQuat = new ThreeMod.Quaternion();
+            this.twistQuat = new ThreeMod.Quaternion();
+            this.eulerScratch = new ThreeMod.Euler(0, 0, 0, 'YXZ');
 
-            this.scratchVectors = {
-                cameraForward: new ThreeModule.Vector3(),
-                cameraRight: new ThreeModule.Vector3(),
-                cameraUp: new ThreeModule.Vector3(),
-                rightShoulderWorld: new ThreeModule.Vector3(),
-                leftShoulderWorld: new ThreeModule.Vector3(),
-                rightTargetWristWorld: new ThreeModule.Vector3(),
-                leftTargetWristWorld: new ThreeModule.Vector3(),
-                directionVector: new ThreeModule.Vector3(),
-                tempLocalRight: new ThreeModule.Vector3(),
-                tempLocalLeft: new ThreeModule.Vector3()
-            };
+            this._leftPos = { x: 0, y: 0, z: 0 };
+            this._rightPos = { x: 0, y: 0, z: 0 };
 
-            this._leftPos = { x: 0.0, y: 0.0, z: 0.0 };
-            this._rightPos = { x: 0.0, y: 0.0, z: 0.0 };
-
-            this.attachedWeaponGroup = null;
             this.dualArmRig = null;
-
-            this.initializeRigAndListeners();
+            this.buildRig();
+            this.bindEvents();
         }
 
-        _subscribeEvent(eventName, handler) {
-            if (!EventBusInstance || !eventName) return;
-            if (typeof EventBusInstance.on === 'function') {
-                const unsub = EventBusInstance.on(eventName, handler);
-                if (typeof unsub === 'function') {
-                    this._unsubscribers.push(unsub);
-                } else if (typeof EventBusInstance.off === 'function') {
-                    this._unsubscribers.push(() => EventBusInstance.off(eventName, handler));
-                }
-            }
-        }
+        buildRig() {
+            const mats = createMaterialsBundle(this.ThreeModule, this.createdMaterials, this.createdTextures);
+            const geos = createSharedGeometriesBundle(this.ThreeModule, this.createdGeometries);
 
-        initializeRigAndListeners() {
-            const mats = createLightweightTacticalMaterials(
-                this.ThreeModule,
-                this.createdMaterials,
-                this.createdTextures
-            );
-            const geos = createSharedLightweightGeometries(this.ThreeModule, this.createdGeometries);
+            const rigGroup = new this.ThreeModule.Group();
+            rigGroup.name = 'FirstPersonTacticalHandsRig';
+            rigGroup.visible = this.isVisible;
 
-            const rigRootGroup = new this.ThreeModule.Group();
-            rigRootGroup.name = 'FirstPersonTacticalHandsRig';
-            rigRootGroup.visible = this.isVisible;
-
-            const rightSide = buildSingleTacticalArmSide(this.ThreeModule, rigRootGroup, 1, geos, mats);
-            const leftSide = buildSingleTacticalArmSide(this.ThreeModule, rigRootGroup, -1, geos, mats);
+            const rightHand = buildSingleHandAndSleeve(this.ThreeModule, rigGroup, 1, geos, mats);
+            const leftHand = buildSingleHandAndSleeve(this.ThreeModule, rigGroup, -1, geos, mats);
 
             this.dualArmRig = {
-                rigRootGroup: rigRootGroup,
-                rightSide: rightSide,
-                leftSide: leftSide
+                rigRootGroup: rigGroup,
+                rightSide: { wristJoint: rightHand.wristAnchor, armAssembly: { wristJoint: rightHand.wristAnchor } },
+                leftSide: { wristJoint: leftHand.wristAnchor, armAssembly: { wristJoint: leftHand.wristAnchor } },
+                rightHand: rightHand,
+                leftHand: leftHand
             };
 
             if (this.sceneInstance) {
-                this.sceneInstance.add(rigRootGroup);
+                this.sceneInstance.add(rigGroup);
             }
-
-            this.bindGameEventListeners();
         }
 
         init(options) {
@@ -659,9 +805,6 @@
             if (opts.camera) {
                 this.cameraInstance = opts.camera;
             }
-            if (opts.parentGroup) {
-                this.attachedWeaponGroup = opts.parentGroup;
-            }
             if (typeof opts.visible === 'boolean') {
                 this.setVisible(opts.visible);
             }
@@ -675,235 +818,51 @@
             }
         }
 
-        bindGameEventListeners() {
-            if (!EventBusInstance || typeof EventBusInstance.on !== 'function') {
-                return;
-            }
+        bindEvents() {
+            if (!EventBusInstance || typeof EventBusInstance.on !== 'function') return;
 
-            this._subscribeEvent(GameEventsTable.WEAPON_FIRED || GameEventsTable.WEAPON_FIRE || 'weapon:fired', () => {
+            const onFire = () => {
                 this.triggerPullAmount = 1.0;
-            });
-
-            this._subscribeEvent(GameEventsTable.WEAPON_SWITCHED || GameEventsTable.WEAPON_EQUIP || 'weapon:switched', (payload) => {
-                const rawCode = payload && (payload.weaponKey || payload.weaponId || payload.id);
-                if (rawCode) {
-                    const nextCode = normalizeWeaponCode(String(rawCode));
-                    if (nextCode !== this.activeWeaponCode) {
-                        this.activeWeaponCode = nextCode;
-                        this.triggerPullAmount = 0.0;
-                    }
-                    const align = WeaponGripAlignmentTable[this.activeWeaponCode];
-                    if (align && !this.isReloadingActive) {
-                        this.reloadTotalDuration = align.defaultReloadDuration;
-                    }
+            };
+            const onSwitch = (payload) => {
+                const raw = payload && (payload.weaponKey || payload.weaponId || payload.id);
+                if (raw) {
+                    this.activeWeaponCode = normalizeWeaponId(String(raw));
+                    this.triggerPullAmount = 0.0;
                 }
-            });
-
-            const reloadStartEvents = [
-                GameEventsTable.RELOAD_STARTED,
-                GameEventsTable.WEAPON_RELOAD_START,
-                GameEventsTable.RELOAD_START,
-                'reload:started'
-            ].filter(Boolean);
-            for (let i = 0; i < reloadStartEvents.length; i = i + 1) {
-                this._subscribeEvent(reloadStartEvents[i], (payload) => {
-                    this.isReloadingActive = true;
-                    this.reloadElapsedSeconds = 0.0;
-                    const fallbackDur = (WeaponGripAlignmentTable[this.activeWeaponCode] && WeaponGripAlignmentTable[this.activeWeaponCode].defaultReloadDuration) || 1.65;
-                    this.reloadTotalDuration = payload && typeof payload.duration === 'number' && payload.duration > 0.2
-                        ? payload.duration
-                        : fallbackDur;
-                });
-            }
-
-            const reloadEndEvents = [
-                GameEventsTable.WEAPON_RELOAD_FINISH,
-                GameEventsTable.WEAPON_RELOAD_CANCEL,
-                GameEventsTable.RELOAD_COMPLETE
-            ].filter(Boolean);
-            for (let i = 0; i < reloadEndEvents.length; i = i + 1) {
-                this._subscribeEvent(reloadEndEvents[i], () => {
-                    this.isReloadingActive = false;
-                    this.reloadElapsedSeconds = 0.0;
-                });
-            }
-
-            this._subscribeEvent(GameEventsTable.PLATE_STARTED || 'plate:started', (payload) => {
-                this.isPlatingActive = true;
-                this.plateElapsedSeconds = 0.0;
-                if (payload && typeof payload.duration === 'number' && payload.duration > 0.2) {
-                    this.plateTotalDuration = payload.duration;
-                }
-            });
-        }
-
-        synchronizeStateFromGameStore(deltaSeconds, overrideState, activeWeaponMod, weaponAlignment) {
-            let stateWeaponId = '';
-            let isAimingNow = false;
-            let stateReloading = false;
-
-            if (GameStateStore) {
-                if (typeof GameStateStore.get === 'function') {
-                    stateWeaponId = GameStateStore.get('weapons.activeId', '') || GameStateStore.get('currentWeapon', '');
-                    isAimingNow = Boolean(GameStateStore.get('weapons.isAiming', false) || GameStateStore.get('isAiming', false));
-                    stateReloading = Boolean(GameStateStore.get('weapons.isReloading', false) || GameStateStore.get('isReloading', false));
-                } else {
-                    stateWeaponId = GameStateStore.currentWeapon || GameStateStore.weaponKey || '';
-                    isAimingNow = Boolean(GameStateStore.isAiming || GameStateStore.adsActive);
-                    stateReloading = Boolean(GameStateStore.isReloading);
-                }
-            }
-
-            if (activeWeaponMod) {
-                if (typeof activeWeaponMod._isReloading === 'boolean' && activeWeaponMod._isReloading) {
-                    stateReloading = true;
-                    if (typeof activeWeaponMod._reloadDuration === 'number' && activeWeaponMod._reloadDuration > 0.2) {
-                        this.reloadTotalDuration = activeWeaponMod._reloadDuration;
-                    }
-                    if (typeof activeWeaponMod._reloadProgress === 'number') {
-                        this.reloadElapsedSeconds = clampNumericValue(activeWeaponMod._reloadProgress, 0, 1) * this.reloadTotalDuration;
-                    }
-                }
-                if (typeof activeWeaponMod._isAiming === 'boolean') {
-                    isAimingNow = isAimingNow || activeWeaponMod._isAiming;
-                }
-                if (activeWeaponMod._flashTimer && activeWeaponMod._flashTimer > 0) {
-                    this.triggerPullAmount = Math.max(this.triggerPullAmount, 0.85);
-                }
-            }
-
-            if (overrideState && typeof overrideState === 'object') {
-                if (typeof overrideState.weaponId === 'string' && overrideState.weaponId.length > 0) {
-                    stateWeaponId = overrideState.weaponId;
-                }
-                if (typeof overrideState.isAiming === 'boolean') {
-                    isAimingNow = overrideState.isAiming;
-                }
-                if (typeof overrideState.isReloading === 'boolean') {
-                    stateReloading = stateReloading || overrideState.isReloading;
-                }
-            }
-
-            if (typeof stateWeaponId === 'string' && stateWeaponId.length > 0) {
-                this.activeWeaponCode = normalizeWeaponCode(stateWeaponId);
-            }
-
-            const targetAdsBlend = isAimingNow ? 1.0 : 0.0;
-            this.aimDownSightBlend = linearInterpolateValue(
-                this.aimDownSightBlend,
-                targetAdsBlend,
-                clampNumericValue(deltaSeconds * 14.0, 0.0, 1.0)
-            );
-
-            if (stateReloading && !this.isReloadingActive) {
+            };
+            const onReloadStart = (payload) => {
                 this.isReloadingActive = true;
                 this.reloadElapsedSeconds = 0.0;
-                if (weaponAlignment && weaponAlignment.defaultReloadDuration) {
-                    this.reloadTotalDuration = weaponAlignment.defaultReloadDuration;
-                }
-            }
+                const spec = WEAPON_GRIP_SPECS[this.activeWeaponCode] || WEAPON_GRIP_SPECS.M4A1;
+                this.reloadTotalDuration = payload && typeof payload.duration === 'number' && payload.duration > 0.2
+                    ? payload.duration
+                    : spec.defaultReloadDuration;
+            };
+            const onReloadEnd = () => {
+                this.isReloadingActive = false;
+                this.reloadElapsedSeconds = 0.0;
+            };
 
-            if (this.isReloadingActive) {
-                this.reloadElapsedSeconds += deltaSeconds;
-                if (!stateReloading && this.reloadElapsedSeconds >= this.reloadTotalDuration) {
-                    this.isReloadingActive = false;
-                    this.reloadElapsedSeconds = 0.0;
-                } else if (stateReloading && this.reloadElapsedSeconds > this.reloadTotalDuration) {
-                    this.reloadElapsedSeconds = this.reloadTotalDuration;
-                }
-            }
+            const fireEvt = GameEventsTable.WEAPON_FIRED || GameEventsTable.WEAPON_FIRE || 'weapon:fired';
+            const switchEvt = GameEventsTable.WEAPON_SWITCHED || GameEventsTable.WEAPON_EQUIP || 'weapon:switched';
+            const rStartEvt = GameEventsTable.RELOAD_STARTED || GameEventsTable.WEAPON_RELOAD_START || 'reload:started';
+            const rEndEvt = GameEventsTable.WEAPON_RELOAD_FINISH || GameEventsTable.RELOAD_COMPLETE || 'reload:complete';
 
-            if (this.isPlatingActive) {
-                this.plateElapsedSeconds += deltaSeconds;
-                if (this.plateElapsedSeconds >= this.plateTotalDuration) {
-                    this.isPlatingActive = false;
-                    this.plateElapsedSeconds = 0.0;
-                }
-            }
-
-            if (this.isPlatingActive) {
-                this.currentPoseKey = 'plate';
-            } else if (this.isReloadingActive) {
-                this.currentPoseKey = 'reload';
-            } else if (this.activeWeaponCode === 'X16') {
-                this.currentPoseKey = 'pistol_hip';
-            } else if (this.aimDownSightBlend > 0.52) {
-                this.currentPoseKey = 'rifle_ads';
-            } else {
-                this.currentPoseKey = 'rifle_hip';
-            }
+            this._unsubscribers.push(EventBusInstance.on(fireEvt, onFire));
+            this._unsubscribers.push(EventBusInstance.on(switchEvt, onSwitch));
+            this._unsubscribers.push(EventBusInstance.on(rStartEvt, onReloadStart));
+            this._unsubscribers.push(EventBusInstance.on(rEndEvt, onReloadEnd));
         }
 
-        attachWeaponGroup(weaponGroupObject) {
-            this.attachedWeaponGroup = weaponGroupObject || null;
-        }
-
-        computeCameraBasisVectors(cameraForward, cameraRight, cameraUp) {
-            const elems = this.cameraInstance.matrixWorld.elements;
-            cameraRight.set(elems[0], elems[1], elems[2]).normalize();
-            cameraUp.set(elems[4], elems[5], elems[6]).normalize();
-            cameraForward.set(-elems[8], -elems[9], -elems[10]).normalize();
-        }
-
-        transformLocalCameraOffsetToWorld(localOffsetX, localOffsetY, localOffsetZ, targetWorldVector) {
-            const vectors = this.scratchVectors;
-            this.computeCameraBasisVectors(vectors.cameraForward, vectors.cameraRight, vectors.cameraUp);
-
-            targetWorldVector.copy(this.cameraInstance.position);
-            targetWorldVector.addScaledVector(vectors.cameraRight, localOffsetX);
-            targetWorldVector.addScaledVector(vectors.cameraUp, localOffsetY);
-            targetWorldVector.addScaledVector(vectors.cameraForward, -localOffsetZ);
-            return targetWorldVector;
-        }
-
-        applySingleArmTwoJointSolution(
-            sideRigObject,
-            handSideSign,
-            shoulderAnchorWorld,
-            targetWristWorld,
-            upperArmLength,
-            forearmAndWristLength
-        ) {
-            const vectors = this.scratchVectors;
-            const shoulderRoot = sideRigObject.armAssembly.shoulderRoot;
-            const elbowJoint = sideRigObject.armAssembly.elbowJoint;
-
-            shoulderRoot.position.copy(shoulderAnchorWorld);
-
-            const jointAngles = solveTwoSegmentArmJointAngles(
-                shoulderAnchorWorld,
-                targetWristWorld,
-                upperArmLength,
-                forearmAndWristReachLength,
-                handSideSign,
-                vectors
-            );
-
-            shoulderRoot.rotation.set(
-                jointAngles.shoulderPitchX,
-                jointAngles.shoulderYawY,
-                jointAngles.shoulderRollZ
-            );
-
-            elbowJoint.rotation.set(
-                jointAngles.elbowPitchX,
-                jointAngles.elbowYawY,
-                jointAngles.elbowRollZ
-            );
-        }
-
-        update(rawDeltaSeconds, bobOffsetOrSceneOrCtx) {
+        update(rawDeltaSeconds, ctxOrScene) {
             try {
-                if (!this.sceneInstance || !this.cameraInstance || !this.dualArmRig) {
-                    return;
-                }
+                if (!this.sceneInstance || !this.cameraInstance || !this.dualArmRig) return;
 
-                if (bobOffsetOrSceneOrCtx && bobOffsetOrSceneOrCtx.isScene) {
-                    if (this.sceneInstance !== bobOffsetOrSceneOrCtx) {
-                        this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
-                        this.sceneInstance = bobOffsetOrSceneOrCtx;
-                        this.sceneInstance.add(this.dualArmRig.rigRootGroup);
-                    }
+                if (ctxOrScene && ctxOrScene.isScene && this.sceneInstance !== ctxOrScene) {
+                    this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
+                    this.sceneInstance = ctxOrScene;
+                    this.sceneInstance.add(this.dualArmRig.rigRootGroup);
                 }
 
                 if (!this.isVisible) {
@@ -912,197 +871,129 @@
                 }
                 this.dualArmRig.rigRootGroup.visible = true;
 
-                const deltaSeconds = clampNumericValue(
-                    typeof rawDeltaSeconds === 'number' && !Number.isNaN(rawDeltaSeconds)
-                        ? rawDeltaSeconds
-                        : 0.016,
+                const dt = clampNum(
+                    typeof rawDeltaSeconds === 'number' && !Number.isNaN(rawDeltaSeconds) ? rawDeltaSeconds : 0.016,
                     0.001,
                     0.05
                 );
+                this.elapsedTimeSeconds += dt;
+                this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - dt * 9.0);
 
-                const isCtxObj = bobOffsetOrSceneOrCtx && !bobOffsetOrSceneOrCtx.isScene && typeof bobOffsetOrSceneOrCtx === 'object';
-                const resolvedWeapon = resolveActiveWeaponModule(
-                    (isCtxObj && bobOffsetOrSceneOrCtx.weaponId) || this.activeWeaponCode
-                );
-                const activeWeaponMod = resolvedWeapon.mod;
-                this.activeWeaponCode = resolvedWeapon.code;
+                const isCtx = ctxOrScene && !ctxOrScene.isScene && typeof ctxOrScene === 'object';
+                const resolved = resolveActiveWeapon((isCtx && ctxOrScene.weaponId) || this.activeWeaponCode);
+                this.activeWeaponCode = resolved.id;
+                const weaponMod = resolved.mod;
+                const spec = WEAPON_GRIP_SPECS[this.activeWeaponCode] || WEAPON_GRIP_SPECS.M4A1;
 
-                const weaponAlignment = WeaponGripAlignmentTable[this.activeWeaponCode] || WeaponGripAlignmentTable.M4A1;
-
-                this.elapsedTimeSeconds += deltaSeconds;
-                this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - deltaSeconds * 9.0);
-
-                this.synchronizeStateFromGameStore(
-                    deltaSeconds,
-                    isCtxObj ? bobOffsetOrSceneOrCtx : null,
-                    activeWeaponMod,
-                    weaponAlignment
-                );
-
-                const currentPose = StancePoseDefinitions[this.currentPoseKey] || StancePoseDefinitions.rifle_hip;
-
-                const vectors = this.scratchVectors;
-                const upperArmLength = 0.22;
-                const forearmAndWristLength = 0.23;
-
-                if (this.cameraInstance.matrixWorld) {
-                    this.cameraInstance.updateMatrixWorld(true);
+                let reloading = Boolean(isCtx && isCtx.isReloading);
+                if (weaponMod && typeof weaponMod._isReloading === 'boolean' && weaponMod._isReloading) {
+                    reloading = true;
+                }
+                if (GameStateStore && typeof GameStateStore.get === 'function') {
+                    reloading = reloading || Boolean(GameStateStore.get('weapons.isReloading', false) || GameStateStore.get('isReloading', false));
                 }
 
-                // 肩部錨點放在鏡頭下方稍靠側邊，讓手臂自然向前伸向握把與護木
-                this.transformLocalCameraOffsetToWorld(0.20, -0.22, -0.04, vectors.rightShoulderWorld);
-                this.transformLocalCameraOffsetToWorld(-0.14, -0.22, -0.05, vectors.leftShoulderWorld);
+                if (reloading && !this.isReloadingActive) {
+                    this.isReloadingActive = true;
+                    this.reloadElapsedSeconds = 0.0;
+                    this.reloadTotalDuration = (weaponMod && weaponMod._reloadDuration) || spec.defaultReloadDuration;
+                }
+                if (this.isReloadingActive) {
+                    this.reloadElapsedSeconds += dt;
+                    if (!reloading && this.reloadElapsedSeconds >= this.reloadTotalDuration) {
+                        this.isReloadingActive = false;
+                        this.reloadElapsedSeconds = 0.0;
+                    }
+                }
 
-                const weaponAnchorGroup = (activeWeaponMod && (activeWeaponMod.weaponBodyGroup || activeWeaponMod.rootGroup)) || null;
+                this.cameraInstance.updateMatrixWorld(true);
 
-                if (weaponAnchorGroup && typeof weaponAnchorGroup.localToWorld === 'function') {
-                    weaponAnchorGroup.updateMatrixWorld(true);
+                const anchor = (weaponMod && (weaponMod.weaponBodyGroup || weaponMod.rootGroup)) || null;
+                const rightHand = this.dualArmRig.rightHand;
+                const leftHand = this.dualArmRig.leftHand;
 
-                    // 右手直接貼合武器握把局部座標，開槍後座時隨 weaponBodyGroup 平滑跟隨
-                    vectors.tempLocalRight.set(
-                        weaponAlignment.bodyRightGrip.x,
-                        weaponAlignment.bodyRightGrip.y,
-                        weaponAlignment.bodyRightGrip.z
-                    );
-                    vectors.rightTargetWristWorld.copy(vectors.tempLocalRight);
-                    weaponAnchorGroup.localToWorld(vectors.rightTargetWristWorld);
+                if (anchor && typeof anchor.localToWorld === 'function') {
+                    anchor.updateMatrixWorld(true);
+                    anchor.getWorldQuaternion(this.rightWorldQuat);
+                    anchor.getWorldQuaternion(this.leftWorldQuat);
 
-                    // 左手貼合護木（換彈時做換彈動作）
-                    let leftX = weaponAlignment.bodyLeftHandguard.x;
-                    let leftY = weaponAlignment.bodyLeftHandguard.y;
-                    let leftZ = weaponAlignment.bodyLeftHandguard.z;
+                    // 右手直接扣在握把局部座標上，隨槍身平順移動與後座
+                    this.tempRightLocal.set(spec.rightGripLocal.x, spec.rightGripLocal.y, spec.rightGripLocal.z);
+                    this.rightWorldPos.copy(this.tempRightLocal);
+                    anchor.localToWorld(this.rightWorldPos);
+
+                    // 左手扣在護木上（換彈時做換彈軌跡）
+                    let lx = spec.leftHandguardLocal.x;
+                    let ly = spec.leftHandguardLocal.y;
+                    let lz = spec.leftHandguardLocal.z;
 
                     if (this.isReloadingActive) {
-                        const reloadProgress = clampNumericValue(
-                            this.reloadElapsedSeconds / Math.max(0.1, this.reloadTotalDuration),
-                            0.0,
-                            1.0
-                        );
-                        const reloadArcWave = Math.sin(reloadProgress * Math.PI);
-                        leftX = linearInterpolateValue(leftX, weaponAlignment.reloadLeftHand.x, reloadArcWave);
-                        leftY = linearInterpolateValue(
-                            leftY,
-                            weaponAlignment.reloadLeftHand.y + weaponAlignment.reloadPullY * Math.sin(reloadProgress * Math.PI * 2.0),
-                            reloadArcWave
-                        );
-                        leftZ = linearInterpolateValue(leftZ, weaponAlignment.reloadLeftHand.z, reloadArcWave);
-                    } else if (this.isPlatingActive) {
-                        const plateProgress = clampNumericValue(
-                            this.plateElapsedSeconds / Math.max(0.1, this.plateTotalDuration),
-                            0.0,
-                            1.0
-                        );
-                        const plateWave = Math.sin(plateProgress * Math.PI);
-                        leftX = linearInterpolateValue(leftX, 0.02, plateWave);
-                        leftY = linearInterpolateValue(leftY, -0.05 + plateWave * 0.03, plateWave);
-                        leftZ = linearInterpolateValue(leftZ, -0.02, plateWave);
+                        const prog = clampNum(this.reloadElapsedSeconds / Math.max(0.1, this.reloadTotalDuration), 0, 1);
+                        const wave = Math.sin(prog * Math.PI);
+                        lx = lerpNum(lx, spec.reloadLeftLocal.x, wave);
+                        ly = lerpNum(ly, spec.reloadLeftLocal.y + spec.reloadPullY * Math.sin(prog * Math.PI * 2.0), wave);
+                        lz = lerpNum(lz, spec.reloadLeftLocal.z, wave);
                     }
 
-                    vectors.tempLocalLeft.set(leftX, leftY, leftZ);
-                    vectors.leftTargetWristWorld.copy(vectors.tempLocalLeft);
-                    weaponAnchorGroup.localToWorld(vectors.leftTargetWristWorld);
+                    this.tempLeftLocal.set(lx, ly, lz);
+                    this.leftWorldPos.copy(this.tempLeftLocal);
+                    anchor.localToWorld(this.leftWorldPos);
+
+                    rightHand.wristAnchor.position.copy(this.rightWorldPos);
+                    rightHand.wristAnchor.quaternion.copy(this.rightWorldQuat);
+                    this.eulerScratch.set(0.12, -0.06, 0.06);
+                    this.twistQuat.setFromEuler(this.eulerScratch);
+                    rightHand.wristAnchor.quaternion.multiply(this.twistQuat);
+
+                    leftHand.wristAnchor.position.copy(this.leftWorldPos);
+                    leftHand.wristAnchor.quaternion.copy(this.leftWorldQuat);
+                    this.eulerScratch.set(0.08, 0.14, -0.24);
+                    this.twistQuat.setFromEuler(this.eulerScratch);
+                    leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
-                    const bobOffset = isCtxObj && bobOffsetOrSceneOrCtx.bobOffset
-                        ? bobOffsetOrSceneOrCtx.bobOffset
-                        : (isCtxObj && typeof bobOffsetOrSceneOrCtx.x === 'number' ? bobOffsetOrSceneOrCtx : null);
-                    const bobX = readSafeCoordinateAxis(bobOffset, 'x', 0.0);
-                    const bobY = readSafeCoordinateAxis(bobOffset, 'y', 0.0);
-                    const bobZ = readSafeCoordinateAxis(bobOffset, 'z', 0.0);
-                    const adsFactor = this.aimDownSightBlend;
-
-                    this.transformLocalCameraOffsetToWorld(
-                        linearInterpolateValue(0.16, 0.01, adsFactor) + bobX,
-                        linearInterpolateValue(-0.18, -0.10, adsFactor) + bobY,
-                        linearInterpolateValue(-0.32, -0.32, adsFactor) + bobZ,
-                        vectors.rightTargetWristWorld
-                    );
-
-                    this.transformLocalCameraOffsetToWorld(
-                        linearInterpolateValue(0.12, -0.02, adsFactor) + bobX,
-                        linearInterpolateValue(-0.14, -0.06, adsFactor) + bobY,
-                        linearInterpolateValue(-0.52, -0.52, adsFactor) + bobZ,
-                        vectors.leftTargetWristWorld
-                    );
+                    rightHand.wristAnchor.position.copy(this.cameraInstance.position);
+                    rightHand.wristAnchor.quaternion.copy(this.cameraInstance.quaternion);
+                    leftHand.wristAnchor.position.copy(this.cameraInstance.position);
+                    leftHand.wristAnchor.quaternion.copy(this.cameraInstance.quaternion);
                 }
 
-                this.applySingleArmTwoJointSolution(
-                    this.dualArmRig.rightSide,
-                    1,
-                    vectors.rightShoulderWorld,
-                    vectors.rightTargetWristWorld,
-                    upperArmLength,
-                    forearmAndWristLength
-                );
+                applyGripFingerPose(rightHand, 1, this.triggerPullAmount, this.isReloadingActive);
+                applyGripFingerPose(leftHand, -1, 0.0, this.isReloadingActive);
 
-                this.applySingleArmTwoJointSolution(
-                    this.dualArmRig.leftSide,
-                    -1,
-                    vectors.leftShoulderWorld,
-                    vectors.leftTargetWristWorld,
-                    upperArmLength,
-                    forearmAndWristLength
-                );
+                this._rightPos.x = Number(this.rightWorldPos.x.toFixed(3));
+                this._rightPos.y = Number(this.rightWorldPos.y.toFixed(3));
+                this._rightPos.z = Number(this.rightWorldPos.z.toFixed(3));
 
-                applyTacticalHandPoseToSide(
-                    this.dualArmRig.rightSide,
-                    1,
-                    currentPose,
-                    this.triggerPullAmount,
-                    this.elapsedTimeSeconds * 2.0
-                );
-
-                applyTacticalHandPoseToSide(
-                    this.dualArmRig.leftSide,
-                    -1,
-                    currentPose,
-                    0.0,
-                    this.elapsedTimeSeconds * 2.0 + 0.7
-                );
-
-                this._rightPos.x = Number(vectors.rightTargetWristWorld.x.toFixed(3));
-                this._rightPos.y = Number(vectors.rightTargetWristWorld.y.toFixed(3));
-                this._rightPos.z = Number(vectors.rightTargetWristWorld.z.toFixed(3));
-
-                this._leftPos.x = Number(vectors.leftTargetWristWorld.x.toFixed(3));
-                this._leftPos.y = Number(vectors.leftTargetWristWorld.y.toFixed(3));
-                this._leftPos.z = Number(vectors.leftTargetWristWorld.z.toFixed(3));
-            } catch (err) {
-                // 防止手模更新例外影響主渲染迴圈
+                this._leftPos.x = Number(this.leftWorldPos.x.toFixed(3));
+                this._leftPos.y = Number(this.leftWorldPos.y.toFixed(3));
+                this._leftPos.z = Number(this.leftWorldPos.z.toFixed(3));
+            } catch (_err) {
+                // 避免單幀例外中斷主迴圈
             }
         }
 
         dispose() {
-            for (let i = 0; i < this._unsubscribers.length; i = i + 1) {
+            for (let i = 0; i < this._unsubscribers.length; i++) {
                 if (typeof this._unsubscribers[i] === 'function') {
                     this._unsubscribers[i]();
                 }
             }
             this._unsubscribers = [];
-
-            for (let i = 0; i < this.createdGeometries.length; i = i + 1) {
-                const geo = this.createdGeometries[i];
-                if (geo && typeof geo.dispose === 'function') {
-                    geo.dispose();
+            for (let i = 0; i < this.createdGeometries.length; i++) {
+                if (this.createdGeometries[i] && typeof this.createdGeometries[i].dispose === 'function') {
+                    this.createdGeometries[i].dispose();
                 }
             }
-            this.createdGeometries = [];
-
-            for (let i = 0; i < this.createdMaterials.length; i = i + 1) {
-                const mat = this.createdMaterials[i];
-                if (mat && typeof mat.dispose === 'function') {
-                    mat.dispose();
+            for (let i = 0; i < this.createdMaterials.length; i++) {
+                if (this.createdMaterials[i] && typeof this.createdMaterials[i].dispose === 'function') {
+                    this.createdMaterials[i].dispose();
                 }
             }
-            this.createdMaterials = [];
-
-            for (let i = 0; i < this.createdTextures.length; i = i + 1) {
-                const tex = this.createdTextures[i];
-                if (tex && typeof tex.dispose === 'function') {
-                    tex.dispose();
+            for (let i = 0; i < this.createdTextures.length; i++) {
+                if (this.createdTextures[i] && typeof this.createdTextures[i].dispose === 'function') {
+                    this.createdTextures[i].dispose();
                 }
             }
-            this.createdTextures = [];
-
             if (this.sceneInstance && this.dualArmRig && this.dualArmRig.rigRootGroup) {
                 this.sceneInstance.remove(this.dualArmRig.rigRootGroup);
             }
@@ -1110,109 +1001,78 @@
         }
     }
 
-    let activeControllerInstance = null;
+    let activeController = null;
 
-    function resolveThreeModuleReference() {
-        return globalScope.THREE || TacticalWarfareNamespace.THREE || null;
-    }
-
-    function resolveSceneAndCameraFromContext(overrideScene, overrideCamera) {
-        const rendererCore = TacticalWarfareNamespace.RendererCore
-            || (globalScope.TacticalWarfare && globalScope.TacticalWarfare.RendererCore)
-            || null;
-
-        const resolvedScene = overrideScene
+    function resolveSceneAndCamera(overrideScene, overrideCamera) {
+        const rendererCore = TacticalWarfareNamespace.RendererCore || null;
+        const scene = overrideScene
             || (rendererCore && typeof rendererCore.getScene === 'function' ? rendererCore.getScene() : null)
             || (rendererCore && rendererCore.scene)
             || TacticalWarfareNamespace.scene
             || globalScope.scene
             || null;
-
-        const resolvedCamera = overrideCamera
+        const camera = overrideCamera
             || (rendererCore && typeof rendererCore.getCamera === 'function' ? rendererCore.getCamera() : null)
             || (rendererCore && rendererCore.camera)
             || TacticalWarfareNamespace.camera
             || globalScope.camera
             || null;
-
-        return { scene: resolvedScene, camera: resolvedCamera };
+        return { scene: scene, camera: camera };
     }
 
-    function createOrReplaceTacticalHandsController(overrideScene, overrideCamera) {
-        const ThreeModule = resolveThreeModuleReference();
-        if (!ThreeModule) return null;
+    function createOrReplaceController(overrideScene, overrideCamera) {
+        const ThreeMod = globalScope.THREE || TacticalWarfareNamespace.THREE || null;
+        if (!ThreeMod) return null;
+        const pair = resolveSceneAndCamera(overrideScene, overrideCamera);
+        if (!pair.scene || !pair.camera) return null;
 
-        const contextPair = resolveSceneAndCameraFromContext(overrideScene, overrideCamera);
-        if (!contextPair.scene || !contextPair.camera) return null;
-
-        if (activeControllerInstance && typeof activeControllerInstance.dispose === 'function') {
-            activeControllerInstance.dispose();
-            activeControllerInstance = null;
+        if (activeController && typeof activeController.dispose === 'function') {
+            activeController.dispose();
+            activeController = null;
         }
 
-        activeControllerInstance = new FirstPersonTacticalHandsController(
-            ThreeModule,
-            contextPair.scene,
-            contextPair.camera
-        );
-
-        TacticalWarfareNamespace.FpHandsAnatomy = activeControllerInstance;
-        TacticalWarfareNamespace.fpHandsAnatomy = activeControllerInstance;
+        activeController = new FirstPersonTacticalHandsController(ThreeMod, pair.scene, pair.camera);
+        TacticalWarfareNamespace.FpHandsAnatomy = activeController;
+        TacticalWarfareNamespace.fpHandsAnatomy = activeController;
         TacticalWarfareNamespace.FirstPersonTacticalHandsController = FirstPersonTacticalHandsController;
-
-        return activeControllerInstance;
+        return activeController;
     }
 
-    function updateTacticalHandsController(deltaSeconds, overrideScene, overrideCamera) {
-        if (!activeControllerInstance) {
-            createOrReplaceTacticalHandsController(overrideScene, overrideCamera);
+    function updateController(deltaSeconds, overrideScene, overrideCamera) {
+        if (!activeController) {
+            createOrReplaceController(overrideScene, overrideCamera);
         }
-
-        if (activeControllerInstance && typeof activeControllerInstance.update === 'function') {
-            if (overrideScene && activeControllerInstance.sceneInstance !== overrideScene) {
-                if (activeControllerInstance.sceneInstance && activeControllerInstance.dualArmRig && activeControllerInstance.dualArmRig.rigRootGroup) {
-                    activeControllerInstance.sceneInstance.remove(activeControllerInstance.dualArmRig.rigRootGroup);
-                }
-                activeControllerInstance.sceneInstance = overrideScene;
-                if (activeControllerInstance.dualArmRig && activeControllerInstance.dualArmRig.rigRootGroup) {
-                    overrideScene.add(activeControllerInstance.dualArmRig.rigRootGroup);
-                }
-            }
-            if (overrideCamera) {
-                activeControllerInstance.cameraInstance = overrideCamera;
-            }
-            activeControllerInstance.update(deltaSeconds);
+        if (activeController && typeof activeController.update === 'function') {
+            if (overrideCamera) activeController.cameraInstance = overrideCamera;
+            activeController.update(deltaSeconds, overrideScene);
         }
-
-        return activeControllerInstance;
+        return activeController;
     }
 
-    function disposeTacticalHandsController() {
-        if (activeControllerInstance && typeof activeControllerInstance.dispose === 'function') {
-            activeControllerInstance.dispose();
+    function disposeController() {
+        if (activeController && typeof activeController.dispose === 'function') {
+            activeController.dispose();
         }
-        activeControllerInstance = null;
+        activeController = null;
         TacticalWarfareNamespace.FpHandsAnatomy = null;
         TacticalWarfareNamespace.fpHandsAnatomy = null;
     }
 
     TacticalWarfareNamespace.FirstPersonTacticalHandsController = FirstPersonTacticalHandsController;
-    TacticalWarfareNamespace.createTacticalHandsController = createOrReplaceTacticalHandsController;
-    TacticalWarfareNamespace.updateTacticalHandsController = updateTacticalHandsController;
-    TacticalWarfareNamespace.disposeTacticalHandsController = disposeTacticalHandsController;
+    TacticalWarfareNamespace.createTacticalHandsController = createOrReplaceController;
+    TacticalWarfareNamespace.updateTacticalHandsController = updateController;
+    TacticalWarfareNamespace.disposeTacticalHandsController = disposeController;
     TacticalWarfareNamespace.FpHandsAnatomy = null;
     TacticalWarfareNamespace.fpHandsAnatomy = null;
 
     if (EventBusInstance && typeof EventBusInstance.on === 'function') {
         const onStart = () => {
-            if (!activeControllerInstance) {
-                createOrReplaceTacticalHandsController();
-            }
+            if (!activeController) createOrReplaceController();
         };
         EventBusInstance.on(GameEventsTable.ROUND_START || 'round:start', onStart);
         EventBusInstance.on(GameEventsTable.MATCH_START || 'match:start', onStart);
         EventBusInstance.on(GameEventsTable.GAME_RESTART || 'game:restart', onStart);
     }
 
-    createOrReplaceTacticalHandsController();
+    createOrReplaceController();
 })(typeof window !== 'undefined' ? window : globalThis);
