@@ -769,7 +769,7 @@
                     if (!this.paused) {
                         this.step(dt);
                     }
-                } catch (err) {
+                } catch (_err) {
                     // 防止單幀例外中斷 requestAnimationFrame 主迴圈
                 }
             };
@@ -880,7 +880,6 @@
                     }
                 }
 
-                // 槍身位置與後座力更新後，再更新雙手 IK 與握持姿態，避免延遲或抽搐
                 const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera);
                 if (handsCtrl) {
                     this._setHandsVisible(true);
