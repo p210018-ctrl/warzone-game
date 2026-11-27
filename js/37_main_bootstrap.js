@@ -39,6 +39,7 @@
             this.initialized = false;
             this.running = false;
             this.paused = false;
+            this.lastStepCount = 0;
 
             this._rafId = null;
             this._lastTimeMs = 0;
@@ -779,6 +780,8 @@
         }
 
         step(deltaTime) {
+            this.lastStepCount += 1;
+
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const phase = GameState && typeof GameState.get === 'function'
                 ? GameState.get('phase', 'lobby')
@@ -872,18 +875,19 @@
                 const handsCtrl = this._ensureHandsController(resolvedView.scene, camera, resolvedView.weaponCamera);
                 if (handsCtrl) {
                     this._setHandsVisible(true);
+                    const handsCtx = {
+                        parentGroup: resolvedView.weaponCamera || camera || resolvedView.scene,
+                        weaponCamera: resolvedView.weaponCamera,
+                        bobOffset: bobArg,
+                        isAiming: isAiming,
+                        isSprinting: isSprinting,
+                        isReloading: isReloading,
+                        weaponId: currentWeaponId
+                    };
                     if (typeof handsCtrl.update === 'function') {
-                        handsCtrl.update(dt, {
-                            parentGroup: resolvedView.weaponCamera || camera || resolvedView.scene,
-                            weaponCamera: resolvedView.weaponCamera,
-                            bobOffset: bobArg,
-                            isAiming: isAiming,
-                            isSprinting: isSprinting,
-                            isReloading: isReloading,
-                            weaponId: currentWeaponId
-                        });
+                        handsCtrl.update(dt, handsCtx);
                     } else if (typeof TacticalWarfare.updateTacticalHandsController === 'function') {
-                        TacticalWarfare.updateTacticalHandsController(dt, resolvedView.weaponCamera || camera || resolvedView.scene, camera);
+                        TacticalWarfare.updateTacticalHandsController(dt, handsCtx, camera);
                     }
                 }
 
