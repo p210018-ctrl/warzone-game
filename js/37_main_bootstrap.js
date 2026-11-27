@@ -83,32 +83,20 @@
                 weaponCamera: weaponCamera || fallbackView.weaponCamera
             };
 
+            const viewParent = resolved.weaponCamera || resolved.camera || resolved.scene || null;
             let handsCtrl = TacticalWarfare.FpHandsAnatomy || TacticalWarfare.fpHandsAnatomy || null;
 
             if (!handsCtrl && typeof TacticalWarfare.createTacticalHandsController === 'function') {
-                handsCtrl = TacticalWarfare.createTacticalHandsController(resolved.scene, resolved.camera);
+                handsCtrl = TacticalWarfare.createTacticalHandsController(viewParent, resolved.camera);
             }
 
-            if (handsCtrl) {
-                if (typeof handsCtrl.init === 'function') {
-                    handsCtrl.init({
-                        scene: resolved.scene,
-                        parentGroup: resolved.weaponCamera || resolved.camera,
-                        camera: resolved.camera
-                    });
-                } else {
-                    if (resolved.scene && !handsCtrl.sceneInstance) {
-                        handsCtrl.sceneInstance = resolved.scene;
-                    }
-                    if (resolved.camera) {
-                        handsCtrl.cameraInstance = resolved.camera;
-                    }
-                    if (resolved.scene && handsCtrl.dualArmRig && handsCtrl.dualArmRig.rigRootGroup) {
-                        if (handsCtrl.dualArmRig.rigRootGroup.parent !== resolved.scene) {
-                            resolved.scene.add(handsCtrl.dualArmRig.rigRootGroup);
-                        }
-                    }
-                }
+            if (handsCtrl && typeof handsCtrl.init === 'function') {
+                handsCtrl.init({
+                    parentGroup: viewParent,
+                    weaponCamera: resolved.weaponCamera,
+                    camera: resolved.camera,
+                    scene: resolved.scene
+                });
             }
 
             return handsCtrl;
@@ -885,6 +873,8 @@
                     this._setHandsVisible(true);
                     if (typeof handsCtrl.update === 'function') {
                         handsCtrl.update(dt, {
+                            parentGroup: resolvedView.weaponCamera || camera || resolvedView.scene,
+                            weaponCamera: resolvedView.weaponCamera,
                             bobOffset: bobArg,
                             isAiming: isAiming,
                             isSprinting: isSprinting,
@@ -892,7 +882,7 @@
                             weaponId: currentWeaponId
                         });
                     } else if (typeof TacticalWarfare.updateTacticalHandsController === 'function') {
-                        TacticalWarfare.updateTacticalHandsController(dt, resolvedView.scene, camera);
+                        TacticalWarfare.updateTacticalHandsController(dt, resolvedView.weaponCamera || camera || resolvedView.scene, camera);
                     }
                 }
 
