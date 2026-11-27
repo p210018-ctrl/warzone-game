@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂明確分節不重疊）+ 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
+ * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂明確分節）+ 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
  * ============================================================================
  */
 (function (globalScope) {
@@ -36,42 +36,42 @@
         M4A1: Object.freeze({
             moduleKeys: ['WeaponM4Urgi', 'WeaponM4A1', 'M4A1'],
             defaultReloadDuration: 1.65,
-            rightGripLocal: Object.freeze({ x: 0.008, y: -0.064, z: 0.022 }),
-            leftHandguardLocal: Object.freeze({ x: -0.014, y: -0.022, z: -0.215 }),
-            reloadLeftLocal: Object.freeze({ x: -0.055, y: -0.105, z: -0.110 }),
-            reloadPullY: -0.035,
-            rightElbowBend: 1.05,
-            leftElbowBend: 0.95
+            rightGripLocal: Object.freeze({ x: 0.006, y: -0.068, z: 0.026 }),
+            leftHandguardLocal: Object.freeze({ x: -0.020, y: -0.036, z: -0.205 }),
+            reloadLeftLocal: Object.freeze({ x: -0.035, y: -0.085, z: -0.135 }),
+            reloadPullY: -0.015,
+            rightElbowBend: 1.02,
+            leftElbowBend: 0.92
         }),
         MP5: Object.freeze({
             moduleKeys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'],
             defaultReloadDuration: 1.45,
-            rightGripLocal: Object.freeze({ x: 0.008, y: -0.056, z: 0.018 }),
-            leftHandguardLocal: Object.freeze({ x: -0.014, y: -0.024, z: -0.200 }),
-            reloadLeftLocal: Object.freeze({ x: -0.052, y: -0.098, z: -0.100 }),
-            reloadPullY: -0.032,
-            rightElbowBend: 1.08,
-            leftElbowBend: 0.98
+            rightGripLocal: Object.freeze({ x: 0.006, y: -0.060, z: 0.022 }),
+            leftHandguardLocal: Object.freeze({ x: -0.020, y: -0.038, z: -0.190 }),
+            reloadLeftLocal: Object.freeze({ x: -0.032, y: -0.080, z: -0.125 }),
+            reloadPullY: -0.014,
+            rightElbowBend: 1.05,
+            leftElbowBend: 0.95
         }),
         AX50: Object.freeze({
             moduleKeys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'],
             defaultReloadDuration: 2.20,
-            rightGripLocal: Object.freeze({ x: 0.008, y: -0.070, z: 0.026 }),
-            leftHandguardLocal: Object.freeze({ x: -0.016, y: -0.022, z: -0.255 }),
-            reloadLeftLocal: Object.freeze({ x: -0.060, y: -0.115, z: -0.125 }),
-            reloadPullY: -0.038,
-            rightElbowBend: 1.02,
-            leftElbowBend: 0.92
+            rightGripLocal: Object.freeze({ x: 0.006, y: -0.074, z: 0.030 }),
+            leftHandguardLocal: Object.freeze({ x: -0.022, y: -0.036, z: -0.245 }),
+            reloadLeftLocal: Object.freeze({ x: -0.038, y: -0.095, z: -0.155 }),
+            reloadPullY: -0.016,
+            rightElbowBend: 1.00,
+            leftElbowBend: 0.90
         }),
         X16: Object.freeze({
             moduleKeys: ['WeaponPistolX16', 'WeaponX16', 'X16'],
             defaultReloadDuration: 1.25,
-            rightGripLocal: Object.freeze({ x: 0.008, y: -0.038, z: 0.020 }),
-            leftHandguardLocal: Object.freeze({ x: -0.018, y: -0.046, z: -0.050 }),
-            reloadLeftLocal: Object.freeze({ x: -0.050, y: -0.095, z: -0.065 }),
-            reloadPullY: -0.028,
-            rightElbowBend: 1.12,
-            leftElbowBend: 1.10
+            rightGripLocal: Object.freeze({ x: 0.006, y: -0.044, z: 0.024 }),
+            leftHandguardLocal: Object.freeze({ x: -0.024, y: -0.056, z: -0.055 }),
+            reloadLeftLocal: Object.freeze({ x: -0.036, y: -0.088, z: -0.075 }),
+            reloadPullY: -0.012,
+            rightElbowBend: 1.10,
+            leftElbowBend: 1.08
         })
     });
 
@@ -683,7 +683,6 @@
         wristStrapMesh.frustumCulled = false;
         wristAnchor.add(wristStrapMesh);
 
-        // 小臂關節節點（長度 0.16，沿 +Z 延伸到手肘）
         const forearmPivot = new ThreeMod.Group();
         forearmPivot.frustumCulled = false;
         wristAnchor.add(forearmPivot);
@@ -692,7 +691,6 @@
         forearmMesh.frustumCulled = false;
         forearmPivot.add(forearmMesh);
 
-        // 手肘關節節點（位於小臂末端 z = 0.16）
         const elbowPivot = new ThreeMod.Group();
         elbowPivot.position.set(0, 0, 0.16);
         elbowPivot.frustumCulled = false;
@@ -702,7 +700,6 @@
         elbowJointMesh.frustumCulled = false;
         elbowPivot.add(elbowJointMesh);
 
-        // 大臂關節節點（從手肘向後下方／側方斜伸出去，不與小臂重疊）
         const upperArmPivot = new ThreeMod.Group();
         upperArmPivot.frustumCulled = false;
         elbowPivot.add(upperArmPivot);
@@ -792,53 +789,46 @@
         };
     }
 
-    /**
-     * 左側（sideSign < 0）：小臂從護木往左下方延伸到手肘，大臂再從手肘往左下方（紅圈方向）斜折伸出，兩段夾角分明不重疊
-     * 右側（sideSign > 0）：小臂與大臂往右下方分節折出
-     */
     function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
         const bend = clampNum(
-            (typeof elbowBend === 'number' ? elbowBend : 0.95) + (isReloading ? 0.12 : 0.0),
+            (typeof elbowBend === 'number' ? elbowBend : 0.95) + (isReloading ? 0.06 : 0.0),
             0.35,
             1.55
         );
 
         if (sideSign < 0) {
-            // 左小臂：從護木往左後下方（紅圈方向）斜伸
             handObj.forearmPivot.rotation.set(
-                0.38 + bend * 0.10,
-                -0.68,
-                -0.22
+                0.34 + bend * 0.08,
+                -0.62,
+                -0.18
             );
-            // 左手肘：明顯折向更左下方，避免大臂折回小臂上方
             handObj.elbowPivot.rotation.set(
-                0.68 + bend * 0.25,
-                -0.42,
-                -0.24
+                0.62 + bend * 0.22,
+                -0.38,
+                -0.20
             );
-            // 左大臂：往左下方／後方延伸出去（不與小臂重疊）
             handObj.upperArmPivot.rotation.set(
-                0.52 + bend * 0.20,
-                -0.28,
-                -0.32
+                0.48 + bend * 0.18,
+                -0.24,
+                -0.28
             );
         } else {
             handObj.forearmPivot.rotation.set(
-                0.28 + bend * 0.12,
-                0.22,
-                -0.12
+                0.24 + bend * 0.10,
+                0.16,
+                -0.08
             );
             handObj.elbowPivot.rotation.set(
-                0.55 + bend * 0.28,
-                0.26,
-                -0.16
+                0.50 + bend * 0.24,
+                0.20,
+                -0.12
             );
             handObj.upperArmPivot.rotation.set(
-                0.42 + bend * 0.22,
-                0.18,
-                0.24
+                0.38 + bend * 0.20,
+                0.14,
+                0.20
             );
         }
     }
@@ -859,7 +849,7 @@
     }
 
     function applyGripFingerPose(handObj, sideSign, triggerPull, isReloading) {
-        const gripCurl = isReloading ? 0.72 : 1.08;
+        const gripCurl = isReloading ? 0.85 : 1.08;
         const idxBase = sideSign > 0
             ? (0.76 + triggerPull * 0.45)
             : (gripCurl * 0.94);
@@ -1169,7 +1159,7 @@
                         const prog = clampNum(this.reloadElapsedSeconds / Math.max(0.1, this.reloadTotalDuration), 0, 1);
                         const wave = Math.sin(prog * Math.PI);
                         lx = lerpNum(lx, spec.reloadLeftLocal.x, wave);
-                        ly = lerpNum(ly, spec.reloadLeftLocal.y + spec.reloadPullY * Math.sin(prog * Math.PI * 2.0), wave);
+                        ly = lerpNum(ly, spec.reloadLeftLocal.y + spec.reloadPullY * Math.abs(Math.sin(prog * Math.PI)), wave);
                         lz = lerpNum(lz, spec.reloadLeftLocal.z, wave);
                     }
 
@@ -1184,23 +1174,22 @@
                     if (weaponObj.quaternion) {
                         rightHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    this.eulerScratch.set(0.24, -0.14, 0.14);
+                    this.eulerScratch.set(0.22, -0.10, 0.12);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     rightHand.wristAnchor.quaternion.multiply(this.twistQuat);
 
-                    // 左手扣住護木，手腕朝向左下／後方延伸出去
                     leftHand.wristAnchor.quaternion.identity();
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    this.eulerScratch.set(0.22, 0.56, -0.28);
+                    this.eulerScratch.set(0.20, 0.50, -0.24);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
                     rightHand.wristAnchor.position.set(0.14, -0.17, -0.28);
-                    rightHand.wristAnchor.rotation.set(0.24, -0.14, 0.14);
-                    leftHand.wristAnchor.position.set(-0.08, -0.13, -0.40);
-                    leftHand.wristAnchor.rotation.set(0.22, 0.56, -0.28);
+                    rightHand.wristAnchor.rotation.set(0.22, -0.10, 0.12);
+                    leftHand.wristAnchor.position.set(-0.08, -0.14, -0.38);
+                    leftHand.wristAnchor.rotation.set(0.20, 0.50, -0.24);
                 }
 
                 applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive);
