@@ -1,7 +1,7 @@
 /**
  * ============================================================================
  * 13_fp_hands_anatomy.js
- * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂明確分節）+ 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
+ * 第一人稱寫實數碼迷彩袖子（大臂/手肘/小臂向外折分節）+ 加粗深黑戰術手套骨架、關節解算與四槍聯動模組
  * ============================================================================
  */
 (function (globalScope) {
@@ -36,9 +36,9 @@
         M4A1: Object.freeze({
             moduleKeys: ['WeaponM4Urgi', 'WeaponM4A1', 'M4A1'],
             defaultReloadDuration: 1.65,
-            rightGripLocal: Object.freeze({ x: 0.006, y: -0.068, z: 0.026 }),
-            leftHandguardLocal: Object.freeze({ x: -0.028, y: -0.032, z: -0.205 }),
-            reloadLeftLocal: Object.freeze({ x: -0.045, y: -0.088, z: -0.145 }),
+            rightGripLocal: Object.freeze({ x: 0.008, y: -0.068, z: 0.026 }),
+            leftHandguardLocal: Object.freeze({ x: -0.036, y: -0.030, z: -0.200 }),
+            reloadLeftLocal: Object.freeze({ x: -0.055, y: -0.088, z: -0.145 }),
             reloadPullY: -0.014,
             rightElbowBend: 1.02,
             leftElbowBend: 0.96
@@ -46,9 +46,9 @@
         MP5: Object.freeze({
             moduleKeys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'],
             defaultReloadDuration: 1.45,
-            rightGripLocal: Object.freeze({ x: 0.006, y: -0.060, z: 0.022 }),
-            leftHandguardLocal: Object.freeze({ x: -0.028, y: -0.034, z: -0.190 }),
-            reloadLeftLocal: Object.freeze({ x: -0.042, y: -0.084, z: -0.135 }),
+            rightGripLocal: Object.freeze({ x: 0.008, y: -0.060, z: 0.022 }),
+            leftHandguardLocal: Object.freeze({ x: -0.036, y: -0.032, z: -0.185 }),
+            reloadLeftLocal: Object.freeze({ x: -0.052, y: -0.084, z: -0.135 }),
             reloadPullY: -0.013,
             rightElbowBend: 1.05,
             leftElbowBend: 0.98
@@ -56,9 +56,9 @@
         AX50: Object.freeze({
             moduleKeys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'],
             defaultReloadDuration: 2.20,
-            rightGripLocal: Object.freeze({ x: 0.006, y: -0.074, z: 0.030 }),
-            leftHandguardLocal: Object.freeze({ x: -0.030, y: -0.032, z: -0.245 }),
-            reloadLeftLocal: Object.freeze({ x: -0.048, y: -0.098, z: -0.165 }),
+            rightGripLocal: Object.freeze({ x: 0.008, y: -0.074, z: 0.030 }),
+            leftHandguardLocal: Object.freeze({ x: -0.038, y: -0.030, z: -0.240 }),
+            reloadLeftLocal: Object.freeze({ x: -0.058, y: -0.098, z: -0.165 }),
             reloadPullY: -0.015,
             rightElbowBend: 1.00,
             leftElbowBend: 0.94
@@ -66,9 +66,9 @@
         X16: Object.freeze({
             moduleKeys: ['WeaponPistolX16', 'WeaponX16', 'X16'],
             defaultReloadDuration: 1.25,
-            rightGripLocal: Object.freeze({ x: 0.006, y: -0.044, z: 0.024 }),
-            leftHandguardLocal: Object.freeze({ x: -0.030, y: -0.052, z: -0.065 }),
-            reloadLeftLocal: Object.freeze({ x: -0.045, y: -0.090, z: -0.085 }),
+            rightGripLocal: Object.freeze({ x: 0.008, y: -0.044, z: 0.024 }),
+            leftHandguardLocal: Object.freeze({ x: -0.038, y: -0.050, z: -0.065 }),
+            reloadLeftLocal: Object.freeze({ x: -0.055, y: -0.090, z: -0.085 }),
             reloadPullY: -0.012,
             rightElbowBend: 1.10,
             leftElbowBend: 1.08
@@ -790,8 +790,8 @@
     }
 
     /**
-     * 左側（sideSign < 0）：小臂往左下方延伸，手肘折向更左下方，大臂再往左下方（紅圈方向）伸出，兩段分開不重疊
-     * 右側（sideSign > 0）：小臂與大臂往右下方分節折出
+     * 左側（sideSign < 0）：向畫面左側外方折出
+     * 右側（sideSign > 0）：向畫面右側外方折出（不向內／不往槍身中央折）
      */
     function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
@@ -804,35 +804,35 @@
 
         if (sideSign < 0) {
             handObj.forearmPivot.rotation.set(
-                0.42 + bend * 0.10,
-                -0.78,
-                -0.24
+                0.36 + bend * 0.10,
+                -0.76,
+                0.28
             );
             handObj.elbowPivot.rotation.set(
-                0.78 + bend * 0.24,
-                -0.48,
-                -0.26
+                0.68 + bend * 0.22,
+                -0.46,
+                0.32
             );
             handObj.upperArmPivot.rotation.set(
-                0.62 + bend * 0.18,
-                -0.30,
-                -0.34
+                0.56 + bend * 0.18,
+                -0.32,
+                0.38
             );
         } else {
             handObj.forearmPivot.rotation.set(
-                0.24 + bend * 0.10,
-                0.16,
-                -0.08
+                0.34 + bend * 0.10,
+                0.68,
+                -0.30
             );
             handObj.elbowPivot.rotation.set(
-                0.50 + bend * 0.24,
-                0.20,
-                -0.12
+                0.66 + bend * 0.22,
+                0.44,
+                -0.34
             );
             handObj.upperArmPivot.rotation.set(
-                0.38 + bend * 0.20,
-                0.14,
-                0.20
+                0.54 + bend * 0.18,
+                0.30,
+                -0.40
             );
         }
     }
@@ -1178,7 +1178,7 @@
                     if (weaponObj.quaternion) {
                         rightHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    this.eulerScratch.set(0.22, -0.10, 0.12);
+                    this.eulerScratch.set(0.24, 0.24, -0.18);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     rightHand.wristAnchor.quaternion.multiply(this.twistQuat);
 
@@ -1186,14 +1186,14 @@
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    this.eulerScratch.set(0.24, 0.62, -0.26);
+                    this.eulerScratch.set(0.24, -0.34, 0.22);
                     this.twistQuat.setFromEuler(this.eulerScratch);
                     leftHand.wristAnchor.quaternion.multiply(this.twistQuat);
                 } else {
                     rightHand.wristAnchor.position.set(0.14, -0.17, -0.28);
-                    rightHand.wristAnchor.rotation.set(0.22, -0.10, 0.12);
+                    rightHand.wristAnchor.rotation.set(0.24, 0.24, -0.18);
                     leftHand.wristAnchor.position.set(-0.10, -0.14, -0.38);
-                    leftHand.wristAnchor.rotation.set(0.24, 0.62, -0.26);
+                    leftHand.wristAnchor.rotation.set(0.24, -0.34, 0.22);
                 }
 
                 applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive);
