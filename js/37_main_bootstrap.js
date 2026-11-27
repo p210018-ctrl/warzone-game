@@ -854,12 +854,7 @@
                         entry.mod.setSprinting(isSprinting);
                     }
                     if (entry.id === currentWeaponId && typeof entry.mod.update === 'function') {
-                        entry.mod.update(dt, bobArg, {
-                            isAiming: isAiming,
-                            isSprinting: isSprinting,
-                            isReloading: isReloading,
-                            weaponId: currentWeaponId
-                        });
+                        entry.mod.update(dt, bobArg);
                     }
                 }
 
