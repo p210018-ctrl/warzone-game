@@ -52,7 +52,19 @@
             magDropLocal: Object.freeze({ x: -0.044, y: -0.184, z: -0.050 }),
             reloadLeftLocal: Object.freeze({ x: -0.056, y: -0.120, z: -0.118 }),
             rightElbowBend: 1.02,
-            leftElbowBend: 0.96
+            leftElbowBend: 0.96,
+            sprintPose: Object.freeze({
+                posX: -0.032,
+                posY: -0.028,
+                posZ: 0.018,
+                rotX: 0.14,
+                rotY: 0.44,
+                rotZ: -0.26,
+                swingX: 0.026,
+                swingY: 0.016,
+                swingRotY: 0.14,
+                swingRotZ: 0.095
+            })
         }),
         MP5: Object.freeze({
             moduleKeys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'],
@@ -63,7 +75,19 @@
             magDropLocal: Object.freeze({ x: -0.040, y: -0.176, z: -0.060 }),
             reloadLeftLocal: Object.freeze({ x: -0.052, y: -0.114, z: -0.110 }),
             rightElbowBend: 1.05,
-            leftElbowBend: 0.98
+            leftElbowBend: 0.98,
+            sprintPose: Object.freeze({
+                posX: -0.028,
+                posY: -0.024,
+                posZ: 0.016,
+                rotX: 0.12,
+                rotY: 0.40,
+                rotZ: -0.24,
+                swingX: 0.024,
+                swingY: 0.015,
+                swingRotY: 0.13,
+                swingRotZ: 0.090
+            })
         }),
         AX50: Object.freeze({
             moduleKeys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'],
@@ -74,7 +98,19 @@
             magDropLocal: Object.freeze({ x: -0.046, y: -0.194, z: -0.062 }),
             reloadLeftLocal: Object.freeze({ x: -0.060, y: -0.128, z: -0.128 }),
             rightElbowBend: 1.00,
-            leftElbowBend: 0.94
+            leftElbowBend: 0.94,
+            sprintPose: Object.freeze({
+                posX: -0.036,
+                posY: -0.032,
+                posZ: 0.020,
+                rotX: 0.16,
+                rotY: 0.48,
+                rotZ: -0.28,
+                swingX: 0.028,
+                swingY: 0.018,
+                swingRotY: 0.15,
+                swingRotZ: 0.105
+            })
         }),
         X16: Object.freeze({
             moduleKeys: ['WeaponPistolX16', 'WeaponX16', 'X16'],
@@ -85,7 +121,19 @@
             magDropLocal: Object.freeze({ x: -0.036, y: -0.164, z: -0.014 }),
             reloadLeftLocal: Object.freeze({ x: -0.048, y: -0.108, z: -0.056 }),
             rightElbowBend: 1.10,
-            leftElbowBend: 1.06
+            leftElbowBend: 1.06,
+            sprintPose: Object.freeze({
+                posX: -0.024,
+                posY: -0.022,
+                posZ: 0.014,
+                rotX: 0.10,
+                rotY: 0.36,
+                rotZ: -0.20,
+                swingX: 0.022,
+                swingY: 0.014,
+                swingRotY: 0.12,
+                swingRotZ: 0.082
+            })
         })
     });
 
@@ -996,10 +1044,11 @@
         };
     }
 
-    function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading, aimBlend, reloadPhases, shake) {
+    function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading, aimBlend, sprintBlend, reloadPhases, shake) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
         const aim = clampNum(typeof aimBlend === 'number' ? aimBlend : 0.0, 0.0, 1.0);
+        const spr = clampNum(typeof sprintBlend === 'number' ? sprintBlend : 0.0, 0.0, 1.0);
         const rp = isReloading && reloadPhases ? reloadPhases : {
             prog: 0,
             releaseTap: 0,
@@ -1016,26 +1065,31 @@
 
         if (sideSign < 0) {
             const fX = lerpNum(0.22, 0.16, aim)
+                + spr * 0.14
                 + rp.releaseTap * 0.07
                 + rp.magDrop * 0.25
                 - rp.magFetch * 0.09
                 - rp.magSeat * 0.14
                 + sh.rotZ * 0.9;
             const fY = lerpNum(-0.68, -0.56, aim)
+                - spr * 0.24
                 + rp.magDrop * 0.24
                 - rp.magFetch * 0.18
                 - rp.magSeat * 0.10;
             const fZ = lerpNum(-0.28, -0.22, aim)
+                - spr * 0.16
                 - rp.magDrop * 0.14
                 + rp.magFetch * 0.10
                 + rp.magSeat * 0.10
                 + sh.rotZ * 1.0;
 
             const eX = lerpNum(0.06 * straightFactor, 0.04 * straightFactor, aim)
+                + spr * 0.10
                 + rp.magDrop * 0.18
                 + rp.magFetch * 0.10
                 - rp.magSeat * 0.13;
             const eY = lerpNum(-0.14 * straightFactor, -0.10 * straightFactor, aim)
+                - spr * 0.12
                 + rp.magDrop * 0.12
                 - rp.magFetch * 0.09;
             const eZ = lerpNum(-0.06 * straightFactor, -0.05 * straightFactor, aim);
@@ -1044,6 +1098,7 @@
                 - rp.magDrop * 0.09
                 + rp.magFetch * 0.11;
             const uY = lerpNum(-0.12 * straightFactor, -0.09 * straightFactor, aim)
+                - spr * 0.10
                 + rp.magDrop * 0.09
                 - rp.magFetch * 0.09;
             const uZ = lerpNum(-0.05 * straightFactor, -0.04 * straightFactor, aim);
@@ -1053,20 +1108,26 @@
             handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         } else {
             const fX = lerpNum(0.18, 0.12, aim)
+                + spr * 0.12
                 + rp.magDrop * 0.09
                 - rp.magSeat * 0.13;
             const fY = lerpNum(0.12, 0.08, aim)
+                + spr * 0.22
                 + rp.magFetch * 0.07;
-            const fZ = lerpNum(0.08, 0.06, aim);
+            const fZ = lerpNum(0.08, 0.06, aim)
+                - spr * 0.12;
 
             const eX = lerpNum(0.06 * straightFactor, 0.04 * straightFactor, aim)
+                + spr * 0.08
                 + rp.magDrop * 0.08
                 - rp.magSeat * 0.12;
-            const eY = lerpNum(0.05 * straightFactor, 0.03 * straightFactor, aim);
+            const eY = lerpNum(0.05 * straightFactor, 0.03 * straightFactor, aim)
+                + spr * 0.10;
             const eZ = lerpNum(0.04 * straightFactor, 0.03 * straightFactor, aim);
 
             const uX = lerpNum(-0.05 * straightFactor, -0.03 * straightFactor, aim);
-            const uY = lerpNum(0.05 * straightFactor, 0.03 * straightFactor, aim);
+            const uY = lerpNum(0.05 * straightFactor, 0.03 * straightFactor, aim)
+                + spr * 0.08;
             const uZ = lerpNum(0.04 * straightFactor, 0.03 * straightFactor, aim);
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
@@ -1281,6 +1342,7 @@
             this.elapsedTimeSeconds = 0.0;
             this.isVisible = true;
             this.aimBlend = 0.0;
+            this.sprintBlend = 0.0;
             this.lastUpdateCount = 0;
 
             this.isReloadingActive = false;
@@ -1288,9 +1350,24 @@
             this.reloadTotalDuration = 1.50;
 
             this._isSprinting = false;
-            this._swayClock = 0.0;
-            this._smoothSwayX = 0.0;
-            this._smoothSwayRotZ = 0.0;
+            this._moveCyclePhase = 0.0;
+            this._smoothPosX = 0.0;
+            this._smoothPosY = 0.0;
+            this._smoothPosZ = 0.0;
+            this._smoothRotX = 0.0;
+            this._smoothRotY = 0.0;
+            this._smoothRotZ = 0.0;
+            this.sprintMotionState = {
+                active: false,
+                blend: 0.0,
+                speedRatio: 0.0,
+                offsetX: 0.0,
+                offsetY: 0.0,
+                offsetZ: 0.0,
+                rotX: 0.0,
+                rotY: 0.0,
+                rotZ: 0.0
+            };
 
             this.tempRightPos = new ThreeMod.Vector3();
             this.tempLeftPos = new ThreeMod.Vector3();
@@ -1409,9 +1486,17 @@
             }
         }
 
-        _computeGentleLateralSway(dt, bobX, bobY) {
-            let speedRatio = 0;
-            let sprintState = this._isSprinting;
+        getSprintPose(weaponId) {
+            const code = normalizeWeaponId(weaponId || this.activeWeaponCode);
+            const spec = WEAPON_GRIP_SPECS[code] || WEAPON_GRIP_SPECS.M4A1;
+            return spec.sprintPose;
+        }
+
+        _computeMovementPose(dt, spec, bobX, bobY, ctxSpeedRatio) {
+            let speedRatio = typeof ctxSpeedRatio === 'number' && !Number.isNaN(ctxSpeedRatio)
+                ? clampNum(ctxSpeedRatio, 0, 1.5)
+                : 0;
+            let sprintFlag = this._isSprinting;
 
             if (GameStateStore && typeof GameStateStore.get === 'function') {
                 const gsSpeed = GameStateStore.get('player.speedRatio', null) ?? GameStateStore.get('speedRatio', null);
@@ -1419,41 +1504,84 @@
                 const gsSprint = GameStateStore.get('player.isSprinting', null) ?? GameStateStore.get('isSprinting', null);
 
                 if (typeof gsSprint === 'boolean') {
-                    sprintState = sprintState || gsSprint;
+                    sprintFlag = sprintFlag || gsSprint;
                 }
-                if (typeof gsSpeed === 'number' && !Number.isNaN(gsSpeed)) {
+                if (speedRatio <= 0.01 && typeof gsSpeed === 'number' && !Number.isNaN(gsSpeed)) {
                     speedRatio = clampNum(gsSpeed, 0, 1.5);
-                } else if (gsMoving) {
-                    speedRatio = sprintState ? 1.05 : 0.75;
+                } else if (speedRatio <= 0.01 && gsMoving) {
+                    speedRatio = sprintFlag ? 1.15 : 0.75;
                 }
             }
 
             const bobMag = Math.hypot(bobX, bobY);
             if (speedRatio <= 0.01 && bobMag > 0.00015) {
-                speedRatio = clampNum(bobMag * 28.0, 0.15, sprintState ? 1.1 : 0.85);
+                speedRatio = clampNum(bobMag * 30.0, 0.2, sprintFlag ? 1.2 : 0.85);
             }
 
             const moveWeight = smoothstep(0.05, 0.45, speedRatio);
-            const freqHz = sprintState ? 3.2 : 2.2;
-            this._swayClock += dt * freqHz * Math.PI * 2;
+            const sprintTarget = (sprintFlag && speedRatio > 0.12 && !this.isReloadingActive && this.aimBlend < 0.6) ? 1.0 : 0.0;
+            const sprintStep = clampNum(dt * 12.0, 0.0, 1.0);
+            this.sprintBlend = lerpNum(this.sprintBlend, sprintTarget, sprintStep);
 
-            const gentleWave = Math.sin(this._swayClock) * 0.75 + Math.sin(this._swayClock * 0.5 + bobX * 18.0) * 0.25;
-            const sprintFactor = sprintState ? 1.2 : 1.0;
-            const aimFactor = this.aimBlend > 0.5 ? 0.25 : 1.0;
-            const reloadFactor = this.isReloadingActive ? 0.2 : 1.0;
-            const scale = moveWeight * sprintFactor * aimFactor * reloadFactor;
+            const sp = this.sprintBlend;
+            const walkWeight = moveWeight * (1.0 - sp);
+            const sprintWeight = moveWeight * sp;
 
-            const targetX = gentleWave * 0.0045 * scale;
-            const targetRotZ = -gentleWave * 0.016 * scale;
+            const freqHz = lerpNum(2.2, 4.4, sp);
+            this._moveCyclePhase += dt * freqHz * Math.PI * 2.0;
 
-            const smoothAlpha = 1 - Math.exp(-12 * dt);
-            this._smoothSwayX = lerpNum(this._smoothSwayX, targetX, smoothAlpha);
-            this._smoothSwayRotZ = lerpNum(this._smoothSwayRotZ, targetRotZ, smoothAlpha);
+            const waveMain = Math.sin(this._moveCyclePhase);
+            const waveArc = Math.sin(this._moveCyclePhase * 0.5 + 0.35);
+
+            const walkPosX = waveMain * 0.0045 * walkWeight;
+            const walkPosY = 0.0;
+            const walkPosZ = 0.0;
+            const walkRotX = 0.0;
+            const walkRotY = 0.0;
+            const walkRotZ = -waveMain * 0.016 * walkWeight;
+
+            const pSpec = spec.sprintPose || WEAPON_GRIP_SPECS.M4A1.sprintPose;
+            const sprintPosX = pSpec.posX * sprintWeight + waveMain * pSpec.swingX * sprintWeight;
+            const sprintPosY = pSpec.posY * sprintWeight + Math.abs(waveMain) * pSpec.swingY * 0.45 * sprintWeight;
+            const sprintPosZ = pSpec.posZ * sprintWeight + waveArc * 0.008 * sprintWeight;
+
+            const sprintRotX = pSpec.rotX * sprintWeight + Math.abs(waveMain) * 0.055 * sprintWeight;
+            const sprintRotY = pSpec.rotY * sprintWeight + waveMain * pSpec.swingRotY * sprintWeight;
+            const sprintRotZ = pSpec.rotZ * sprintWeight - waveMain * pSpec.swingRotZ * sprintWeight;
+
+            const targetX = walkPosX + sprintPosX;
+            const targetY = walkPosY + sprintPosY;
+            const targetZ = walkPosZ + sprintPosZ;
+            const targetRotX = walkRotX + sprintRotX;
+            const targetRotY = walkRotY + sprintRotY;
+            const targetRotZ = walkRotZ + sprintRotZ;
+
+            const smoothAlpha = clampNum(1.0 - Math.exp(-15.0 * dt), 0.0, 1.0);
+            this._smoothPosX = lerpNum(this._smoothPosX, targetX, smoothAlpha);
+            this._smoothPosY = lerpNum(this._smoothPosY, targetY, smoothAlpha);
+            this._smoothPosZ = lerpNum(this._smoothPosZ, targetZ, smoothAlpha);
+            this._smoothRotX = lerpNum(this._smoothRotX, targetRotX, smoothAlpha);
+            this._smoothRotY = lerpNum(this._smoothRotY, targetRotY, smoothAlpha);
+            this._smoothRotZ = lerpNum(this._smoothRotZ, targetRotZ, smoothAlpha);
+
+            this.sprintMotionState.active = sp > 0.05;
+            this.sprintMotionState.blend = Number(sp.toFixed(3));
+            this.sprintMotionState.speedRatio = Number(speedRatio.toFixed(3));
+            this.sprintMotionState.offsetX = Number(this._smoothPosX.toFixed(4));
+            this.sprintMotionState.offsetY = Number(this._smoothPosY.toFixed(4));
+            this.sprintMotionState.offsetZ = Number(this._smoothPosZ.toFixed(4));
+            this.sprintMotionState.rotX = Number(this._smoothRotX.toFixed(4));
+            this.sprintMotionState.rotY = Number(this._smoothRotY.toFixed(4));
+            this.sprintMotionState.rotZ = Number(this._smoothRotZ.toFixed(4));
 
             return {
-                posX: this._smoothSwayX,
-                posY: 0,
-                rotZ: this._smoothSwayRotZ
+                posX: this._smoothPosX,
+                posY: this._smoothPosY,
+                posZ: this._smoothPosZ,
+                rotX: this._smoothRotX,
+                rotY: this._smoothRotY,
+                rotZ: this._smoothRotZ,
+                sprintBlend: sp
             };
         }
 
@@ -1569,14 +1697,17 @@
                     : (isCtx && ctxOrScene.bobOffset ? ctxOrScene.bobOffset : { x: 0, y: 0 });
                 const bobX = bobObj && typeof bobObj.x === 'number' ? bobObj.x : 0;
                 const bobY = bobObj && typeof bobObj.y === 'number' ? bobObj.y : 0;
-                const sway = this._computeGentleLateralSway(dt, bobX, bobY);
+                const ctxSpeedRatio = isCtx && !isBobOnly && typeof ctxOrScene.speedRatio === 'number' ? ctxOrScene.speedRatio : null;
 
-                this.dualArmRig.rigRootGroup.position.set(sway.posX, sway.posY, 0);
-                this.dualArmRig.rigRootGroup.rotation.set(0, 0, sway.rotZ);
+                const movePose = this._computeMovementPose(dt, spec, bobX, bobY, ctxSpeedRatio);
+
+                this.dualArmRig.rigRootGroup.position.set(movePose.posX, movePose.posY, movePose.posZ);
+                this.dualArmRig.rigRootGroup.rotation.set(movePose.rotX, movePose.rotY, movePose.rotZ);
 
                 const rightHand = this.dualArmRig.rightHand;
                 const leftHand = this.dualArmRig.leftHand;
                 const aim = this.aimBlend;
+                const spr = movePose.sprintBlend;
 
                 let reloadPhases = null;
                 if (this.isReloadingActive) {
@@ -1663,18 +1794,18 @@
                         rightHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
                     rightHand.palmPosePivot.rotation.set(
-                        0.0,
-                        0.0,
-                        Math.PI * 0.5 + this.triggerPullAmount * 0.08 + crispShake.rotZ * 0.7
+                        spr * 0.14,
+                        spr * 0.22,
+                        Math.PI * 0.5 + this.triggerPullAmount * 0.08 + crispShake.rotZ * 0.7 - spr * 0.14
                     );
 
                     leftHand.wristAnchor.quaternion.identity();
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    const baseLX = lerpNum(0.24, 0.14, aim);
-                    const baseLY = lerpNum(-0.56, -0.44, aim);
-                    const baseLZ = lerpNum(-0.24, -0.17, aim);
+                    const baseLX = lerpNum(0.24, 0.14, aim) + spr * 0.16;
+                    const baseLY = lerpNum(-0.56, -0.44, aim) - spr * 0.24;
+                    const baseLZ = lerpNum(-0.24, -0.17, aim) - spr * 0.18;
 
                     const relLX = reloadPhases
                         ? baseLX + reloadPhases.releaseTap * 0.11 + reloadPhases.magDrop * 0.30 - reloadPhases.magFetch * 0.18 + reloadPhases.magSeat * 0.16
@@ -1694,8 +1825,8 @@
                     leftHand.palmPosePivot.rotation.set(0.24, -0.56, -0.24);
                 }
 
-                applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim, reloadPhases, crispShake);
-                applyArmLimbAngles(leftHand, -1, spec.leftElbowBend, this.isReloadingActive, aim, reloadPhases, crispShake);
+                applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim, spr, reloadPhases, crispShake);
+                applyArmLimbAngles(leftHand, -1, spec.leftElbowBend, this.isReloadingActive, aim, spr, reloadPhases, crispShake);
 
                 applyIndividualFingerPose(rightHand, 1, this.triggerPullAmount, this.isReloadingActive, reloadPhases);
                 applyIndividualFingerPose(leftHand, -1, 0.0, this.isReloadingActive, reloadPhases);
