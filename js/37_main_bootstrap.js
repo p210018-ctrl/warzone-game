@@ -28,6 +28,12 @@
         return a + (b - a) * t;
     }
 
+    function spearCycleWave(phase) {
+        const s = Math.sin(phase);
+        const sign = s >= 0 ? 1 : -1;
+        return sign * Math.pow(Math.abs(s), 0.72) * 0.5 + 0.5;
+    }
+
     function resolveNamespaceModule(keys) {
         if (!TacticalWarfare || !Array.isArray(keys)) return null;
         for (let i = 0; i < keys.length; i = i + 1) {
@@ -156,14 +162,14 @@
                 rawSpeed = isSprinting ? 1.15 : 0.72;
             }
 
-            this._smoothSpeedRatio = lerp(this._smoothSpeedRatio, rawSpeed, clamp(1 - Math.exp(-8.0 * stepDt), 0, 1));
+            this._smoothSpeedRatio = lerp(this._smoothSpeedRatio, rawSpeed, clamp(1 - Math.exp(-6.5 * stepDt), 0, 1));
             const speedRatio = this._smoothSpeedRatio > 0.01 ? this._smoothSpeedRatio : 0;
             const isMoving = Boolean((moveRes && moveRes.isMoving) || speedRatio > 0.05);
             const sprintActive = Boolean(isSprinting && isMoving);
 
-            const freqHz = sprintActive ? 1.75 : 1.50;
+            const freqHz = sprintActive ? 1.15 : 0.95;
             this._spearPhase += stepDt * freqHz * Math.PI * 2.0;
-            const spearThrust = isMoving ? (Math.sin(this._spearPhase) * 0.5 + 0.5) : 0;
+            const spearThrust = isMoving ? spearCycleWave(this._spearPhase) : 0;
 
             if (GameState && typeof GameState.patch === 'function') {
                 GameState.patch('player', {
