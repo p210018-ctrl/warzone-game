@@ -19,7 +19,7 @@
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
-        adsPosition: { x: 0.0, y: -0.097, z: -0.315 },
+        adsPosition: { x: 0.0, y: -0.104, z: -0.315 },
         sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -100,7 +100,6 @@
         cCtx.putImageData(cImg, 0, 0);
         rCtx.putImageData(rImg, 0, 0);
 
-        // 白色不規則模糊氧化斑塊
         if (cfg.oxidation !== false) {
             cCtx.save();
             cCtx.filter = 'blur(4.5px)';
@@ -134,7 +133,6 @@
             rCtx.restore();
         }
 
-        // 金屬刻字細節
         if (cfg.engravingText) {
             cCtx.save();
             cCtx.fillStyle = cfg.engravingColor || 'rgba(225, 230, 238, 0.58)';
@@ -505,7 +503,7 @@
             this.weaponBodyGroup.name = 'M4UrgiBodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 消光黑金屬上下機匣＋全段延伸上導軌（一路延伸到前準星後方）
+            // 1. 消光黑金屬上下機匣＋全段延伸上導軌
             const upperReceiver = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.048, 0.052, 0.22)),
                 m.receiver
@@ -536,7 +534,7 @@
             lowerReceiver.position.set(0, -0.028, -0.036);
             this.weaponBodyGroup.add(lowerReceiver);
 
-            // 快慢機撥桿（Selector Switch）與網球拍式彈匣釋放鈕（Paddle Mag Catch）
+            // 快慢機撥桿與網球拍式彈匣釋放鈕
             const fireSelectorGroup = new THREE.Group();
             fireSelectorGroup.name = 'M4UrgiFireSelector';
             fireSelectorGroup.position.set(-0.024, -0.018, -0.016);
@@ -556,7 +554,6 @@
             selectorLever.rotation.x = 0.45;
             fireSelectorGroup.add(selectorLever);
 
-            // 網球拍形狀彈匣釋放撥片（圓頭拍面 + 細頸柄）
             const paddleGroup = new THREE.Group();
             paddleGroup.name = 'M4UrgiTennisRacketMagRelease';
             paddleGroup.position.set(-0.024, -0.034, -0.064);
@@ -641,7 +638,6 @@
             hexInnerMesh.scale.set(1.04, 0.94, 1.0);
             handguardGroup.add(hexInnerMesh);
 
-            // 側導軌（左右各一）與下導軌（底部）
             for (const side of [-1, 1]) {
                 const sideRail = new THREE.Mesh(
                     this._trackGeo(new THREE.BoxGeometry(0.007, 0.013, 0.24)),
@@ -741,61 +737,70 @@
                 birdcageGroup.add(tine);
             }
 
-            // 5. V/Y 字形照門與參考圖棒棒糖式前準星
+            // 5. 參考圖風格照門與前準星（後照門：立柱＋圓環＋左右小護耳；前準星：護木前端準星柱＋護翼）
             const rearSightGroup = new THREE.Group();
-            rearSightGroup.name = 'M4UrgiVyRearSight';
+            rearSightGroup.name = 'M4UrgiRefGhostRingRearSight';
             rearSightGroup.position.set(0, 0.041, 0.032);
             this.weaponBodyGroup.add(rearSightGroup);
 
             const rearBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.032, 0.006, 0.022)),
+                this._trackGeo(new THREE.BoxGeometry(0.032, 0.0065, 0.022)),
                 m.sight
             );
             rearSightGroup.add(rearBase);
 
-            // Y 形中心立柱 + V 形向外展開雙翼（中間留出乾淨瞄準視線）
-            const yStem = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0045, 0.007, 0.006)),
-                m.sight
-            );
-            yStem.position.set(0, 0.005, -0.003);
-            rearSightGroup.add(yStem);
-
+            // 左右小護耳（參考圖圓環兩側的短護耳）
             for (const side of [-1, 1]) {
-                const vWing = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0045, 0.013, 0.006)),
+                const earPost = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.004, 0.011, 0.006)),
                     m.sight
                 );
-                vWing.position.set(side * 0.0075, 0.012, -0.003);
-                vWing.rotation.z = -side * 0.58;
-                rearSightGroup.add(vWing);
+                earPost.position.set(side * 0.012, 0.007, -0.002);
+                rearSightGroup.add(earPost);
             }
 
-            // 棒棒糖形狀前準星（細桿 + 頂部圓環）
+            // 照門立柱與頂部圓環
+            const rearPostStem = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.0055, 0.014, 0.006)),
+                m.sight
+            );
+            rearPostStem.position.set(0, 0.009, -0.002);
+            rearSightGroup.add(rearPostStem);
+
+            const rearPeepRing = new THREE.Mesh(
+                this._trackGeo(new THREE.TorusGeometry(0.0075, 0.0022, 12, 24)),
+                m.sight
+            );
+            rearPeepRing.position.set(0, 0.022, -0.002);
+            rearSightGroup.add(rearPeepRing);
+
+            // 前準星（護木前端細準星柱＋兩側護翼）
             const frontSightGroup = new THREE.Group();
-            frontSightGroup.name = 'M4UrgiLollipopFrontSight';
+            frontSightGroup.name = 'M4UrgiRefFrontSight';
             frontSightGroup.position.set(0, 0.041, -0.48);
             this.weaponBodyGroup.add(frontSightGroup);
 
             const frontBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.030, 0.006, 0.022)),
+                this._trackGeo(new THREE.BoxGeometry(0.030, 0.0065, 0.022)),
                 m.sight
             );
             frontSightGroup.add(frontBase);
 
-            const lollipopStick = new THREE.Mesh(
-                this._trackGeo(new THREE.CylinderGeometry(0.0018, 0.0022, 0.011, 10)),
-                m.sight
-            );
-            lollipopStick.position.set(0, 0.0075, 0);
-            frontSightGroup.add(lollipopStick);
+            for (const side of [-1, 1]) {
+                const frontWing = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.0035, 0.010, 0.005)),
+                    m.sight
+                );
+                frontWing.position.set(side * 0.010, 0.007, 0);
+                frontSightGroup.add(frontWing);
+            }
 
-            const lollipopRing = new THREE.Mesh(
-                this._trackGeo(new THREE.TorusGeometry(0.0062, 0.0018, 10, 20)),
+            const frontBlade = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.0032, 0.015, 0.005)),
                 m.sight
             );
-            lollipopRing.position.set(0, 0.017, 0);
-            frontSightGroup.add(lollipopRing);
+            frontBlade.position.set(0, 0.0095, 0);
+            frontSightGroup.add(frontBlade);
 
             // 6. 三角形鏤空沙色戰術槍托
             const stockGroup = new THREE.Group();
