@@ -21,7 +21,16 @@
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
         adsPosition: { x: 0.0, y: -0.165, z: -0.295 },
-        sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
+        sprintPosition: { x: 0.235, y: -0.285, z: -0.325 },
+        sprintRotation: { x: -0.18, y: 0.36, z: -0.24 },
+        sprintSwing: {
+            posX: 0.034,
+            posY: 0.022,
+            posZ: 0.014,
+            rotX: 0.085,
+            rotY: 0.165,
+            rotZ: 0.115
+        },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
         recoilKickZ: 0.024,
@@ -225,11 +234,16 @@
             this._isVisible = true;
             this._isAiming = false;
             this._isSprinting = false;
+            this._sprintBlend = 0;
             this._reloadProgress = 0;
             this._reloadDuration = 1.50;
             this._reloadClock = 0;
             this._swayClock = 0;
             this._smoothSwayX = 0;
+            this._smoothSwayY = 0;
+            this._smoothSwayZ = 0;
+            this._smoothSwayRotX = 0;
+            this._smoothSwayRotY = 0;
             this._smoothSwayRotZ = 0;
 
             this._recoilPosZ = 0;
@@ -309,7 +323,7 @@
             return base;
         }
 
-        _computeGentleLateralSway(dt, bobX, bobY) {
+        _computeMovementSway(dt, bobX, bobY) {
             let speedRatio = 0;
             let isSprintingState = this._isSprinting;
 
@@ -324,39 +338,67 @@
                 if (typeof gsSpeed === 'number' && !Number.isNaN(gsSpeed)) {
                     speedRatio = clamp(gsSpeed, 0, 1.5);
                 } else if (gsMoving) {
-                    speedRatio = isSprintingState ? 1.05 : 0.75;
+                    speedRatio = isSprintingState ? 1.15 : 0.75;
                 }
             }
 
             const bobMag = Math.hypot(bobX, bobY);
             if (speedRatio <= 0.01 && bobMag > 0.00015) {
-                speedRatio = clamp(bobMag * 28.0, 0.15, isSprintingState ? 1.1 : 0.85);
+                speedRatio = clamp(bobMag * 28.0, 0.15, isSprintingState ? 1.2 : 0.85);
             }
 
             const moveWeight = smoothstep(0.05, 0.45, speedRatio);
-            const freqHz = isSprintingState ? 3.2 : 2.2;
+            const sprintTarget = (isSprintingState && speedRatio > 0.1 && !this._isAiming && !this._isReloading) ? 1.0 : 0.0;
+            this._sprintBlend = lerp(this._sprintBlend, sprintTarget, clamp(1 - Math.exp(-14 * dt), 0, 1));
+
+            const sp = this._sprintBlend;
+            const walkWeight = moveWeight * (1 - sp);
+            const sprintWeight = moveWeight * sp;
+
+            const freqHz = lerp(2.2, 4.4, sp);
             this._swayClock += dt * freqHz * Math.PI * 2;
 
-            const gentleWave = Math.sin(this._swayClock) * 0.75 + Math.sin(this._swayClock * 0.5 + bobX * 18.0) * 0.25;
-            const sprintFactor = isSprintingState ? 1.2 : 1.0;
-            const aimFactor = this._isAiming ? 0.25 : 1.0;
-            const reloadFactor = this._isReloading ? 0.2 : 1.0;
-            const scale = moveWeight * sprintFactor * aimFactor * reloadFactor;
+            const walkWave = Math.sin(this._swayClock) * 0.75 + Math.sin(this._swayClock * 0.5 + bobX * 18.0) * 0.25;
+            const walkPosX = walkWave * 0.0045 * walkWeight;
+            const walkRotZ = -walkWave * 0.016 * walkWeight;
 
-            const targetX = gentleWave * 0.0045 * scale;
-            const targetRotZ = -gentleWave * 0.016 * scale;
+            const sw = M4_URGI_SPECS.sprintSwing;
+            const runWaveX = Math.sin(this._swayClock);
+            const runWaveY = Math.abs(Math.sin(this._swayClock));
+            const runWaveZ = Math.sin(this._swayClock * 0.5 + 0.35);
 
-            const smoothAlpha = 1 - Math.exp(-12 * dt);
+            const sprintPosX = runWaveX * sw.posX * sprintWeight;
+            const sprintPosY = (-runWaveY * sw.posY + runWaveX * sw.posY * 0.35) * sprintWeight;
+            const sprintPosZ = runWaveZ * sw.posZ * sprintWeight;
+
+            const sprintRotX = (runWaveY - 0.35) * sw.rotX * sprintWeight;
+            const sprintRotY = runWaveX * sw.rotY * sprintWeight;
+            const sprintRotZ = -runWaveX * sw.rotZ * sprintWeight;
+
+            const dampScale = this._isAiming ? 0.22 : (this._isReloading ? 0.25 : 1.0);
+            const targetX = (walkPosX + sprintPosX) * dampScale;
+            const targetY = sprintPosY * dampScale;
+            const targetZ = sprintPosZ * dampScale;
+            const targetRotX = sprintRotX * dampScale;
+            const targetRotY = sprintRotY * dampScale;
+            const targetRotZ = (walkRotZ + sprintRotZ) * dampScale;
+
+            const smoothAlpha = clamp(1 - Math.exp(-15 * dt), 0, 1);
             this._smoothSwayX = lerp(this._smoothSwayX, targetX, smoothAlpha);
+            this._smoothSwayY = lerp(this._smoothSwayY, targetY, smoothAlpha);
+            this._smoothSwayZ = lerp(this._smoothSwayZ, targetZ, smoothAlpha);
+            this._smoothSwayRotX = lerp(this._smoothSwayRotX, targetRotX, smoothAlpha);
+            this._smoothSwayRotY = lerp(this._smoothSwayRotY, targetRotY, smoothAlpha);
             this._smoothSwayRotZ = lerp(this._smoothSwayRotZ, targetRotZ, smoothAlpha);
 
             return {
                 posX: this._smoothSwayX,
-                posY: 0,
-                posZ: 0,
-                rotX: 0,
-                rotY: 0,
-                rotZ: this._smoothSwayRotZ
+                posY: this._smoothSwayY,
+                posZ: this._smoothSwayZ,
+                rotX: this._smoothSwayRotX,
+                rotY: this._smoothSwayRotY,
+                rotZ: this._smoothSwayRotZ,
+                sprintBlend: sp
             };
         }
 
@@ -1564,7 +1606,12 @@
                 this._isReloading = false;
                 this._reloadProgress = 0;
                 this._reloadClock = 0;
+                this._sprintBlend = 0;
                 this._smoothSwayX = 0;
+                this._smoothSwayY = 0;
+                this._smoothSwayZ = 0;
+                this._smoothSwayRotX = 0;
+                this._smoothSwayRotY = 0;
                 this._smoothSwayRotZ = 0;
                 this._boltKickZ = 0;
                 this._boltPhase = 0;
@@ -1708,31 +1755,42 @@
                 this.rearMainTower.position.y = 0.0202;
             }
 
-            let targetPos = M4_URGI_SPECS.hipPosition;
-            let targetRotX = 0;
-            let targetRotY = 0;
-            let targetRotZ = 0;
-
-            if (this._isSprinting && !this._isAiming && !this._isReloading) {
-                targetPos = M4_URGI_SPECS.sprintPosition;
-                targetRotX = -0.08;
-                targetRotY = 0.14;
-                targetRotZ = -0.08;
-            } else if (this._isAiming && !this._isReloading) {
-                targetPos = M4_URGI_SPECS.adsPosition;
-            }
-
             const bobX = bobOffset && typeof bobOffset.x === 'number' ? bobOffset.x : 0;
             const bobY = bobOffset && typeof bobOffset.y === 'number' ? bobOffset.y : 0;
-            const lateralSway = this._computeGentleLateralSway(dt, bobX, bobY);
+            const moveSway = this._computeMovementSway(dt, bobX, bobY);
 
-            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + swayX + lateralSway.posX, snapAlpha);
-            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + swayY + lateralSway.posY, snapAlpha);
-            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ + lateralSway.posZ, snapAlpha);
+            const hip = M4_URGI_SPECS.hipPosition;
+            const sprPos = M4_URGI_SPECS.sprintPosition;
+            const sprRot = M4_URGI_SPECS.sprintRotation;
+            const sp = moveSway.sprintBlend;
 
-            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX + lateralSway.rotX, snapAlpha);
-            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY + lateralSway.rotY, snapAlpha);
-            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ + lateralSway.rotZ, snapAlpha);
+            let basePosX = hip.x;
+            let basePosY = hip.y;
+            let basePosZ = hip.z;
+            let baseRotX = 0;
+            let baseRotY = 0;
+            let baseRotZ = 0;
+
+            if (this._isAiming && !this._isReloading) {
+                basePosX = M4_URGI_SPECS.adsPosition.x;
+                basePosY = M4_URGI_SPECS.adsPosition.y;
+                basePosZ = M4_URGI_SPECS.adsPosition.z;
+            } else if (!this._isReloading) {
+                basePosX = lerp(hip.x, sprPos.x, sp);
+                basePosY = lerp(hip.y, sprPos.y, sp);
+                basePosZ = lerp(hip.z, sprPos.z, sp);
+                baseRotX = lerp(0, sprRot.x, sp);
+                baseRotY = lerp(0, sprRot.y, sp);
+                baseRotZ = lerp(0, sprRot.z, sp);
+            }
+
+            this.rootGroup.position.x = lerp(this.rootGroup.position.x, basePosX + swayX + moveSway.posX, snapAlpha);
+            this.rootGroup.position.y = lerp(this.rootGroup.position.y, basePosY + swayY + moveSway.posY, snapAlpha);
+            this.rootGroup.position.z = lerp(this.rootGroup.position.z, basePosZ + swayZ + moveSway.posZ, snapAlpha);
+
+            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, baseRotX + swayRotX + moveSway.rotX, snapAlpha);
+            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, baseRotY + swayRotY + moveSway.rotY, snapAlpha);
+            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, baseRotZ + swayRotZ + moveSway.rotZ, snapAlpha);
 
             const recoilDecay = Math.exp(-26 * dt);
             this._recoilPosZ *= recoilDecay;
