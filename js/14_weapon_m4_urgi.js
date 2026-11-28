@@ -13,13 +13,15 @@
     const MAX_MAG_ROUNDS = 30;
     const MAX_SHELL_CASINGS = 24;
     const MAX_SPARK_PARTICLES = 28;
+    const MAX_SMOKE_PUFFS = 24;
     const WEAPON_MODEL_SCALE = 1.95;
 
+    // 校正舉鏡視線，使「照門圓環中心 → 前準星尖端 → 準星中心」形成三點一線
     const M4_URGI_SPECS = Object.freeze({
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
-        adsPosition: { x: 0.0, y: -0.104, z: -0.315 },
+        adsPosition: { x: -0.001, y: -0.118, z: -0.295 },
         sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -39,6 +41,73 @@
 
     function lerp(a, b, t) {
         return a + (b - a) * t;
+    }
+
+    function createEnvReflectionTexture(THREE) {
+        if (!THREE || typeof document === 'undefined') return null;
+        const w = 256;
+        const h = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0.0, '#dce8f5');
+        grad.addColorStop(0.32, '#8fa6be');
+        grad.addColorStop(0.52, '#3d4854');
+        grad.addColorStop(0.75, '#1d2229');
+        grad.addColorStop(1.0, '#12151a');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 模擬室內/天空高亮光源反射帶
+        ctx.save();
+        ctx.filter = 'blur(8px)';
+        ctx.fillStyle = 'rgba(255, 250, 240, 0.85)';
+        ctx.beginPath();
+        ctx.ellipse(w * 0.28, h * 0.22, 34, 10, 0.15, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(200, 224, 255, 0.65)';
+        ctx.beginPath();
+        ctx.ellipse(w * 0.72, h * 0.28, 42, 12, -0.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        if (THREE.SRGBColorSpace) {
+            tex.colorSpace = THREE.SRGBColorSpace;
+        }
+        return tex;
+    }
+
+    function createSmokePuffTexture(THREE) {
+        if (!THREE || typeof document === 'undefined') return null;
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+
+        ctx.clearRect(0, 0, size, size);
+        const cx = size * 0.5;
+        const cy = size * 0.5;
+
+        const g1 = ctx.createRadialGradient(cx, cy, 4, cx, cy, size * 0.48);
+        g1.addColorStop(0.0, 'rgba(225, 229, 235, 0.72)');
+        g1.addColorStop(0.45, 'rgba(185, 190, 198, 0.36)');
+        g1.addColorStop(0.8, 'rgba(150, 155, 162, 0.10)');
+        g1.addColorStop(1.0, 'rgba(150, 155, 162, 0.0)');
+        ctx.fillStyle = g1;
+        ctx.beginPath();
+        ctx.arc(cx, cy, size * 0.48, 0, Math.PI * 2);
+        ctx.fill();
+
+        return new THREE.CanvasTexture(canvas);
     }
 
     function createDetailedMetalMaps(THREE, opts) {
@@ -67,21 +136,21 @@
             return seed / 4294967296;
         };
 
-        const baseRgb = cfg.baseRgb || [42, 46, 52];
-        const amp = typeof cfg.contrastAmp === 'number' ? cfg.contrastAmp : 20;
-        const spec = typeof cfg.specularBias === 'number' ? cfg.specularBias : 14;
+        const baseRgb = cfg.baseRgb || [46, 51, 58];
+        const amp = typeof cfg.contrastAmp === 'number' ? cfg.contrastAmp : 18;
+        const spec = typeof cfg.specularBias === 'number' ? cfg.specularBias : 22;
 
         const cImg = cCtx.createImageData(size, size);
         const rImg = rCtx.createImageData(size, size);
 
         for (let y = 0; y < size; y++) {
-            const brush = Math.sin(y * 1.6) * 6.0 + Math.cos(y * 3.7) * 3.0 + (rand() - 0.5) * amp;
+            const brush = Math.sin(y * 1.6) * 6.5 + Math.cos(y * 3.7) * 3.2 + (rand() - 0.5) * amp;
             for (let x = 0; x < size; x++) {
-                const grain = Math.sin(x * 0.42 + y * 0.21) * 3.2 + (rand() - 0.5) * (amp * 0.7);
+                const grain = Math.sin(x * 0.42 + y * 0.21) * 3.4 + (rand() - 0.5) * (amp * 0.7);
                 const delta = brush + grain;
-                const r = clamp(baseRgb[0] + delta, 12, 250);
-                const g = clamp(baseRgb[1] + delta, 12, 250);
-                const b = clamp(baseRgb[2] + delta, 12, 250);
+                const r = clamp(baseRgb[0] + delta, 16, 252);
+                const g = clamp(baseRgb[1] + delta, 16, 252);
+                const b = clamp(baseRgb[2] + delta, 16, 252);
 
                 const o = (y * size + x) * 4;
                 cImg.data[o] = r;
@@ -89,7 +158,8 @@
                 cImg.data[o + 2] = b;
                 cImg.data[o + 3] = 255;
 
-                const roughVal = clamp(82 - delta * 2.4 - spec, 20, 196);
+                // 較低粗糙度以呈現更強的金屬反光與高光邊緣
+                const roughVal = clamp(64 - delta * 2.2 - spec, 16, 165);
                 rImg.data[o] = roughVal;
                 rImg.data[o + 1] = roughVal;
                 rImg.data[o + 2] = roughVal;
@@ -181,6 +251,9 @@
             this.shellsInstancedMesh = null;
             this._sparks = [];
             this._shells = [];
+            this._smokeSprites = [];
+            this._smokeTex = null;
+            this._envTex = null;
 
             this._geometries = [];
             this._materials = null;
@@ -272,7 +345,7 @@
 
             this._buildMaterials();
             this._buildMeshHierarchy();
-            this._initShellsAndSparks();
+            this._initShellsSparksAndSmoke();
             this._syncAmmoCountFromState(true);
 
             const initialVisible = typeof opts.visible === 'boolean' ? opts.visible : true;
@@ -300,11 +373,14 @@
         _buildMaterials() {
             const THREE = global.THREE;
 
+            this._envTex = this._trackTex(createEnvReflectionTexture(THREE));
+            this._smokeTex = this._trackTex(createSmokePuffTexture(THREE));
+
             const blackMetalMaps = createDetailedMetalMaps(THREE, {
                 seed: 9201,
-                baseRgb: [38, 42, 48],
-                contrastAmp: 22,
-                specularBias: 16,
+                baseRgb: [46, 51, 58],
+                contrastAmp: 20,
+                specularBias: 24,
                 oxidation: true,
                 oxidationCount: 16,
                 engravingText: 'M4A1 URGI // MK18 MOD-1'
@@ -312,9 +388,9 @@
 
             const sandMetalMaps = createDetailedMetalMaps(THREE, {
                 seed: 9202,
-                baseRgb: [186, 148, 92],
-                contrastAmp: 20,
-                specularBias: 14,
+                baseRgb: [194, 155, 96],
+                contrastAmp: 18,
+                specularBias: 20,
                 oxidation: true,
                 oxidationCount: 12,
                 engravingText: 'URGI DDC RAIL'
@@ -322,18 +398,18 @@
 
             const boltSteelMaps = createDetailedMetalMaps(THREE, {
                 seed: 9203,
-                baseRgb: [185, 192, 202],
+                baseRgb: [196, 204, 214],
                 contrastAmp: 14,
-                specularBias: 18,
+                specularBias: 26,
                 oxidation: true,
                 oxidationCount: 6
             });
 
             const darkSightMaps = createDetailedMetalMaps(THREE, {
                 seed: 9204,
-                baseRgb: [44, 49, 57],
+                baseRgb: [50, 56, 65],
                 contrastAmp: 16,
-                specularBias: 12,
+                specularBias: 20,
                 oxidation: true,
                 oxidationCount: 8
             });
@@ -351,61 +427,67 @@
                 color: 0xffffff,
                 map: blackMetalMaps.map,
                 bumpMap: blackMetalMaps.bumpMap,
-                bumpScale: 0.004,
+                bumpScale: 0.0035,
                 roughnessMap: blackMetalMaps.roughnessMap,
-                roughness: 0.28,
-                metalness: 0.94,
-                envMapIntensity: 1.6
+                roughness: 0.22,
+                metalness: 0.96,
+                envMap: this._envTex,
+                envMapIntensity: 2.35
             });
 
             const sandMlokMetalMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: sandMetalMaps.map,
                 bumpMap: sandMetalMaps.bumpMap,
-                bumpScale: 0.0038,
+                bumpScale: 0.0032,
                 roughnessMap: sandMetalMaps.roughnessMap,
-                roughness: 0.27,
-                metalness: 0.90,
-                envMapIntensity: 1.5
+                roughness: 0.21,
+                metalness: 0.93,
+                envMap: this._envTex,
+                envMapIntensity: 2.2
             });
 
             const deepCavityMat = new THREE.MeshStandardMaterial({
-                color: 0x0b0e12,
-                roughness: 0.36,
-                metalness: 0.88,
-                envMapIntensity: 1.2
+                color: 0x0d1015,
+                roughness: 0.30,
+                metalness: 0.90,
+                envMap: this._envTex,
+                envMapIntensity: 1.6
             });
 
             const boltCarrierMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: boltSteelMaps.map,
                 bumpMap: boltSteelMaps.bumpMap,
-                bumpScale: 0.0025,
+                bumpScale: 0.0022,
                 roughnessMap: boltSteelMaps.roughnessMap,
-                roughness: 0.22,
-                metalness: 0.95,
-                envMapIntensity: 1.7
+                roughness: 0.16,
+                metalness: 0.98,
+                envMap: this._envTex,
+                envMapIntensity: 2.6
             });
 
             const barrelMat = new THREE.MeshStandardMaterial({
-                color: 0x262b33,
+                color: 0x2e3540,
                 map: blackMetalMaps.map,
                 bumpMap: blackMetalMaps.bumpMap,
-                bumpScale: 0.003,
+                bumpScale: 0.0028,
                 roughnessMap: blackMetalMaps.roughnessMap,
-                roughness: 0.19,
-                metalness: 0.97,
-                envMapIntensity: 1.8
+                roughness: 0.15,
+                metalness: 0.98,
+                envMap: this._envTex,
+                envMapIntensity: 2.5
             });
 
             const pmagBodyMat = new THREE.MeshStandardMaterial({
-                color: 0x1a1e24,
+                color: 0x20252d,
                 map: blackMetalMaps.map,
                 bumpMap: blackMetalMaps.bumpMap,
                 bumpScale: 0.0025,
-                roughness: 0.34,
-                metalness: 0.68,
-                envMapIntensity: 1.3
+                roughness: 0.28,
+                metalness: 0.78,
+                envMap: this._envTex,
+                envMapIntensity: 1.8
             });
 
             const windowGlassMat = new THREE.MeshPhysicalMaterial({
@@ -423,7 +505,8 @@
                 emissiveIntensity: 0.25,
                 roughness: 0.14,
                 metalness: 0.96,
-                envMapIntensity: 1.9
+                envMap: this._envTex,
+                envMapIntensity: 2.2
             });
 
             const sightMetalMat = new THREE.MeshStandardMaterial({
@@ -432,9 +515,10 @@
                 bumpMap: darkSightMaps.bumpMap,
                 bumpScale: 0.0025,
                 roughnessMap: darkSightMaps.roughnessMap,
-                roughness: 0.32,
-                metalness: 0.92,
-                envMapIntensity: 1.5
+                roughness: 0.22,
+                metalness: 0.95,
+                envMap: this._envTex,
+                envMapIntensity: 2.2
             });
 
             this.muzzleCoreMat = new THREE.MeshBasicMaterial({
@@ -446,7 +530,7 @@
             });
 
             this.muzzlePlumeMat = new THREE.MeshBasicMaterial({
-                color: 0xff8c1a,
+                color: 0xff9429,
                 transparent: true,
                 opacity: 0.0,
                 depthWrite: false,
@@ -465,7 +549,8 @@
                 color: 0xffc832,
                 roughness: 0.15,
                 metalness: 0.97,
-                envMapIntensity: 1.9
+                envMap: this._envTex,
+                envMapIntensity: 2.2
             });
 
             this._materials = {
@@ -737,70 +822,90 @@
                 birdcageGroup.add(tine);
             }
 
-            // 5. 參考圖風格照門與前準星（後照門：立柱＋圓環＋左右小護耳；前準星：護木前端準星柱＋護翼）
+            // 5. 依手繪草圖重塑照門與前準星，並對齊「照門圓環中心 → 前準星尖端 → 瞄準線」三點一線[cite: 21]
+            const sightCenterY = 0.056;
+
             const rearSightGroup = new THREE.Group();
-            rearSightGroup.name = 'M4UrgiRefGhostRingRearSight';
+            rearSightGroup.name = 'M4UrgiSketchedRearSight';
             rearSightGroup.position.set(0, 0.041, 0.032);
             this.weaponBodyGroup.add(rearSightGroup);
 
+            // 照門寬底座 + 側邊旋鈕突出（手繪右圖）[cite: 21]
             const rearBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.032, 0.0065, 0.022)),
+                this._trackGeo(new THREE.BoxGeometry(0.034, 0.007, 0.024)),
                 m.sight
             );
             rearSightGroup.add(rearBase);
 
-            // 左右小護耳（參考圖圓環兩側的短護耳）
-            for (const side of [-1, 1]) {
-                const earPost = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.004, 0.011, 0.006)),
-                    m.sight
-                );
-                earPost.position.set(side * 0.012, 0.007, -0.002);
-                rearSightGroup.add(earPost);
-            }
-
-            // 照門立柱與頂部圓環
-            const rearPostStem = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0055, 0.014, 0.006)),
+            const leftKnob = new THREE.Mesh(
+                this._trackGeo(new THREE.CylinderGeometry(0.0042, 0.0042, 0.006, 12)).rotateZ(Math.PI / 2),
                 m.sight
             );
-            rearPostStem.position.set(0, 0.009, -0.002);
-            rearSightGroup.add(rearPostStem);
+            leftKnob.position.set(-0.0195, -0.001, 0.002);
+            rearSightGroup.add(leftKnob);
+
+            const rightKnob = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.0075, 0.0075, 0.009)),
+                m.sight
+            );
+            rightKnob.position.set(0.020, -0.001, 0.002);
+            rearSightGroup.add(rightKnob);
+
+            // 照門主立柱與上方窺孔圓環（圓心高度對齊 sightCenterY）
+            const ringCenterLocalY = sightCenterY - 0.041;
+            const ringRadius = 0.0072;
+
+            const rearMainTower = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.013, ringCenterLocalY - ringRadius * 0.6, 0.007)),
+                m.sight
+            );
+            rearMainTower.position.set(0, (ringCenterLocalY - ringRadius * 0.6) * 0.5 + 0.002, -0.002);
+            rearSightGroup.add(rearMainTower);
 
             const rearPeepRing = new THREE.Mesh(
-                this._trackGeo(new THREE.TorusGeometry(0.0075, 0.0022, 12, 24)),
+                this._trackGeo(new THREE.TorusGeometry(ringRadius, 0.0022, 12, 26)),
                 m.sight
             );
-            rearPeepRing.position.set(0, 0.022, -0.002);
+            rearPeepRing.position.set(0, ringCenterLocalY, -0.002);
             rearSightGroup.add(rearPeepRing);
 
-            // 前準星（護木前端細準星柱＋兩側護翼）
+            // 前準星（依手繪左圖：底座 + 左右向外撇護翼 + 中間準星尖柱，尖端對齊 sightCenterY）[cite: 21]
             const frontSightGroup = new THREE.Group();
-            frontSightGroup.name = 'M4UrgiRefFrontSight';
+            frontSightGroup.name = 'M4UrgiSketchedFrontSight';
             frontSightGroup.position.set(0, 0.041, -0.48);
             this.weaponBodyGroup.add(frontSightGroup);
 
             const frontBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.030, 0.0065, 0.022)),
+                this._trackGeo(new THREE.BoxGeometry(0.032, 0.007, 0.024)),
                 m.sight
             );
             frontSightGroup.add(frontBase);
 
             for (const side of [-1, 1]) {
-                const frontWing = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0035, 0.010, 0.005)),
+                const wingLower = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.0042, 0.0085, 0.006)),
                     m.sight
                 );
-                frontWing.position.set(side * 0.010, 0.007, 0);
-                frontSightGroup.add(frontWing);
+                wingLower.position.set(side * 0.0115, 0.0065, 0);
+                frontSightGroup.add(wingLower);
+
+                // 頂部向外微微撇出的護翼尖端（手繪左圖）[cite: 21]
+                const wingFlare = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.0038, 0.0065, 0.006)),
+                    m.sight
+                );
+                wingFlare.position.set(side * 0.0132, 0.012, 0);
+                wingFlare.rotation.z = -side * 0.42;
+                frontSightGroup.add(wingFlare);
             }
 
-            const frontBlade = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0032, 0.015, 0.005)),
+            const frontTipLocalY = sightCenterY - 0.041;
+            const frontPostPin = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.0028, frontTipLocalY, 0.005)),
                 m.sight
             );
-            frontBlade.position.set(0, 0.0095, 0);
-            frontSightGroup.add(frontBlade);
+            frontPostPin.position.set(0, frontTipLocalY * 0.5 + 0.002, 0);
+            frontSightGroup.add(frontPostPin);
 
             // 6. 三角形鏤空沙色戰術槍托
             const stockGroup = new THREE.Group();
@@ -923,10 +1028,10 @@
             );
             this.weaponBodyGroup.add(this.muzzleAnchor);
 
-            const coreGeo = this._trackGeo(new THREE.ConeGeometry(0.036, 0.13, 12));
+            const coreGeo = this._trackGeo(new THREE.ConeGeometry(0.032, 0.11, 12));
             coreGeo.rotateX(-Math.PI / 2);
             this.muzzleCoreMesh = new THREE.Mesh(coreGeo, this._materials.muzzleCore);
-            this.muzzleCoreMesh.position.set(0, 0, -0.055);
+            this.muzzleCoreMesh.position.set(0, 0, -0.045);
             this.muzzleCoreMesh.visible = false;
             this.muzzleAnchor.add(this.muzzleCoreMesh);
 
@@ -935,16 +1040,16 @@
             this.muzzlePlumeGroup.visible = false;
             this.muzzleAnchor.add(this.muzzlePlumeGroup);
 
-            const petalGeo = this._trackGeo(new THREE.ConeGeometry(0.068, 0.23, 9));
+            const petalGeo = this._trackGeo(new THREE.ConeGeometry(0.056, 0.19, 9));
             petalGeo.rotateX(-Math.PI / 2);
             const petalAngles = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5];
             for (let p = 0; p < petalAngles.length; p++) {
                 const ang = petalAngles[p];
                 const petal = new THREE.Mesh(petalGeo, this._materials.muzzlePlume);
-                petal.position.set(Math.cos(ang) * 0.022, Math.sin(ang) * 0.022, -0.105);
+                petal.position.set(Math.cos(ang) * 0.018, Math.sin(ang) * 0.018, -0.088);
                 petal.rotation.z = ang;
-                petal.rotation.y = Math.cos(ang) * 0.24;
-                petal.rotation.x = -Math.sin(ang) * 0.24;
+                petal.rotation.y = Math.cos(ang) * 0.22;
+                petal.rotation.x = -Math.sin(ang) * 0.22;
                 this.muzzlePlumeGroup.add(petal);
             }
 
@@ -955,7 +1060,7 @@
             }
         }
 
-        _initShellsAndSparks() {
+        _initShellsSparksAndSmoke() {
             const THREE = global.THREE;
             const m = this._materials;
             const worldParent = this.sceneRef || this.parentGroup;
@@ -1008,6 +1113,35 @@
                 this.shellsInstancedMesh.setMatrixAt(s, this._dummyObj.matrix);
             }
             this.shellsInstancedMesh.instanceMatrix.needsUpdate = true;
+
+            // 柔和擴散的開火煙霧粒子
+            this._smokeSprites = [];
+            if (typeof THREE.Sprite === 'function' && typeof THREE.SpriteMaterial === 'function') {
+                for (let k = 0; k < MAX_SMOKE_PUFFS; k++) {
+                    const smMat = new THREE.SpriteMaterial({
+                        map: this._smokeTex,
+                        color: 0xd8dee6,
+                        transparent: true,
+                        opacity: 0.0,
+                        depthWrite: false
+                    });
+                    const sp = new THREE.Sprite(smMat);
+                    sp.name = 'M4UrgiSmokePuff_' + k;
+                    sp.visible = false;
+                    sp.position.set(0, -50, 0);
+                    worldParent.add(sp);
+                    this._smokeSprites.push({
+                        sprite: sp,
+                        mat: smMat,
+                        active: false,
+                        age: 0,
+                        life: 0.42,
+                        startScale: 0.09,
+                        endScale: 0.36,
+                        vel: new THREE.Vector3()
+                    });
+                }
+            }
         }
 
         _spawnMuzzleSparksAndShell() {
@@ -1089,9 +1223,38 @@
                     spawned++;
                 }
             }
+
+            // 生成柔和擴散的開火煙霧團
+            let smokeSpawned = 0;
+            for (let sIdx = 0; sIdx < this._smokeSprites.length && smokeSpawned < 4; sIdx++) {
+                const puff = this._smokeSprites[sIdx];
+                if (!puff.active) {
+                    puff.active = true;
+                    puff.age = 0;
+                    puff.life = 0.32 + Math.random() * 0.24;
+                    puff.startScale = 0.08 + Math.random() * 0.04;
+                    puff.endScale = 0.28 + Math.random() * 0.16;
+                    puff.sprite.visible = true;
+                    puff.sprite.position.copy(this._tmpVecA);
+                    puff.sprite.position.x += (Math.random() - 0.5) * 0.04;
+                    puff.sprite.position.y += (Math.random() - 0.5) * 0.04;
+                    puff.sprite.scale.set(puff.startScale, puff.startScale, 1);
+                    puff.mat.opacity = 0.42;
+
+                    this._tmpVecB.set(
+                        (Math.random() - 0.5) * 1.1,
+                        0.45 + Math.random() * 0.75,
+                        -1.6 - Math.random() * 1.4
+                    );
+                    this.rootGroup.getWorldQuaternion(this._tmpQuat);
+                    this._tmpVecB.applyQuaternion(this._tmpQuat);
+                    puff.vel.copy(this._tmpVecB);
+                    smokeSpawned++;
+                }
+            }
         }
 
-        _updateShellsAndSparks(dt) {
+        _updateShellsSparksAndSmoke(dt) {
             const THREE = global.THREE;
             if (!THREE || !this._dummyObj) return;
 
@@ -1177,6 +1340,28 @@
                 }
                 if (anyShellChanged) {
                     this.shellsInstancedMesh.instanceMatrix.needsUpdate = true;
+                }
+            }
+
+            if (this._smokeSprites && this._smokeSprites.length) {
+                for (let k = 0; k < this._smokeSprites.length; k++) {
+                    const puff = this._smokeSprites[k];
+                    if (!puff.active) continue;
+                    puff.age += dt;
+                    if (puff.age >= puff.life) {
+                        puff.active = false;
+                        puff.sprite.visible = false;
+                        puff.mat.opacity = 0;
+                        continue;
+                    }
+                    const t = puff.age / puff.life;
+                    puff.sprite.position.addScaledVector(puff.vel, dt);
+                    puff.vel.multiplyScalar(Math.exp(-4.5 * dt));
+                    puff.vel.y += 0.35 * dt;
+
+                    const curScale = lerp(puff.startScale, puff.endScale, 1 - Math.pow(1 - t, 2));
+                    puff.sprite.scale.set(curScale, curScale, 1);
+                    puff.mat.opacity = 0.42 * (1 - t) * (1 - t * 0.5);
                 }
             }
         }
@@ -1408,7 +1593,7 @@
                 this.init({ visible: this._isVisible });
             }
             if (!this._isVisible || !this.rootGroup) {
-                this._updateShellsAndSparks(clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1));
+                this._updateShellsSparksAndSmoke(clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1));
                 return;
             }
 
@@ -1539,7 +1724,7 @@
                 }
             }
 
-            this._updateShellsAndSparks(dt);
+            this._updateShellsSparksAndSmoke(dt);
         }
 
         clear() {
@@ -1551,6 +1736,18 @@
             }
             if (this.shellsInstancedMesh && this.shellsInstancedMesh.parent) {
                 this.shellsInstancedMesh.parent.remove(this.shellsInstancedMesh);
+            }
+            if (this._smokeSprites && this._smokeSprites.length) {
+                for (let k = 0; k < this._smokeSprites.length; k++) {
+                    const puff = this._smokeSprites[k];
+                    if (puff && puff.sprite && puff.sprite.parent) {
+                        puff.sprite.parent.remove(puff.sprite);
+                    }
+                    if (puff && puff.mat && typeof puff.mat.dispose === 'function') {
+                        puff.mat.dispose();
+                    }
+                }
+                this._smokeSprites = [];
             }
 
             this.rootGroup = null;
@@ -1569,6 +1766,8 @@
             this.shellsInstancedMesh = null;
             this._sparks = [];
             this._shells = [];
+            this._smokeTex = null;
+            this._envTex = null;
 
             for (let i = 0; i < this._geometries.length; i++) {
                 const g = this._geometries[i];
