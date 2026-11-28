@@ -42,6 +42,11 @@
         return a + (b - a) * t;
     }
 
+    function smoothstep(edge0, edge1, x) {
+        const t = clamp((x - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
     function createSmokePuffTexture(THREE) {
         if (!THREE || typeof document === 'undefined') return null;
         const size = 128;
@@ -224,6 +229,7 @@
             this._reloadDuration = 1.25;
             this._isReloading = false;
             this._reloadClock = 0;
+            this._walkClock = 0;
 
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
@@ -300,6 +306,57 @@
                 }
             }
             return base;
+        }
+
+        _computeWalkMotion(dt, bobX, bobY) {
+            let speedRatio = 0;
+            let isSprintingState = this._isSprinting;
+
+            if (GameState && typeof GameState.get === 'function') {
+                const gsSpeed = GameState.get('player.speedRatio', null) ?? GameState.get('speedRatio', null);
+                const gsMoving = Boolean(GameState.get('player.isMoving', false) || GameState.get('isMoving', false));
+                const gsSprint = GameState.get('player.isSprinting', null) ?? GameState.get('isSprinting', null);
+
+                if (typeof gsSprint === 'boolean') {
+                    isSprintingState = isSprintingState || gsSprint;
+                }
+                if (typeof gsSpeed === 'number' && !Number.isNaN(gsSpeed)) {
+                    speedRatio = clamp(gsSpeed, 0, 1.5);
+                } else if (gsMoving) {
+                    speedRatio = isSprintingState ? 1.15 : 0.78;
+                }
+            }
+
+            const bobMag = Math.hypot(bobX, bobY);
+            if (speedRatio <= 0.01 && bobMag > 0.00015) {
+                speedRatio = clamp(bobMag * 32.0, 0.18, isSprintingState ? 1.25 : 0.92);
+            }
+
+            const walkWeight = smoothstep(0.03, 0.35, speedRatio);
+            const cadenceHz = isSprintingState ? 10.6 : 7.6;
+            if (walkWeight > 0.005) {
+                this._walkClock += dt * cadenceHz * Math.PI * (0.65 + 0.35 * walkWeight);
+            }
+
+            const stridePhase = this._walkClock + bobX * 44.0;
+            const stepBounce = Math.abs(Math.sin(stridePhase));
+            const lateralCycle = Math.sin(stridePhase * 0.5);
+            const surgeCycle = Math.cos(stridePhase);
+
+            const sprintBoost = isSprintingState ? 1.32 : 1.0;
+            const aimDamp = this._isAiming ? 0.18 : 1.0;
+            const reloadDamp = this._isReloading ? 0.25 : 1.0;
+            const amp = walkWeight * sprintBoost * aimDamp * reloadDamp;
+
+            return {
+                weight: walkWeight,
+                posX: lateralCycle * 0.0075 * amp,
+                posY: -(1.0 - stepBounce) * 0.0085 * amp,
+                posZ: surgeCycle * 0.0055 * amp,
+                rotX: (stepBounce - 0.5) * 0.038 * amp,
+                rotY: lateralCycle * 0.034 * amp,
+                rotZ: -lateralCycle * 0.044 * amp
+            };
         }
 
         init(options) {
@@ -474,7 +531,6 @@
                 envMapIntensity: 1.9
             });
 
-            // 照門維持純黑、完全不透明的纖細金屬材質
             const sightMetalMat = new THREE.MeshStandardMaterial({
                 color: 0x12151a,
                 roughness: 0.36,
@@ -779,7 +835,6 @@
                 birdcageGroup.add(tine);
             }
 
-            // 照門中心再往上抬高（sightCenterY = 0.084），前準心護翼與準心柱同步對齊圓環中心
             const sightCenterY = 0.084;
 
             const rearSightGroup = new THREE.Group();
@@ -808,7 +863,7 @@
             rightKnob.position.set(0.014, -0.0005, 0.001);
             rearSightGroup.add(rightKnob);
 
-            const ringCenterLocalY = sightCenterY - 0.041; // 0.043
+            const ringCenterLocalY = sightCenterY - 0.041;
             const ringRadius = 0.0068;
 
             const rearMainTower = new THREE.Mesh(
@@ -838,7 +893,7 @@
             );
             frontSightGroup.add(frontBase);
 
-            const frontTotalSpanY = sightCenterY - 0.041; // 0.043
+            const frontTotalSpanY = sightCenterY - 0.041;
             const wingLowerH = frontTotalSpanY * 0.58;
             const wingFlareH = frontTotalSpanY * 0.34;
 
@@ -1663,14 +1718,15 @@
 
             const bobX = bobOffset && typeof bobOffset.x === 'number' ? bobOffset.x : 0;
             const bobY = bobOffset && typeof bobOffset.y === 'number' ? bobOffset.y : 0;
+            const walkMotion = this._computeWalkMotion(dt, bobX, bobY);
 
-            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + swayX, snapAlpha);
-            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + swayY, snapAlpha);
-            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ, snapAlpha);
+            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + swayX + walkMotion.posX, snapAlpha);
+            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + swayY + walkMotion.posY, snapAlpha);
+            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ + walkMotion.posZ, snapAlpha);
 
-            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX, snapAlpha);
-            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY, snapAlpha);
-            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ, snapAlpha);
+            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX + walkMotion.rotX, snapAlpha);
+            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY + walkMotion.rotY, snapAlpha);
+            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ + walkMotion.rotZ, snapAlpha);
 
             const recoilDecay = Math.exp(-26 * dt);
             this._recoilPosZ *= recoilDecay;
