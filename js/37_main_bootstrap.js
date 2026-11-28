@@ -118,6 +118,9 @@
             if (handsCtrl.dualArmRig && handsCtrl.dualArmRig.rigRootGroup) {
                 handsCtrl.dualArmRig.rigRootGroup.visible = isVisible;
             }
+            if (handsCtrl.rootGroup) {
+                handsCtrl.rootGroup.visible = isVisible;
+            }
         }
 
         _setGamePhase(nextPhase) {
@@ -179,6 +182,11 @@
 
             if (GameState && typeof GameState.patch === 'function') {
                 GameState.patch('weapons', { activeId: targetId, isAiming: false }, true);
+            }
+
+            const handsCtrl = TacticalWarfare.FpHandsAnatomy || TacticalWarfare.fpHandsAnatomy || null;
+            if (handsCtrl && typeof handsCtrl.setActiveWeapon === 'function') {
+                handsCtrl.setActiveWeapon(targetId);
             }
 
             const entries = this._getWeaponEntries();
