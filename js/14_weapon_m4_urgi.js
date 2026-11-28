@@ -21,15 +21,15 @@
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
         adsPosition: { x: 0.0, y: -0.165, z: -0.295 },
-        sprintPosition: { x: 0.145, y: -0.275, z: -0.310 },
-        sprintRotation: { x: 0.14, y: 0.46, z: -0.26 },
+        sprintPosition: { x: 0.130, y: -0.285, z: -0.295 },
+        sprintRotation: { x: 0.08, y: 0.42, z: -0.20 },
         sprintSpear: {
-            thrustX: 0.024,
-            thrustY: 0.018,
-            thrustZ: 0.078,
-            thrustRotX: 0.08,
-            thrustRotY: 0.18,
-            thrustRotZ: 0.10
+            thrustX: 0.022,
+            thrustY: 0.020,
+            thrustZ: 0.125,
+            thrustRotX: 0.05,
+            thrustRotY: 0.13,
+            thrustRotZ: 0.07
         },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -54,6 +54,12 @@
     function smoothstep(edge0, edge1, x) {
         const t = clamp((x - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
         return t * t * (3 - 2 * t);
+    }
+
+    function spearCycleWave(phase) {
+        const s = Math.sin(phase);
+        const sign = s >= 0 ? 1 : -1;
+        return sign * Math.pow(Math.abs(s), 0.72) * 0.5 + 0.5;
     }
 
     function createSmokePuffTexture(THREE) {
@@ -349,21 +355,22 @@
 
             const moveWeight = smoothstep(0.05, 0.45, speedRatio);
             const sprintTarget = (isSprintingState && speedRatio > 0.12 && !this._isAiming && !this._isReloading) ? 1.0 : 0.0;
-            this._sprintBlend = lerp(this._sprintBlend, sprintTarget, clamp(1 - Math.exp(-6.0 * dt), 0, 1));
+            this._sprintBlend = lerp(this._sprintBlend, sprintTarget, clamp(1 - Math.exp(-4.5 * dt), 0, 1));
 
             const sp = this._sprintBlend;
             const walkWeight = moveWeight * (1 - sp);
             const sprintWeight = moveWeight * sp;
 
-            const freqHz = lerp(1.5, 1.75, sp);
+            const freqHz = lerp(0.95, 1.15, sp);
             this._swayClock += dt * freqHz * Math.PI * 2;
 
-            const spearStroke = Math.sin(this._swayClock) * 0.5 + 0.5;
+            const spearStroke = spearCycleWave(this._swayClock);
             const spearWave = Math.sin(this._swayClock);
 
-            const walkPosX = spearWave * 0.0035 * walkWeight;
-            const walkPosY = -spearStroke * 0.004 * walkWeight;
-            const walkRotZ = -spearWave * 0.012 * walkWeight;
+            const walkPosX = spearWave * 0.0025 * walkWeight;
+            const walkPosY = -spearStroke * 0.003 * walkWeight;
+            const walkPosZ = -spearStroke * 0.012 * walkWeight;
+            const walkRotZ = -spearWave * 0.008 * walkWeight;
 
             const spSpec = M4_URGI_SPECS.sprintSpear;
             const sprintPosX = (-spearStroke * spSpec.thrustX) * sprintWeight;
@@ -374,15 +381,15 @@
             const sprintRotY = (spearStroke * spSpec.thrustRotY) * sprintWeight;
             const sprintRotZ = (-spearStroke * spSpec.thrustRotZ) * sprintWeight;
 
-            const dampScale = this._isAiming ? 0.22 : (this._isReloading ? 0.25 : 1.0);
+            const dampScale = this._isAiming ? 0.20 : (this._isReloading ? 0.25 : 1.0);
             const targetX = (walkPosX + sprintPosX) * dampScale;
             const targetY = (walkPosY + sprintPosY) * dampScale;
-            const targetZ = sprintPosZ * dampScale;
+            const targetZ = (walkPosZ + sprintPosZ) * dampScale;
             const targetRotX = sprintRotX * dampScale;
             const targetRotY = sprintRotY * dampScale;
             const targetRotZ = (walkRotZ + sprintRotZ) * dampScale;
 
-            const smoothAlpha = clamp(1 - Math.exp(-8.0 * dt), 0, 1);
+            const smoothAlpha = clamp(1 - Math.exp(-6.5 * dt), 0, 1);
             this._smoothSwayX = lerp(this._smoothSwayX, targetX, smoothAlpha);
             this._smoothSwayY = lerp(this._smoothSwayY, targetY, smoothAlpha);
             this._smoothSwayZ = lerp(this._smoothSwayZ, targetZ, smoothAlpha);
