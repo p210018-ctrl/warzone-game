@@ -54,16 +54,16 @@
             rightElbowBend: 1.02,
             leftElbowBend: 0.96,
             sprintPose: Object.freeze({
-                posX: -0.032,
-                posY: -0.028,
-                posZ: 0.018,
+                posX: -0.036,
+                posY: -0.030,
+                posZ: 0.020,
                 rotX: 0.14,
-                rotY: 0.44,
+                rotY: 0.46,
                 rotZ: -0.26,
-                swingX: 0.026,
-                swingY: 0.016,
-                swingRotY: 0.14,
-                swingRotZ: 0.095
+                swingX: 0.038,
+                swingY: 0.024,
+                swingRotY: 0.22,
+                swingRotZ: 0.16
             })
         }),
         MP5: Object.freeze({
@@ -77,16 +77,16 @@
             rightElbowBend: 1.05,
             leftElbowBend: 0.98,
             sprintPose: Object.freeze({
-                posX: -0.028,
-                posY: -0.024,
-                posZ: 0.016,
+                posX: -0.032,
+                posY: -0.026,
+                posZ: 0.018,
                 rotX: 0.12,
-                rotY: 0.40,
+                rotY: 0.42,
                 rotZ: -0.24,
-                swingX: 0.024,
-                swingY: 0.015,
-                swingRotY: 0.13,
-                swingRotZ: 0.090
+                swingX: 0.035,
+                swingY: 0.022,
+                swingRotY: 0.20,
+                swingRotZ: 0.15
             })
         }),
         AX50: Object.freeze({
@@ -100,16 +100,16 @@
             rightElbowBend: 1.00,
             leftElbowBend: 0.94,
             sprintPose: Object.freeze({
-                posX: -0.036,
-                posY: -0.032,
-                posZ: 0.020,
+                posX: -0.040,
+                posY: -0.034,
+                posZ: 0.022,
                 rotX: 0.16,
-                rotY: 0.48,
+                rotY: 0.50,
                 rotZ: -0.28,
-                swingX: 0.028,
-                swingY: 0.018,
-                swingRotY: 0.15,
-                swingRotZ: 0.105
+                swingX: 0.042,
+                swingY: 0.026,
+                swingRotY: 0.24,
+                swingRotZ: 0.18
             })
         }),
         X16: Object.freeze({
@@ -123,16 +123,16 @@
             rightElbowBend: 1.10,
             leftElbowBend: 1.06,
             sprintPose: Object.freeze({
-                posX: -0.024,
-                posY: -0.022,
-                posZ: 0.014,
+                posX: -0.028,
+                posY: -0.024,
+                posZ: 0.016,
                 rotX: 0.10,
-                rotY: 0.36,
+                rotY: 0.38,
                 rotZ: -0.20,
-                swingX: 0.022,
-                swingY: 0.014,
-                swingRotY: 0.12,
-                swingRotZ: 0.082
+                swingX: 0.032,
+                swingY: 0.020,
+                swingRotY: 0.18,
+                swingRotZ: 0.14
             })
         })
     });
@@ -1065,31 +1065,31 @@
 
         if (sideSign < 0) {
             const fX = lerpNum(0.22, 0.16, aim)
-                + spr * 0.14
+                + spr * 0.18
                 + rp.releaseTap * 0.07
                 + rp.magDrop * 0.25
                 - rp.magFetch * 0.09
                 - rp.magSeat * 0.14
                 + sh.rotZ * 0.9;
             const fY = lerpNum(-0.68, -0.56, aim)
-                - spr * 0.24
+                - spr * 0.30
                 + rp.magDrop * 0.24
                 - rp.magFetch * 0.18
                 - rp.magSeat * 0.10;
             const fZ = lerpNum(-0.28, -0.22, aim)
-                - spr * 0.16
+                - spr * 0.20
                 - rp.magDrop * 0.14
                 + rp.magFetch * 0.10
                 + rp.magSeat * 0.10
                 + sh.rotZ * 1.0;
 
             const eX = lerpNum(0.06 * straightFactor, 0.04 * straightFactor, aim)
-                + spr * 0.10
+                + spr * 0.12
                 + rp.magDrop * 0.18
                 + rp.magFetch * 0.10
                 - rp.magSeat * 0.13;
             const eY = lerpNum(-0.14 * straightFactor, -0.10 * straightFactor, aim)
-                - spr * 0.12
+                - spr * 0.15
                 + rp.magDrop * 0.12
                 - rp.magFetch * 0.09;
             const eZ = lerpNum(-0.06 * straightFactor, -0.05 * straightFactor, aim);
@@ -1098,7 +1098,7 @@
                 - rp.magDrop * 0.09
                 + rp.magFetch * 0.11;
             const uY = lerpNum(-0.12 * straightFactor, -0.09 * straightFactor, aim)
-                - spr * 0.10
+                - spr * 0.12
                 + rp.magDrop * 0.09
                 - rp.magFetch * 0.09;
             const uZ = lerpNum(-0.05 * straightFactor, -0.04 * straightFactor, aim);
@@ -1108,26 +1108,26 @@
             handObj.upperArmPivot.rotation.set(uX, uY, uZ);
         } else {
             const fX = lerpNum(0.18, 0.12, aim)
-                + spr * 0.12
+                + spr * 0.16
                 + rp.magDrop * 0.09
                 - rp.magSeat * 0.13;
             const fY = lerpNum(0.12, 0.08, aim)
-                + spr * 0.22
+                + spr * 0.28
                 + rp.magFetch * 0.07;
             const fZ = lerpNum(0.08, 0.06, aim)
-                - spr * 0.12;
+                - spr * 0.16;
 
             const eX = lerpNum(0.06 * straightFactor, 0.04 * straightFactor, aim)
-                + spr * 0.08
+                + spr * 0.10
                 + rp.magDrop * 0.08
                 - rp.magSeat * 0.12;
             const eY = lerpNum(0.05 * straightFactor, 0.03 * straightFactor, aim)
-                + spr * 0.10;
+                + spr * 0.12;
             const eZ = lerpNum(0.04 * straightFactor, 0.03 * straightFactor, aim);
 
             const uX = lerpNum(-0.05 * straightFactor, -0.03 * straightFactor, aim);
             const uY = lerpNum(0.05 * straightFactor, 0.03 * straightFactor, aim)
-                + spr * 0.08;
+                + spr * 0.10;
             const uZ = lerpNum(0.04 * straightFactor, 0.03 * straightFactor, aim);
 
             handObj.forearmPivot.rotation.set(fX, fY, fZ);
@@ -1520,34 +1520,33 @@
 
             const moveWeight = smoothstep(0.05, 0.45, speedRatio);
             const sprintTarget = (sprintFlag && speedRatio > 0.12 && !this.isReloadingActive && this.aimBlend < 0.6) ? 1.0 : 0.0;
-            const sprintStep = clampNum(dt * 12.0, 0.0, 1.0);
-            this.sprintBlend = lerpNum(this.sprintBlend, sprintTarget, sprintStep);
+            this.sprintBlend = lerpNum(this.sprintBlend, sprintTarget, clampNum(1.0 - Math.exp(-8.5 * dt), 0.0, 1.0));
 
             const sp = this.sprintBlend;
             const walkWeight = moveWeight * (1.0 - sp);
             const sprintWeight = moveWeight * sp;
 
-            const freqHz = lerpNum(2.2, 4.4, sp);
+            const freqHz = lerpNum(2.1, 2.85, sp);
             this._moveCyclePhase += dt * freqHz * Math.PI * 2.0;
 
-            const waveMain = Math.sin(this._moveCyclePhase);
-            const waveArc = Math.sin(this._moveCyclePhase * 0.5 + 0.35);
+            const waveSide = Math.sin(this._moveCyclePhase);
+            const waveArc = Math.sin(this._moveCyclePhase - Math.PI * 0.5) * 0.5 + 0.5;
 
-            const walkPosX = waveMain * 0.0045 * walkWeight;
+            const walkPosX = waveSide * 0.0045 * walkWeight;
             const walkPosY = 0.0;
             const walkPosZ = 0.0;
             const walkRotX = 0.0;
             const walkRotY = 0.0;
-            const walkRotZ = -waveMain * 0.016 * walkWeight;
+            const walkRotZ = -waveSide * 0.016 * walkWeight;
 
             const pSpec = spec.sprintPose || WEAPON_GRIP_SPECS.M4A1.sprintPose;
-            const sprintPosX = pSpec.posX * sprintWeight + waveMain * pSpec.swingX * sprintWeight;
-            const sprintPosY = pSpec.posY * sprintWeight + Math.abs(waveMain) * pSpec.swingY * 0.45 * sprintWeight;
-            const sprintPosZ = pSpec.posZ * sprintWeight + waveArc * 0.008 * sprintWeight;
+            const sprintPosX = pSpec.posX * sprintWeight + waveSide * pSpec.swingX * sprintWeight;
+            const sprintPosY = (pSpec.posY - waveArc * pSpec.swingY) * sprintWeight;
+            const sprintPosZ = (pSpec.posZ + waveSide * pSpec.swingX * 0.35) * sprintWeight;
 
-            const sprintRotX = pSpec.rotX * sprintWeight + Math.abs(waveMain) * 0.055 * sprintWeight;
-            const sprintRotY = pSpec.rotY * sprintWeight + waveMain * pSpec.swingRotY * sprintWeight;
-            const sprintRotZ = pSpec.rotZ * sprintWeight - waveMain * pSpec.swingRotZ * sprintWeight;
+            const sprintRotX = (pSpec.rotX + (waveArc - 0.5) * 0.09) * sprintWeight;
+            const sprintRotY = (pSpec.rotY + waveSide * pSpec.swingRotY) * sprintWeight;
+            const sprintRotZ = (pSpec.rotZ - waveSide * pSpec.swingRotZ) * sprintWeight;
 
             const targetX = walkPosX + sprintPosX;
             const targetY = walkPosY + sprintPosY;
@@ -1556,7 +1555,7 @@
             const targetRotY = walkRotY + sprintRotY;
             const targetRotZ = walkRotZ + sprintRotZ;
 
-            const smoothAlpha = clampNum(1.0 - Math.exp(-15.0 * dt), 0.0, 1.0);
+            const smoothAlpha = clampNum(1.0 - Math.exp(-10.0 * dt), 0.0, 1.0);
             this._smoothPosX = lerpNum(this._smoothPosX, targetX, smoothAlpha);
             this._smoothPosY = lerpNum(this._smoothPosY, targetY, smoothAlpha);
             this._smoothPosZ = lerpNum(this._smoothPosZ, targetZ, smoothAlpha);
@@ -1794,18 +1793,18 @@
                         rightHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
                     rightHand.palmPosePivot.rotation.set(
-                        spr * 0.14,
-                        spr * 0.22,
-                        Math.PI * 0.5 + this.triggerPullAmount * 0.08 + crispShake.rotZ * 0.7 - spr * 0.14
+                        spr * 0.16,
+                        spr * 0.24,
+                        Math.PI * 0.5 + this.triggerPullAmount * 0.08 + crispShake.rotZ * 0.7 - spr * 0.16
                     );
 
                     leftHand.wristAnchor.quaternion.identity();
                     if (weaponObj.quaternion) {
                         leftHand.wristAnchor.quaternion.copy(weaponObj.quaternion);
                     }
-                    const baseLX = lerpNum(0.24, 0.14, aim) + spr * 0.16;
-                    const baseLY = lerpNum(-0.56, -0.44, aim) - spr * 0.24;
-                    const baseLZ = lerpNum(-0.24, -0.17, aim) - spr * 0.18;
+                    const baseLX = lerpNum(0.24, 0.14, aim) + spr * 0.18;
+                    const baseLY = lerpNum(-0.56, -0.44, aim) - spr * 0.28;
+                    const baseLZ = lerpNum(-0.24, -0.17, aim) - spr * 0.20;
 
                     const relLX = reloadPhases
                         ? baseLX + reloadPhases.releaseTap * 0.11 + reloadPhases.magDrop * 0.30 - reloadPhases.magFetch * 0.18 + reloadPhases.magSeat * 0.16
