@@ -55,6 +55,8 @@
             this._grenadeCooldown = 0;
             this._activeGrenades = [];
             this._grenadeGroup = null;
+            this._spearPhase = 0;
+            this._smoothSpeedRatio = 0;
         }
 
         _getInputController() {
@@ -134,28 +136,50 @@
             }
         }
 
-        _syncPlayerMovementState(moveRes, isSprinting, bobArg) {
-            if (!GameState || typeof GameState.patch !== 'function') return;
+        _syncPlayerMovementState(moveRes, isSprinting, bobArg, dt) {
+            const stepDt = clamp(typeof dt === 'number' ? dt : 0.016, 0.0001, 0.1);
 
-            let speedRatio = 0;
+            let rawSpeed = 0;
             if (moveRes && typeof moveRes.speedRatio === 'number' && !Number.isNaN(moveRes.speedRatio)) {
-                speedRatio = clamp(moveRes.speedRatio, 0, 1.5);
+                rawSpeed = clamp(moveRes.speedRatio, 0, 1.5);
             } else if (moveRes && moveRes.velocity && typeof moveRes.velocity.x === 'number' && typeof moveRes.velocity.z === 'number') {
                 const horizSpeed = Math.hypot(moveRes.velocity.x, moveRes.velocity.z);
-                speedRatio = clamp(horizSpeed / (isSprinting ? 7.5 : 4.8), 0, 1.5);
+                rawSpeed = clamp(horizSpeed / (isSprinting ? 7.5 : 4.8), 0, 1.5);
             } else if (bobArg) {
                 const bobMag = Math.hypot(bobArg.x || 0, bobArg.y || 0);
                 if (bobMag > 0.00015) {
-                    speedRatio = clamp(bobMag * 33.0, 0.15, isSprinting ? 1.25 : 0.92);
+                    rawSpeed = clamp(bobMag * 30.0, 0.18, isSprinting ? 1.2 : 0.88);
                 }
             }
 
+            if (rawSpeed <= 0.02 && ((moveRes && moveRes.isMoving) || isSprinting)) {
+                rawSpeed = isSprinting ? 1.15 : 0.72;
+            }
+
+            this._smoothSpeedRatio = lerp(this._smoothSpeedRatio, rawSpeed, clamp(1 - Math.exp(-8.0 * stepDt), 0, 1));
+            const speedRatio = this._smoothSpeedRatio > 0.01 ? this._smoothSpeedRatio : 0;
             const isMoving = Boolean((moveRes && moveRes.isMoving) || speedRatio > 0.05);
-            GameState.patch('player', {
+            const sprintActive = Boolean(isSprinting && isMoving);
+
+            const freqHz = sprintActive ? 1.75 : 1.50;
+            this._spearPhase += stepDt * freqHz * Math.PI * 2.0;
+            const spearThrust = isMoving ? (Math.sin(this._spearPhase) * 0.5 + 0.5) : 0;
+
+            if (GameState && typeof GameState.patch === 'function') {
+                GameState.patch('player', {
+                    speedRatio: speedRatio,
+                    isMoving: isMoving,
+                    isSprinting: sprintActive,
+                    spearThrust: Number(spearThrust.toFixed(4))
+                }, true);
+            }
+
+            return {
                 speedRatio: speedRatio,
                 isMoving: isMoving,
-                isSprinting: Boolean(isSprinting)
-            }, true);
+                isSprinting: sprintActive,
+                spearThrust: spearThrust
+            };
         }
 
         _getWeaponEntries() {
@@ -895,13 +919,13 @@
                     GameState.patch('weapons', patchObj, true);
                 }
 
-                const isSprinting = Boolean(
+                const rawSprint = Boolean(
                     (inputCtrl && typeof inputCtrl.isActionActive === 'function' && inputCtrl.isActionActive('sprint')) ||
                     (moveRes && moveRes.isSprinting)
                 );
 
                 const bobArg = moveRes && moveRes.bobOffset ? moveRes.bobOffset : null;
-                this._syncPlayerMovementState(moveRes, isSprinting, bobArg);
+                const syncedMove = this._syncPlayerMovementState(moveRes, rawSprint, bobArg, dt);
 
                 if (TacticalWarfare.WeaponController && typeof TacticalWarfare.WeaponController.update === 'function') {
                     TacticalWarfare.WeaponController.update(dt, moveRes);
@@ -914,7 +938,7 @@
                         entry.mod.setAiming(isAiming);
                     }
                     if (typeof entry.mod.setSprinting === 'function') {
-                        entry.mod.setSprinting(isSprinting);
+                        entry.mod.setSprinting(syncedMove.isSprinting);
                     }
                     if (typeof entry.mod.setReloading === 'function') {
                         entry.mod.setReloading(isReloading);
@@ -934,9 +958,9 @@
                         parentGroup: resolvedView.weaponCamera || camera || resolvedView.scene,
                         weaponCamera: resolvedView.weaponCamera,
                         bobOffset: bobArg,
-                        speedRatio: moveRes && typeof moveRes.speedRatio === 'number' ? moveRes.speedRatio : 0,
+                        speedRatio: syncedMove.speedRatio,
                         isAiming: isAiming,
-                        isSprinting: isSprinting,
+                        isSprinting: syncedMove.isSprinting,
                         isReloading: isReloading,
                         weaponId: currentWeaponId
                     };
@@ -948,7 +972,7 @@
                 }
 
                 if (TacticalWarfare.BallisticsRecoil && typeof TacticalWarfare.BallisticsRecoil.update === 'function') {
-                    const isMoving = Boolean(moveRes && moveRes.speedRatio > 0.08);
+                    const isMoving = Boolean(syncedMove.speedRatio > 0.08);
                     TacticalWarfare.BallisticsRecoil.update(dt, isAiming, isMoving);
                 }
 
