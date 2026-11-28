@@ -24,12 +24,12 @@
         sprintPosition: { x: 0.145, y: -0.295, z: -0.225 },
         sprintRotation: { x: 0.14, y: 0.58, z: -0.28 },
         sprintSpear: {
-            thrustX: 0.125,
-            thrustY: 0.135,
-            thrustZ: 0.390,
-            thrustRotX: 0.24,
-            thrustRotY: 0.36,
-            thrustRotZ: 0.28
+            thrustX: 0.185,
+            thrustY: 0.195,
+            thrustZ: 0.540,
+            thrustRotX: 0.36,
+            thrustRotY: 0.52,
+            thrustRotZ: 0.40
         },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
