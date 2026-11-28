@@ -179,7 +179,9 @@
             this._reloadProgress = 0;
             this._reloadDuration = 1.45;
             this._reloadClock = 0;
-            this._walkClock = 0;
+            this._swayClock = 0;
+            this._smoothSwayX = 0;
+            this._smoothSwayRotZ = 0;
 
             this._hkSlapActive = false;
             this._hkSlapProgress = 0;
@@ -251,7 +253,7 @@
             return base;
         }
 
-        _computeWalkMotion(dt, bobX, bobY) {
+        _computeGentleLateralSway(dt, bobX, bobY) {
             let speedRatio = 0;
             let isSprintingState = this._isSprinting;
 
@@ -266,39 +268,39 @@
                 if (typeof gsSpeed === 'number' && !Number.isNaN(gsSpeed)) {
                     speedRatio = clamp(gsSpeed, 0, 1.5);
                 } else if (gsMoving) {
-                    speedRatio = isSprintingState ? 1.18 : 0.80;
+                    speedRatio = isSprintingState ? 1.05 : 0.75;
                 }
             }
 
             const bobMag = Math.hypot(bobX, bobY);
             if (speedRatio <= 0.01 && bobMag > 0.00015) {
-                speedRatio = clamp(bobMag * 33.0, 0.18, isSprintingState ? 1.28 : 0.94);
+                speedRatio = clamp(bobMag * 28.0, 0.15, isSprintingState ? 1.1 : 0.85);
             }
 
-            const walkWeight = smoothstep(0.03, 0.35, speedRatio);
-            const cadenceHz = isSprintingState ? 11.0 : 8.0;
-            if (walkWeight > 0.005) {
-                this._walkClock += dt * cadenceHz * Math.PI * (0.65 + 0.35 * walkWeight);
-            }
+            const moveWeight = smoothstep(0.05, 0.45, speedRatio);
+            const freqHz = isSprintingState ? 3.2 : 2.2;
+            this._swayClock += dt * freqHz * Math.PI * 2;
 
-            const stridePhase = this._walkClock + bobX * 45.0;
-            const stepBounce = Math.abs(Math.sin(stridePhase));
-            const lateralCycle = Math.sin(stridePhase * 0.5);
-            const surgeCycle = Math.cos(stridePhase);
+            const gentleWave = Math.sin(this._swayClock) * 0.75 + Math.sin(this._swayClock * 0.5 + bobX * 18.0) * 0.25;
+            const sprintFactor = isSprintingState ? 1.2 : 1.0;
+            const aimFactor = this._isAiming ? 0.25 : 1.0;
+            const actionFactor = (this._isReloading || this._hkSlapActive) ? 0.2 : 1.0;
+            const scale = moveWeight * sprintFactor * aimFactor * actionFactor;
 
-            const sprintBoost = isSprintingState ? 1.35 : 1.0;
-            const aimDamp = this._isAiming ? 0.18 : 1.0;
-            const actionDamp = (this._isReloading || this._hkSlapActive) ? 0.22 : 1.0;
-            const amp = walkWeight * sprintBoost * aimDamp * actionDamp;
+            const targetX = gentleWave * 0.0045 * scale;
+            const targetRotZ = -gentleWave * 0.016 * scale;
+
+            const smoothAlpha = 1 - Math.exp(-12 * dt);
+            this._smoothSwayX = lerp(this._smoothSwayX, targetX, smoothAlpha);
+            this._smoothSwayRotZ = lerp(this._smoothSwayRotZ, targetRotZ, smoothAlpha);
 
             return {
-                weight: walkWeight,
-                posX: lateralCycle * 0.0080 * amp,
-                posY: -(1.0 - stepBounce) * 0.0090 * amp,
-                posZ: surgeCycle * 0.0058 * amp,
-                rotX: (stepBounce - 0.5) * 0.042 * amp,
-                rotY: lateralCycle * 0.038 * amp,
-                rotZ: -lateralCycle * 0.048 * amp
+                posX: this._smoothSwayX,
+                posY: 0,
+                posZ: 0,
+                rotX: 0,
+                rotY: 0,
+                rotZ: this._smoothSwayRotZ
             };
         }
 
@@ -1249,6 +1251,8 @@
                 this._isReloading = false;
                 this._reloadProgress = 0;
                 this._reloadClock = 0;
+                this._smoothSwayX = 0;
+                this._smoothSwayRotZ = 0;
                 this._hkSlapActive = false;
                 this._hkSlapProgress = 0;
                 this._flashTimer = 0;
@@ -1436,15 +1440,15 @@
 
             const bobX = bobOffset && typeof bobOffset.x === 'number' ? bobOffset.x : 0;
             const bobY = bobOffset && typeof bobOffset.y === 'number' ? bobOffset.y : 0;
-            const walkMotion = this._computeWalkMotion(dt, bobX, bobY);
+            const lateralSway = this._computeGentleLateralSway(dt, bobX, bobY);
 
-            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + swayX + walkMotion.posX, snapAlpha);
-            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + swayY + walkMotion.posY, snapAlpha);
-            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ + walkMotion.posZ, snapAlpha);
+            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + swayX + lateralSway.posX, snapAlpha);
+            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + swayY + lateralSway.posY, snapAlpha);
+            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ + lateralSway.posZ, snapAlpha);
 
-            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX + walkMotion.rotX, snapAlpha);
-            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY + walkMotion.rotY, snapAlpha);
-            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ + walkMotion.rotZ, snapAlpha);
+            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX + lateralSway.rotX, snapAlpha);
+            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY + lateralSway.rotY, snapAlpha);
+            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ + lateralSway.rotZ, snapAlpha);
 
             const recoilDecay = Math.exp(-28 * dt);
             this._recoilPosZ *= recoilDecay;
