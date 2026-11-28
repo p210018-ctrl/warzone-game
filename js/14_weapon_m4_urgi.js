@@ -20,7 +20,7 @@
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
-        adsPosition: { x: 0.0, y: -0.149, z: -0.295 },
+        adsPosition: { x: 0.0, y: -0.153, z: -0.295 },
         sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -388,22 +388,12 @@
                 oxidationCount: 6
             });
 
-            const darkSightMaps = createDetailedMetalMaps(THREE, {
-                seed: 9204,
-                baseRgb: [86, 94, 106],
-                contrastAmp: 8,
-                specularBias: 8,
-                oxidation: false
-            });
-
             this._trackTex(blackMetalMaps.map);
             this._trackTex(blackMetalMaps.roughnessMap);
             this._trackTex(sandMetalMaps.map);
             this._trackTex(sandMetalMaps.roughnessMap);
             this._trackTex(boltSteelMaps.map);
             this._trackTex(boltSteelMaps.roughnessMap);
-            this._trackTex(darkSightMaps.map);
-            this._trackTex(darkSightMaps.roughnessMap);
 
             const matteBlackMetalMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
@@ -484,13 +474,14 @@
                 envMapIntensity: 1.9
             });
 
+            // 照門改回純黑、完全不透明的金屬材質（transparent: false, opacity: 1）
             const sightMetalMat = new THREE.MeshStandardMaterial({
-                color: 0x7b8594,
-                roughness: 0.42,
-                metalness: 0.72,
-                transparent: true,
-                opacity: 0.78,
-                envMapIntensity: 1.15
+                color: 0x12151a,
+                roughness: 0.36,
+                metalness: 0.85,
+                transparent: false,
+                opacity: 1.0,
+                envMapIntensity: 1.35
             });
 
             this.muzzleCoreMat = new THREE.MeshBasicMaterial({
@@ -788,8 +779,8 @@
                 birdcageGroup.add(tine);
             }
 
-            // 後照門圓環中心固定於 sightCenterY = 0.068；前準心護翼與準心柱直接往上對齊此中心
-            const sightCenterY = 0.068;
+            // 照門中心再往上抬高一點點（sightCenterY = 0.072），前準心與後照門同步對齊
+            const sightCenterY = 0.072;
 
             const rearSightGroup = new THREE.Group();
             rearSightGroup.name = 'M4UrgiSketchedRearSight';
@@ -798,30 +789,30 @@
             this.weaponBodyGroup.add(rearSightGroup);
 
             const rearBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.024, 0.0035, 0.012)),
+                this._trackGeo(new THREE.BoxGeometry(0.024, 0.0032, 0.012)),
                 m.sight
             );
             rearSightGroup.add(rearBase);
 
             const leftKnob = new THREE.Mesh(
-                this._trackGeo(new THREE.CylinderGeometry(0.0028, 0.0028, 0.003, 10)).rotateZ(Math.PI / 2),
+                this._trackGeo(new THREE.CylinderGeometry(0.0026, 0.0026, 0.003, 10)).rotateZ(Math.PI / 2),
                 m.sight
             );
             leftKnob.position.set(-0.014, -0.0005, 0.001);
             rearSightGroup.add(leftKnob);
 
             const rightKnob = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0045, 0.0045, 0.005)),
+                this._trackGeo(new THREE.BoxGeometry(0.0042, 0.0042, 0.005)),
                 m.sight
             );
             rightKnob.position.set(0.014, -0.0005, 0.001);
             rearSightGroup.add(rightKnob);
 
-            const ringCenterLocalY = sightCenterY - 0.041;
+            const ringCenterLocalY = sightCenterY - 0.041; // 0.031
             const ringRadius = 0.0068;
 
             const rearMainTower = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.007, ringCenterLocalY - ringRadius * 0.65, 0.0032)),
+                this._trackGeo(new THREE.BoxGeometry(0.0065, ringCenterLocalY - ringRadius * 0.65, 0.003)),
                 m.sight
             );
             rearMainTower.position.set(0, (ringCenterLocalY - ringRadius * 0.65) * 0.5 + 0.001, -0.001);
@@ -836,19 +827,18 @@
             this.rearPeepRing = rearPeepRing;
             rearSightGroup.add(rearPeepRing);
 
-            // 前準心組：底座在 y = 0.041，護翼頂端與準心柱尖端精準對齊後照門圓環中心 (y = 0.068)
             const frontSightGroup = new THREE.Group();
             frontSightGroup.name = 'M4UrgiSketchedFrontSight';
             frontSightGroup.position.set(0, 0.041, -0.48);
             this.weaponBodyGroup.add(frontSightGroup);
 
             const frontBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.024, 0.0035, 0.012)),
+                this._trackGeo(new THREE.BoxGeometry(0.024, 0.0032, 0.012)),
                 m.sight
             );
             frontSightGroup.add(frontBase);
 
-            const frontTotalSpanY = sightCenterY - 0.041; // 0.027
+            const frontTotalSpanY = sightCenterY - 0.041; // 0.031
             const wingLowerH = frontTotalSpanY * 0.58;
             const wingFlareH = frontTotalSpanY * 0.34;
 
@@ -1649,13 +1639,12 @@
 
             this._syncAmmoCountFromState(false);
 
-            // 保持後照門圓環高度固定（不再隨開鏡上下偏移），避免與前準心錯開
             if (this.rearPeepRing) {
-                this.rearPeepRing.position.y = 0.027;
+                this.rearPeepRing.position.y = 0.031;
             }
             if (this.rearMainTower) {
                 this.rearMainTower.scale.y = 1.0;
-                this.rearMainTower.position.y = 0.0122;
+                this.rearMainTower.position.y = 0.0142;
             }
 
             let targetPos = M4_URGI_SPECS.hipPosition;
