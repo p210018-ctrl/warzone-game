@@ -3,7 +3,7 @@
 
     const TacticalWarfare = global.TacticalWarfare;
     if (!TacticalWarfare) {
-        throw new Error('15_weapon_smg_mp5.js 必須在 01_event_bus_state.js 之後載入');
+        throw new Error('15_weapon_smg_mp5.js must load after 01_event_bus_state.js');
     }
 
     const Events = TacticalWarfare.Events || {};
@@ -19,9 +19,9 @@
     const MP5_SPECS = Object.freeze({
         id: 'MP5',
         displayName: 'MP5-SD Modular',
-        hipPosition: { x: 0.252, y: -0.252, z: -0.34 },
-        adsPosition: { x: 0.0, y: -0.168, z: -0.295 },
-        sprintPosition: { x: 0.275, y: -0.275, z: -0.34 },
+        hipPosition: { x: 0.252, y: -0.256, z: -0.34 },
+        adsPosition: { x: 0.0, y: -0.172, z: -0.295 },
+        sprintPosition: { x: 0.275, y: -0.282, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.013, z: -0.585 },
         ejectionPortOffset: { x: 0.022, y: 0.013, z: -0.045 },
         recoilKickZ: 0.022,
@@ -45,6 +45,12 @@
     function smoothstep(edge0, edge1, x) {
         const t = clamp((x - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
         return t * t * (3 - 2 * t);
+    }
+
+    function spearCycleWave(phase) {
+        const s = Math.sin(phase);
+        const sign = s >= 0 ? 1 : -1;
+        return sign * Math.pow(Math.abs(s), 0.72) * 0.5 + 0.5;
     }
 
     function createSmokePuffTexture(THREE) {
@@ -181,6 +187,10 @@
             this._reloadClock = 0;
             this._swayClock = 0;
             this._smoothSwayX = 0;
+            this._smoothSwayY = 0;
+            this._smoothSwayZ = 0;
+            this._smoothSwayRotX = 0;
+            this._smoothSwayRotY = 0;
             this._smoothSwayRotZ = 0;
 
             this._hkSlapActive = false;
@@ -268,38 +278,48 @@
                 if (typeof gsSpeed === 'number' && !Number.isNaN(gsSpeed)) {
                     speedRatio = clamp(gsSpeed, 0, 1.5);
                 } else if (gsMoving) {
-                    speedRatio = isSprintingState ? 1.05 : 0.75;
+                    speedRatio = isSprintingState ? 1.15 : 0.75;
                 }
             }
 
             const bobMag = Math.hypot(bobX, bobY);
             if (speedRatio <= 0.01 && bobMag > 0.00015) {
-                speedRatio = clamp(bobMag * 28.0, 0.15, isSprintingState ? 1.1 : 0.85);
+                speedRatio = clamp(bobMag * 28.0, 0.15, isSprintingState ? 1.2 : 0.85);
             }
 
             const moveWeight = smoothstep(0.05, 0.45, speedRatio);
-            const freqHz = isSprintingState ? 3.2 : 2.2;
+            const sprintActive = Boolean(isSprintingState && speedRatio > 0.12 && !this._isReloading && !this._isAiming);
+            const freqHz = sprintActive ? 1.15 : 0.95;
             this._swayClock += dt * freqHz * Math.PI * 2;
 
+            const spear = moveWeight > 0.01 ? spearCycleWave(this._swayClock) : 0;
             const gentleWave = Math.sin(this._swayClock) * 0.75 + Math.sin(this._swayClock * 0.5 + bobX * 18.0) * 0.25;
-            const sprintFactor = isSprintingState ? 1.2 : 1.0;
             const aimFactor = this._isAiming ? 0.25 : 1.0;
             const actionFactor = (this._isReloading || this._hkSlapActive) ? 0.2 : 1.0;
-            const scale = moveWeight * sprintFactor * aimFactor * actionFactor;
+            const scale = moveWeight * aimFactor * actionFactor;
+            const sprintThrust = sprintActive ? spear : 0;
 
-            const targetX = gentleWave * 0.0045 * scale;
-            const targetRotZ = -gentleWave * 0.016 * scale;
+            const targetX = (gentleWave * 0.0045 + sprintThrust * 0.016) * scale;
+            const targetY = (-sprintThrust * 0.014) * scale;
+            const targetZ = (sprintThrust * 0.022) * scale;
+            const targetRotX = (-sprintThrust * 0.055) * scale;
+            const targetRotY = (sprintThrust * 0.085) * scale;
+            const targetRotZ = (-gentleWave * 0.016 - sprintThrust * 0.048) * scale;
 
             const smoothAlpha = 1 - Math.exp(-12 * dt);
             this._smoothSwayX = lerp(this._smoothSwayX, targetX, smoothAlpha);
+            this._smoothSwayY = lerp(this._smoothSwayY, targetY, smoothAlpha);
+            this._smoothSwayZ = lerp(this._smoothSwayZ, targetZ, smoothAlpha);
+            this._smoothSwayRotX = lerp(this._smoothSwayRotX, targetRotX, smoothAlpha);
+            this._smoothSwayRotY = lerp(this._smoothSwayRotY, targetRotY, smoothAlpha);
             this._smoothSwayRotZ = lerp(this._smoothSwayRotZ, targetRotZ, smoothAlpha);
 
             return {
                 posX: this._smoothSwayX,
-                posY: 0,
-                posZ: 0,
-                rotX: 0,
-                rotY: 0,
+                posY: this._smoothSwayY,
+                posZ: this._smoothSwayZ,
+                rotX: this._smoothSwayRotX,
+                rotY: this._smoothSwayRotY,
                 rotZ: this._smoothSwayRotZ
             };
         }
@@ -307,7 +327,7 @@
         init(options) {
             const THREE = global.THREE;
             if (!THREE) {
-                throw new Error('15_weapon_smg_mp5.js 需要 THREE 全域物件');
+                throw new Error('15_weapon_smg_mp5.js requires THREE global');
             }
 
             const opts = options || {};
@@ -1252,6 +1272,10 @@
                 this._reloadProgress = 0;
                 this._reloadClock = 0;
                 this._smoothSwayX = 0;
+                this._smoothSwayY = 0;
+                this._smoothSwayZ = 0;
+                this._smoothSwayRotX = 0;
+                this._smoothSwayRotY = 0;
                 this._smoothSwayRotZ = 0;
                 this._hkSlapActive = false;
                 this._hkSlapProgress = 0;
