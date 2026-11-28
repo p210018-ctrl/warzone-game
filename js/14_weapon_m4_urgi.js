@@ -19,14 +19,15 @@
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
-        adsPosition: { x: 0.0, y: -0.098, z: -0.31 },
+        adsPosition: { x: 0.0, y: -0.096, z: -0.315 },
         sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
-        recoilKickZ: 0.056,
-        recoilKickY: 0.019,
-        recoilPitch: 0.068,
-        recoilRoll: 0.034
+        recoilKickZ: 0.024,
+        recoilKickY: 0.008,
+        recoilPitch: 0.028,
+        recoilYaw: 0.014,
+        recoilRoll: 0.022
     });
 
     function clamp(val, minVal, maxVal) {
@@ -86,8 +87,7 @@
                 cImg.data[o + 2] = b;
                 cImg.data[o + 3] = 255;
 
-                // 較低粗糙度＋明顯高低起伏，保留金屬鏡面/拉絲反光
-                const roughVal = clamp(78 - delta * 2.6 - spec, 18, 190);
+                const roughVal = clamp(82 - delta * 2.5 - spec, 20, 195);
                 rImg.data[o] = roughVal;
                 rImg.data[o + 1] = roughVal;
                 rImg.data[o + 2] = roughVal;
@@ -149,8 +149,11 @@
 
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
+            this._recoilPosX = 0;
             this._recoilRotX = 0;
+            this._recoilRotY = 0;
             this._recoilRotZ = 0;
+            this._jitterTimer = 0;
             this._boltKickZ = 0;
             this._boltPhase = 0;
             this._flashTimer = 0;
@@ -252,10 +255,10 @@
         _buildMaterials() {
             const THREE = global.THREE;
 
-            // 高對比金屬貼圖與低粗糙度，強化邊緣與平面反光
             const blackMetalMaps = createMetallicMaps(THREE, 9201, [38, 42, 48], 22, 16);
             const sandMetalMaps = createMetallicMaps(THREE, 9202, [186, 148, 92], 20, 14);
-            const boltSteelMaps = createMetallicMaps(THREE, 9203, [235, 240, 248], 14, 24);
+            const boltSteelMaps = createMetallicMaps(THREE, 9203, [185, 192, 202], 14, 18);
+            const darkSightMaps = createMetallicMaps(THREE, 9204, [44, 49, 57], 16, 12);
 
             this._trackTex(blackMetalMaps.map);
             this._trackTex(blackMetalMaps.roughnessMap);
@@ -263,6 +266,8 @@
             this._trackTex(sandMetalMaps.roughnessMap);
             this._trackTex(boltSteelMaps.map);
             this._trackTex(boltSteelMaps.roughnessMap);
+            this._trackTex(darkSightMaps.map);
+            this._trackTex(darkSightMaps.roughnessMap);
 
             const matteBlackMetalMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
@@ -287,8 +292,8 @@
             });
 
             const deepCavityMat = new THREE.MeshStandardMaterial({
-                color: 0x090b0e,
-                roughness: 0.35,
+                color: 0x0b0e12,
+                roughness: 0.36,
                 metalness: 0.88,
                 envMapIntensity: 1.2
             });
@@ -299,9 +304,9 @@
                 bumpMap: boltSteelMaps.bumpMap,
                 bumpScale: 0.0025,
                 roughnessMap: boltSteelMaps.roughnessMap,
-                roughness: 0.12,
-                metalness: 0.98,
-                envMapIntensity: 2.0
+                roughness: 0.22,
+                metalness: 0.95,
+                envMapIntensity: 1.7
             });
 
             const barrelMat = new THREE.MeshStandardMaterial({
@@ -310,7 +315,7 @@
                 bumpMap: blackMetalMaps.bumpMap,
                 bumpScale: 0.003,
                 roughnessMap: blackMetalMaps.roughnessMap,
-                roughness: 0.18,
+                roughness: 0.19,
                 metalness: 0.97,
                 envMapIntensity: 1.8
             });
@@ -343,12 +348,16 @@
                 envMapIntensity: 1.9
             });
 
+            // 照門與準星改用沉穩深灰／暗鋼色，避免亮白造成視覺出戲
             const sightMetalMat = new THREE.MeshStandardMaterial({
-                color: 0x323842,
-                map: blackMetalMaps.map,
-                roughness: 0.24,
-                metalness: 0.95,
-                envMapIntensity: 1.7
+                color: 0xffffff,
+                map: darkSightMaps.map,
+                bumpMap: darkSightMaps.bumpMap,
+                bumpScale: 0.0025,
+                roughnessMap: darkSightMaps.roughnessMap,
+                roughness: 0.32,
+                metalness: 0.92,
+                envMapIntensity: 1.5
             });
 
             this.muzzleCoreMat = new THREE.MeshBasicMaterial({
@@ -417,7 +426,7 @@
             this.weaponBodyGroup.name = 'M4UrgiBodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 消光黑金屬上下機匣＋皮卡汀尼導軌齒＋拋殼窗
+            // 1. 消光黑金屬上下機匣＋皮卡汀尼導軌齒
             const upperReceiver = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.048, 0.052, 0.22)),
                 m.receiver
@@ -432,7 +441,6 @@
             upperRailBase.position.set(0, 0.036, -0.05);
             this.weaponBodyGroup.add(upperRailBase);
 
-            // 頂部導軌條槽齒細節
             for (let r = 0; r < 14; r++) {
                 const slotTooth = new THREE.Mesh(
                     this._trackGeo(new THREE.BoxGeometry(0.027, 0.003, 0.008)),
@@ -456,7 +464,6 @@
             magwellCollar.position.set(0, -0.048, -0.082);
             this.weaponBodyGroup.add(magwellCollar);
 
-            // 握把與護弓細節
             const gripMesh = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.036, 0.096, 0.046)),
                 m.receiver
@@ -472,7 +479,7 @@
             triggerGuard.position.set(0, -0.046, -0.038);
             this.weaponBodyGroup.add(triggerGuard);
 
-            // 2. 高速往復運動的金屬槍機片（Bolt Carrier）
+            // 2. 金屬槍機片
             this.boltCarrierGroup = new THREE.Group();
             this.boltCarrierGroup.name = 'M4UrgiBoltCarrierGroup';
             this.boltCarrierGroup.position.set(0.0245, 0.011, -0.055);
@@ -491,96 +498,71 @@
             chargingHandle.position.set(0.004, 0.004, 0.064);
             this.boltCarrierGroup.add(chargingHandle);
 
-            // 3. 沙色鏤空 M-LOK 長護木（多排長條形 M-LOK 孔洞＋側邊螺絲＋前段導軌）
+            // 3. 六邊形截面沙色護木（6 邊形柱體＋深色內腔＋M-LOK 槽孔與導軌細節）
             const handguardGroup = new THREE.Group();
-            handguardGroup.name = 'M4UrgiSkeletonMlokHandguard';
+            handguardGroup.name = 'M4UrgiHexMlokHandguard';
             handguardGroup.position.set(0, 0.010, -0.325);
             this.weaponBodyGroup.add(handguardGroup);
 
             const hgLen = 0.355;
-            const hgW = 0.050;
-            const hgH = 0.054;
+            const hexRadius = 0.031;
 
-            const hgTop = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(hgW, 0.008, hgLen)),
+            const hexOuterGeo = this._trackGeo(new THREE.CylinderGeometry(hexRadius, hexRadius, hgLen, 6));
+            hexOuterGeo.rotateX(Math.PI / 2);
+            hexOuterGeo.rotateZ(Math.PI / 6);
+            const hexOuterMesh = new THREE.Mesh(hexOuterGeo, m.sand);
+            hexOuterMesh.scale.set(1.06, 0.96, 1.0);
+            handguardGroup.add(hexOuterMesh);
+
+            const hexInnerGeo = this._trackGeo(new THREE.CylinderGeometry(hexRadius * 0.78, hexRadius * 0.78, hgLen - 0.008, 6));
+            hexInnerGeo.rotateX(Math.PI / 2);
+            hexInnerGeo.rotateZ(Math.PI / 6);
+            const hexInnerMesh = new THREE.Mesh(hexInnerGeo, m.cavity);
+            hexInnerMesh.scale.set(1.04, 0.94, 1.0);
+            handguardGroup.add(hexInnerMesh);
+
+            // 護木頂部導軌條與六邊形側壁 M-LOK 鏤空槽孔
+            const hgTopRail = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.024, 0.006, hgLen)),
                 m.sand
             );
-            hgTop.position.set(0, hgH * 0.5 - 0.004, 0);
-            handguardGroup.add(hgTop);
+            hgTopRail.position.set(0, hexRadius * 0.92, 0);
+            handguardGroup.add(hgTopRail);
 
-            const hgBottom = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(hgW, 0.007, hgLen)),
-                m.sand
-            );
-            hgBottom.position.set(0, -hgH * 0.5 + 0.0035, 0);
-            handguardGroup.add(hgBottom);
-
-            // 護木深色內腔
-            const hgInnerCore = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(hgW - 0.013, hgH - 0.015, hgLen - 0.012)),
-                m.cavity
-            );
-            handguardGroup.add(hgInnerCore);
-
-            // 沙色側壁骨架與多排 M-LOK 鏤空開窗
             const bayCount = 5;
             const bayZStart = 0.125;
             const bayStep = 0.062;
             for (let b = 0; b < bayCount; b++) {
                 const bz = bayZStart - b * bayStep;
-                // 骨架橫樑
-                const leftRib = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0075, hgH - 0.012, 0.020)),
-                    m.sand
-                );
-                leftRib.position.set(-hgW * 0.5 + 0.0037, 0, bz);
-                handguardGroup.add(leftRib);
+                const ribGeo = this._trackGeo(new THREE.CylinderGeometry(hexRadius * 1.02, hexRadius * 1.02, 0.014, 6));
+                ribGeo.rotateX(Math.PI / 2);
+                ribGeo.rotateZ(Math.PI / 6);
+                const ribMesh = new THREE.Mesh(ribGeo, m.sand);
+                ribMesh.position.set(0, 0, bz);
+                ribMesh.scale.set(1.06, 0.96, 1.0);
+                handguardGroup.add(ribMesh);
 
-                const rightRib = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0075, hgH - 0.012, 0.020)),
-                    m.sand
-                );
-                rightRib.position.set(hgW * 0.5 - 0.0037, 0, bz);
-                handguardGroup.add(rightRib);
-
-                // 鏤空孔洞深色槽框（上下兩排 M-LOK 孔洞感）
                 if (b < bayCount - 1) {
                     const holeZ = bz - bayStep * 0.5;
-                    for (let row = -1; row <= 1; row += 2) {
-                        const holeY = row * 0.0105;
-                        const lHole = new THREE.Mesh(
-                            this._trackGeo(new THREE.BoxGeometry(0.008, 0.0085, 0.034)),
+                    for (const side of [-1, 1]) {
+                        const sideSlot = new THREE.Mesh(
+                            this._trackGeo(new THREE.BoxGeometry(0.007, 0.011, 0.034)),
                             m.cavity
                         );
-                        lHole.position.set(-hgW * 0.5 + 0.0035, holeY, holeZ);
-                        handguardGroup.add(lHole);
-
-                        const rHole = new THREE.Mesh(
-                            this._trackGeo(new THREE.BoxGeometry(0.008, 0.0085, 0.034)),
-                            m.cavity
-                        );
-                        rHole.position.set(hgW * 0.5 - 0.0035, holeY, holeZ);
-                        handguardGroup.add(rHole);
+                        sideSlot.position.set(side * (hexRadius * 0.96), 0.002, holeZ);
+                        handguardGroup.add(sideSlot);
                     }
                 }
             }
 
-            // 護木靠近機匣處固定螺絲與前段導軌片
             for (const side of [-1, 1]) {
                 const clampScrew = new THREE.Mesh(
                     this._trackGeo(new THREE.CylinderGeometry(0.0032, 0.0032, 0.006, 8)).rotateZ(Math.PI / 2),
                     m.bolt
                 );
-                clampScrew.position.set(side * (hgW * 0.5 + 0.0015), 0.006, 0.155);
+                clampScrew.position.set(side * (hexRadius * 0.98), 0.005, 0.155);
                 handguardGroup.add(clampScrew);
             }
-
-            const frontSideRail = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.008, 0.014, 0.068)),
-                m.sand
-            );
-            frontSideRail.position.set(hgW * 0.5 + 0.003, -0.002, -0.115);
-            handguardGroup.add(frontSideRail);
 
             // 4. 槍管與鳥籠消焰器
             const barrelMesh = new THREE.Mesh(
@@ -621,7 +603,7 @@
                 birdcageGroup.add(tine);
             }
 
-            // 5. 折疊前後準星（開放式照門框，不遮擋瞄準中心視線）
+            // 5. 深灰金屬折疊前後照門與準星
             const rearSightGroup = new THREE.Group();
             rearSightGroup.name = 'M4UrgiFoldingRearSight';
             rearSightGroup.position.set(0, 0.041, 0.032);
@@ -629,24 +611,23 @@
 
             const rearBase = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.032, 0.0065, 0.024)),
-                m.sightMetal
+                m.sight
             );
             rearSightGroup.add(rearBase);
 
-            // 左右照門立柱（中間留出寬敞瞄準視窗）
             for (const side of [-1, 1]) {
                 const post = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.005, 0.016, 0.006)),
-                    m.sightMetal
+                    this._trackGeo(new THREE.BoxGeometry(0.005, 0.015, 0.006)),
+                    m.sight
                 );
-                post.position.set(side * 0.010, 0.010, -0.004);
+                post.position.set(side * 0.010, 0.0095, -0.004);
                 rearSightGroup.add(post);
             }
             const rearTopBar = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.025, 0.004, 0.006)),
-                m.sightMetal
+                m.sight
             );
-            rearTopBar.position.set(0, 0.017, -0.004);
+            rearTopBar.position.set(0, 0.016, -0.004);
             rearSightGroup.add(rearTopBar);
 
             const frontSightGroup = new THREE.Group();
@@ -656,15 +637,15 @@
 
             const frontBase = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.032, 0.0065, 0.024)),
-                m.sightMetal
+                m.sight
             );
             frontSightGroup.add(frontBase);
 
             const frontPost = new THREE.Mesh(
-                this._trackGeo(new THREE.CylinderGeometry(0.0022, 0.0026, 0.016, 10)),
-                m.sightMetal
+                this._trackGeo(new THREE.CylinderGeometry(0.0022, 0.0026, 0.015, 10)),
+                m.sight
             );
-            frontPost.position.set(0, 0.010, 0);
+            frontPost.position.set(0, 0.0095, 0);
             frontSightGroup.add(frontPost);
 
             // 6. 三角形鏤空沙色戰術槍托
@@ -709,10 +690,9 @@
             buttPad.position.set(0, -0.037, 0.265);
             stockGroup.add(buttPad);
 
-            // 7. 可視化餘彈透視窗彈匣（黑色 PMAG + 寬大側窗 + 30 顆明顯金黃色子彈）
+            // 7. 可視化餘彈透視窗彈匣
             this.magazineGroup = new THREE.Group();
             this.magazineGroup.name = 'M4UrgiWindowMagazineGroup';
-            // 微微向左與前下方傾斜，讓第一人稱視角能清楚看到彈匣側窗與黃銅子彈
             this.magazineGroup.position.set(-0.004, -0.122, -0.086);
             this.magazineGroup.rotation.set(0.16, -0.18, 0.06);
             this.weaponBodyGroup.add(this.magazineGroup);
@@ -742,7 +722,6 @@
             magRightWall.position.set(magW * 0.5 - 0.003, 0, 0);
             this.magazineGroup.add(magRightWall);
 
-            // 左側上下窄框，留出大面積透視窗直接看穿內部子彈
             const leftTopStrip = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.006, 0.014, magD - 0.012)),
                 m.mag
@@ -766,7 +745,6 @@
 
             this.magazineMesh = this.magazineGroup;
 
-            // 30 顆金黃色子彈（靠近透視窗外側排列，清晰可見）
             const roundGeo = this._trackGeo(new THREE.CylinderGeometry(0.0058, 0.0058, 0.032, 12));
             roundGeo.rotateZ(Math.PI / 2);
             this.ammoInstancedMesh = new THREE.InstancedMesh(roundGeo, m.brass, MAX_MAG_ROUNDS);
@@ -781,7 +759,7 @@
             windowPane.position.set(-magW * 0.5 + 0.0005, 0, 0);
             this.magazineGroup.add(windowPane);
 
-            // 8. 寫實多層次槍口焰與動態點光源
+            // 8. 多層次槍口焰與動態點光源
             this.muzzleAnchor = new THREE.Object3D();
             this.muzzleAnchor.name = 'M4UrgiMuzzleAnchor';
             this.muzzleAnchor.position.set(
@@ -791,10 +769,10 @@
             );
             this.weaponBodyGroup.add(this.muzzleAnchor);
 
-            const coreGeo = this._trackGeo(new THREE.ConeGeometry(0.038, 0.14, 12));
+            const coreGeo = this._trackGeo(new THREE.ConeGeometry(0.036, 0.13, 12));
             coreGeo.rotateX(-Math.PI / 2);
             this.muzzleCoreMesh = new THREE.Mesh(coreGeo, this._materials.muzzleCore);
-            this.muzzleCoreMesh.position.set(0, 0, -0.058);
+            this.muzzleCoreMesh.position.set(0, 0, -0.055);
             this.muzzleCoreMesh.visible = false;
             this.muzzleAnchor.add(this.muzzleCoreMesh);
 
@@ -803,13 +781,13 @@
             this.muzzlePlumeGroup.visible = false;
             this.muzzleAnchor.add(this.muzzlePlumeGroup);
 
-            const petalGeo = this._trackGeo(new THREE.ConeGeometry(0.072, 0.25, 9));
+            const petalGeo = this._trackGeo(new THREE.ConeGeometry(0.068, 0.23, 9));
             petalGeo.rotateX(-Math.PI / 2);
             const petalAngles = [0, Math.PI * 0.5, Math.PI, Math.PI * 1.5];
             for (let p = 0; p < petalAngles.length; p++) {
                 const ang = petalAngles[p];
                 const petal = new THREE.Mesh(petalGeo, this._materials.muzzlePlume);
-                petal.position.set(Math.cos(ang) * 0.024, Math.sin(ang) * 0.024, -0.11);
+                petal.position.set(Math.cos(ang) * 0.022, Math.sin(ang) * 0.022, -0.105);
                 petal.rotation.z = ang;
                 petal.rotation.y = Math.cos(ang) * 0.24;
                 petal.rotation.x = -Math.sin(ang) * 0.24;
@@ -817,7 +795,7 @@
             }
 
             if (typeof THREE.PointLight === 'function') {
-                this.muzzleLight = new THREE.PointLight(0xffaa3b, 0, 7.5, 1.8);
+                this.muzzleLight = new THREE.PointLight(0xffaa3b, 0, 7.0, 1.8);
                 this.muzzleLight.position.set(0, 0.02, -0.08);
                 this.muzzleAnchor.add(this.muzzleLight);
             }
@@ -1092,7 +1070,6 @@
                     const zPos = (col === 0 ? -0.015 : 0.015) + (row % 2 === 0 ? -0.002 : 0.002);
                     const yPos = yStart + row * yStep;
 
-                    // 靠左側窗口貼近透視窗，清晰露出金黃色彈頭與彈殼
                     this._dummyObj.position.set(-0.009, yPos, zPos);
                     this._dummyObj.rotation.set(0, 0, 0);
                     this._dummyObj.scale.set(1, 1, 1);
@@ -1176,12 +1153,21 @@
         }
 
         triggerFireKick() {
-            this._recoilPosZ = Math.min(0.11, this._recoilPosZ + M4_URGI_SPECS.recoilKickZ);
-            this._recoilPosY = Math.min(0.05, this._recoilPosY + M4_URGI_SPECS.recoilKickY);
-            this._recoilRotX = Math.min(0.19, this._recoilRotX + M4_URGI_SPECS.recoilPitch);
-            this._recoilRotZ = (Math.random() - 0.5) * 2 * M4_URGI_SPECS.recoilRoll;
+            // 較克制且帶有不規則微擾的後座力，避免過度往後撞或單調平移
+            const randBiasX = (Math.random() - 0.5) * 0.008;
+            const randBiasY = (Math.random() - 0.35) * 0.007;
+            const randYaw = (Math.random() - 0.5) * 2 * M4_URGI_SPECS.recoilYaw;
+            const randRoll = (Math.random() - 0.5) * 2 * M4_URGI_SPECS.recoilRoll;
 
-            this._boltKickZ = 0.06;
+            this._recoilPosZ = clamp(this._recoilPosZ + M4_URGI_SPECS.recoilKickZ * (0.8 + Math.random() * 0.4), 0, 0.042);
+            this._recoilPosY = clamp(this._recoilPosY + M4_URGI_SPECS.recoilKickY + randBiasY, -0.01, 0.02);
+            this._recoilPosX = clamp(this._recoilPosX + randBiasX, -0.015, 0.015);
+            this._recoilRotX = clamp(this._recoilRotX + M4_URGI_SPECS.recoilPitch * (0.8 + Math.random() * 0.45), 0, 0.065);
+            this._recoilRotY = clamp(this._recoilRotY + randYaw, -0.035, 0.035);
+            this._recoilRotZ = clamp(this._recoilRotZ + randRoll, -0.05, 0.05);
+            this._jitterTimer = 0.06;
+
+            this._boltKickZ = 0.052;
             this._boltPhase = 1.0;
 
             if (!this._isReloading) {
@@ -1209,7 +1195,7 @@
             }
 
             if (this.muzzleLight) {
-                this.muzzleLight.intensity = 8.0;
+                this.muzzleLight.intensity = 7.5;
             }
 
             this._spawnMuzzleSparksAndShell();
@@ -1296,7 +1282,6 @@
             let targetRotZ = 0;
 
             if (this._isReloading) {
-                // 換彈時向外側傾並微往下，避免穿模
                 targetRotX = 0.18;
                 targetRotY = -0.16;
                 targetRotZ = -0.28;
@@ -1320,22 +1305,45 @@
             this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY, alpha);
             this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ, alpha);
 
-            const recoilDecay = Math.exp(-22 * dt);
+            const recoilDecay = Math.exp(-26 * dt);
             this._recoilPosZ *= recoilDecay;
             this._recoilPosY *= recoilDecay;
+            this._recoilPosX *= recoilDecay;
             this._recoilRotX *= recoilDecay;
+            this._recoilRotY *= recoilDecay;
             this._recoilRotZ *= recoilDecay;
 
+            let microX = 0;
+            let microY = 0;
+            let microRotX = 0;
+            let microRotZ = 0;
+            if (this._jitterTimer > 0) {
+                this._jitterTimer = Math.max(0, this._jitterTimer - dt);
+                const mag = this._jitterTimer / 0.06;
+                microX = (Math.random() - 0.5) * 0.004 * mag;
+                microY = (Math.random() - 0.5) * 0.004 * mag;
+                microRotX = (Math.random() - 0.5) * 0.012 * mag;
+                microRotZ = (Math.random() - 0.5) * 0.016 * mag;
+            }
+
             if (this.weaponBodyGroup) {
-                this.weaponBodyGroup.position.set(0, this._recoilPosY, this._recoilPosZ);
-                this.weaponBodyGroup.rotation.set(this._recoilRotX, 0, this._recoilRotZ);
+                this.weaponBodyGroup.position.set(
+                    this._recoilPosX + microX,
+                    this._recoilPosY + microY,
+                    this._recoilPosZ
+                );
+                this.weaponBodyGroup.rotation.set(
+                    this._recoilRotX + microRotX,
+                    this._recoilRotY,
+                    this._recoilRotZ + microRotZ
+                );
             }
 
             if (this.boltCarrierGroup) {
                 if (this._boltPhase > 0.001) {
                     this._boltPhase = Math.max(0, this._boltPhase - dt * 19.0);
                     const cycle = Math.sin(this._boltPhase * Math.PI);
-                    this._boltKickZ = cycle * 0.056;
+                    this._boltKickZ = cycle * 0.052;
                 } else {
                     this._boltKickZ = lerp(this._boltKickZ, 0, 1 - Math.exp(-40 * dt));
                 }
@@ -1369,7 +1377,7 @@
                 const lifeRatio = clamp(this._flashTimer / 0.052, 0, 1);
                 if (this.muzzleCoreMat) this.muzzleCoreMat.opacity = 0.98 * lifeRatio;
                 if (this.muzzlePlumeMat) this.muzzlePlumeMat.opacity = 0.84 * lifeRatio;
-                if (this.muzzleLight) this.muzzleLight.intensity = 8.0 * lifeRatio;
+                if (this.muzzleLight) this.muzzleLight.intensity = 7.5 * lifeRatio;
 
                 if (this._flashTimer <= 0) {
                     if (this.muzzleCoreMesh) this.muzzleCoreMesh.visible = false;
