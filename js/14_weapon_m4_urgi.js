@@ -226,7 +226,7 @@
             this._isAiming = false;
             this._isSprinting = false;
             this._reloadProgress = 0;
-            this._reloadDuration = 1.25;
+            this._reloadDuration = 1.50;
             this._isReloading = false;
             this._reloadClock = 0;
             this._walkClock = 0;
@@ -285,7 +285,7 @@
         }
 
         _resolveReloadDurationFromState(fallbackDuration) {
-            const base = typeof fallbackDuration === 'number' && fallbackDuration > 0.15 ? fallbackDuration : 1.25;
+            const base = typeof fallbackDuration === 'number' && fallbackDuration > 0.15 ? fallbackDuration : 1.50;
             const inspectMod = TacticalWarfare.FpReloadInspect;
             if (inspectMod) {
                 const candidates = [
@@ -1435,9 +1435,10 @@
         _bindEvents() {
             if (!EventBus || !Events) return;
 
-            if (Events.WEAPON_FIRE) {
+            const fireEvts = [Events.WEAPON_FIRE, Events.WEAPON_FIRED, 'weapon:fired'].filter(Boolean);
+            for (let i = 0; i < fireEvts.length; i++) {
                 this._unsubscribers.push(
-                    EventBus.on(Events.WEAPON_FIRE, (payload) => {
+                    EventBus.on(fireEvts[i], (payload) => {
                         if (!this._isVisible) return;
                         if (payload && payload.weaponId && payload.weaponId !== M4_URGI_SPECS.id) return;
                         this.triggerFireKick();
@@ -1445,19 +1446,20 @@
                 );
             }
 
-            if (Events.WEAPON_EQUIP) {
+            const equipEvts = [Events.WEAPON_EQUIP, Events.WEAPON_SWITCHED, 'weapon:switched'].filter(Boolean);
+            for (let i = 0; i < equipEvts.length; i++) {
                 this._unsubscribers.push(
-                    EventBus.on(Events.WEAPON_EQUIP, (payload) => {
-                        const weaponId = payload && (payload.weaponId || payload.id);
+                    EventBus.on(equipEvts[i], (payload) => {
+                        const weaponId = payload && (payload.weaponId || payload.weaponKey || payload.id);
                         if (weaponId) {
-                            this.setVisible(weaponId === M4_URGI_SPECS.id);
+                            this.setVisible(String(weaponId).toUpperCase().indexOf('M4') !== -1 || weaponId === M4_URGI_SPECS.id);
                             this._syncAmmoCountFromState(true);
                         }
                     })
                 );
             }
 
-            const reloadStartEvts = [Events.WEAPON_RELOAD_START, Events.RELOAD_START].filter(Boolean);
+            const reloadStartEvts = [Events.WEAPON_RELOAD_START, Events.RELOAD_START, Events.RELOAD_STARTED].filter(Boolean);
             for (let i = 0; i < reloadStartEvts.length; i++) {
                 this._unsubscribers.push(
                     EventBus.on(reloadStartEvts[i], (payload) => {
@@ -1489,6 +1491,7 @@
             const reloadEndEvts = [
                 Events.WEAPON_RELOAD_FINISH,
                 Events.WEAPON_RELOAD_CANCEL,
+                Events.RELOAD_FINISH,
                 Events.RELOAD_COMPLETE
             ].filter(Boolean);
             for (let i = 0; i < reloadEndEvts.length; i++) {
@@ -1814,6 +1817,7 @@
                 }
             }
 
+            this.rootGroup.updateMatrixWorld(true);
             this._updateShellsSparksAndSmoke(dt);
         }
 
