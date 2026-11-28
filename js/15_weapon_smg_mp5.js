@@ -18,7 +18,7 @@
 
     const MP5_SPECS = Object.freeze({
         id: 'MP5',
-        displayName: 'MP5-SD Tactical',
+        displayName: 'MP5-SD Modular',
         hipPosition: { x: 0.245, y: -0.238, z: -0.33 },
         adsPosition: { x: 0.0, y: -0.156, z: -0.285 },
         sprintPosition: { x: 0.268, y: -0.262, z: -0.33 },
@@ -312,6 +312,11 @@
                 baseRgb: [22, 25, 30],
                 amp: 20
             });
+            const railMaps = createMetalTextureSet(THREE, {
+                seed: 5104,
+                baseRgb: [40, 44, 52],
+                amp: 18
+            });
             const steelMaps = createMetalTextureSet(THREE, {
                 seed: 5103,
                 baseRgb: [158, 166, 178],
@@ -322,6 +327,8 @@
             this._trackTex(receiverMaps.roughnessMap);
             this._trackTex(suppressorMaps.map);
             this._trackTex(suppressorMaps.roughnessMap);
+            this._trackTex(railMaps.map);
+            this._trackTex(railMaps.roughnessMap);
             this._trackTex(steelMaps.map);
             this._trackTex(steelMaps.roughnessMap);
 
@@ -334,6 +341,17 @@
                 roughness: 0.30,
                 metalness: 0.90,
                 envMapIntensity: 1.5
+            });
+
+            const railMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: railMaps.map,
+                bumpMap: railMaps.roughnessMap,
+                bumpScale: 0.0035,
+                roughnessMap: railMaps.roughnessMap,
+                roughness: 0.28,
+                metalness: 0.92,
+                envMapIntensity: 1.55
             });
 
             const suppressorMat = new THREE.MeshStandardMaterial({
@@ -369,21 +387,6 @@
                 envMapIntensity: 1.7
             });
 
-            const opticGlassMat = new THREE.MeshPhysicalMaterial({
-                color: 0x93c5fd,
-                transparent: true,
-                opacity: 0.16,
-                roughness: 0.06,
-                metalness: 0.1,
-                depthWrite: false
-            });
-
-            const reticleMat = new THREE.MeshBasicMaterial({
-                color: 0xff2a2a,
-                transparent: true,
-                opacity: 0.95
-            });
-
             const brassMat = new THREE.MeshStandardMaterial({
                 color: 0xffcf38,
                 roughness: 0.16,
@@ -408,12 +411,11 @@
 
             this._materials = {
                 receiver: receiverMat,
+                rail: railMat,
                 suppressor: suppressorMat,
                 polymer: polymerMat,
                 cavity: cavityMat,
                 steel: handleSteelMat,
-                opticGlass: opticGlassMat,
-                reticle: reticleMat,
                 brass: brassMat,
                 flash: this.muzzleFlashMat,
                 spark: sparkMat
@@ -445,6 +447,23 @@
             );
             upperReceiver.position.set(0, 0.008, -0.055);
             this.weaponBodyGroup.add(upperReceiver);
+
+            // 整段上導軌 + 導軌槽齒（已移除紅點鏡）
+            const topRailSpine = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.024, 0.006, 0.40)),
+                m.rail
+            );
+            topRailSpine.position.set(0, 0.033, -0.145);
+            this.weaponBodyGroup.add(topRailSpine);
+
+            for (let r = 0; r < 24; r++) {
+                const slotTooth = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.025, 0.0028, 0.007)),
+                    m.cavity
+                );
+                slotTooth.position.set(0, 0.0365, 0.045 - r * 0.016);
+                this.weaponBodyGroup.add(slotTooth);
+            }
 
             const lowerReceiver = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.036, 0.042, 0.145)),
@@ -508,23 +527,102 @@
             );
             this.boltCarrierGroup.add(boltMesh);
 
-            // 3. 標誌性圓筒形帶防滑紋 MP5-SD 一體式消音器
+            // 3. 模組化護木（包含上導軌、左右側導軌、下導軌與側面散熱孔）
+            const modHandguardGroup = new THREE.Group();
+            modHandguardGroup.name = 'Mp5ModularQuadRailHandguard';
+            modHandguardGroup.position.set(0, 0.010, -0.255);
+            this.weaponBodyGroup.add(modHandguardGroup);
+
+            const hgLen = 0.205;
+            const hgW = 0.044;
+            const hgH = 0.042;
+
+            // 上導軌座與齒槽
+            const hgTopRail = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.024, 0.007, hgLen)),
+                m.rail
+            );
+            hgTopRail.position.set(0, hgH * 0.5 + 0.002, 0);
+            modHandguardGroup.add(hgTopRail);
+
+            for (let t = 0; t < 12; t++) {
+                const topSlot = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.025, 0.0025, 0.007)),
+                    m.cavity
+                );
+                topSlot.position.set(0, hgH * 0.5 + 0.0055, 0.088 - t * 0.016);
+                modHandguardGroup.add(topSlot);
+            }
+
+            // 下導軌座與齒槽
+            const hgBottomRail = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.024, 0.008, hgLen)),
+                m.rail
+            );
+            hgBottomRail.position.set(0, -hgH * 0.5 - 0.003, 0);
+            modHandguardGroup.add(hgBottomRail);
+
+            for (let b = 0; b < 12; b++) {
+                const botSlot = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.025, 0.0025, 0.007)),
+                    m.cavity
+                );
+                botSlot.position.set(0, -hgH * 0.5 - 0.007, 0.088 - b * 0.016);
+                modHandguardGroup.add(botSlot);
+            }
+
+            // 左右側導軌 + 模組化散熱孔／肋條
+            for (const side of [-1, 1]) {
+                const sidePanel = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.006, hgH - 0.006, hgLen - 0.008)),
+                    m.receiver
+                );
+                sidePanel.position.set(side * (hgW * 0.5 - 0.003), 0, 0);
+                modHandguardGroup.add(sidePanel);
+
+                const sideRail = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.008, 0.015, hgLen - 0.014)),
+                    m.rail
+                );
+                sideRail.position.set(side * (hgW * 0.5 + 0.002), 0.003, 0);
+                modHandguardGroup.add(sideRail);
+
+                for (let s = 0; s < 11; s++) {
+                    const sTooth = new THREE.Mesh(
+                        this._trackGeo(new THREE.BoxGeometry(0.009, 0.013, 0.007)),
+                        m.cavity
+                    );
+                    sTooth.position.set(side * (hgW * 0.5 + 0.0022), 0.003, 0.08 - s * 0.016);
+                    modHandguardGroup.add(sTooth);
+                }
+
+                // 下側模組化散熱孔
+                for (let v = 0; v < 5; v++) {
+                    const ventHole = new THREE.Mesh(
+                        this._trackGeo(new THREE.BoxGeometry(0.0075, 0.007, 0.022)),
+                        m.cavity
+                    );
+                    ventHole.position.set(side * (hgW * 0.5 - 0.0025), -0.011, 0.068 - v * 0.034);
+                    modHandguardGroup.add(ventHole);
+                }
+            }
+
+            // 4. 標誌性圓筒形帶防滑紋 MP5-SD 一體式消音器
             const sdGroup = new THREE.Group();
             sdGroup.name = 'Mp5SdIntegralSuppressorGroup';
-            sdGroup.position.set(0, 0.011, -0.345);
+            sdGroup.position.set(0, 0.011, -0.445);
             this.weaponBodyGroup.add(sdGroup);
 
-            const sdLen = 0.295;
-            const sdRadius = 0.0245;
+            const sdLen = 0.215;
+            const sdRadius = 0.0235;
             const sdCylinder = new THREE.Mesh(
                 this._trackGeo(new THREE.CylinderGeometry(sdRadius, sdRadius, sdLen, 20)).rotateX(Math.PI / 2),
                 m.suppressor
             );
             sdGroup.add(sdCylinder);
 
-            // 防滑環紋
-            for (let i = 0; i < 11; i++) {
-                const zPos = 0.125 - i * 0.025;
+            for (let i = 0; i < 8; i++) {
+                const zPos = 0.085 - i * 0.024;
                 const gripRing = new THREE.Mesh(
                     this._trackGeo(new THREE.TorusGeometry(sdRadius + 0.0008, 0.0013, 8, 22)),
                     m.cavity
@@ -533,7 +631,6 @@
                 sdGroup.add(gripRing);
             }
 
-            // 前消音端蓋
             const endCap = new THREE.Mesh(
                 this._trackGeo(new THREE.CylinderGeometry(0.013, 0.016, 0.016, 16)).rotateX(Math.PI / 2),
                 m.cavity
@@ -541,10 +638,10 @@
             endCap.position.set(0, 0, -sdLen * 0.5 - 0.006);
             sdGroup.add(endCap);
 
-            // 4. 鼓式照門與前準心護翼
+            // 5. 鼓式照門與前準心護翼
             const drumSightGroup = new THREE.Group();
             drumSightGroup.name = 'Mp5DrumRearSightGroup';
-            drumSightGroup.position.set(0, 0.034, 0.025);
+            drumSightGroup.position.set(0, 0.036, 0.025);
             this.weaponBodyGroup.add(drumSightGroup);
 
             const drumBase = new THREE.Mesh(
@@ -587,47 +684,6 @@
             );
             hoodPost.position.set(0, 0.004, 0);
             frontHoodGroup.add(hoodPost);
-
-            // 5. 導軌紅點鏡
-            const opticGroup = new THREE.Group();
-            opticGroup.name = 'Mp5RailRedDotOpticGroup';
-            opticGroup.position.set(0, 0.032, -0.068);
-            this.weaponBodyGroup.add(opticGroup);
-
-            const mountBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.028, 0.007, 0.058)),
-                m.receiver
-            );
-            opticGroup.add(mountBase);
-
-            const riserBlock = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.024, 0.014, 0.044)),
-                m.polymer
-            );
-            riserBlock.position.set(0, 0.010, 0);
-            opticGroup.add(riserBlock);
-
-            const opticHousing = new THREE.Mesh(
-                this._trackGeo(new THREE.CylinderGeometry(0.0165, 0.0165, 0.054, 18)).rotateX(Math.PI / 2),
-                m.receiver
-            );
-            opticHousing.position.set(0, 0.030, 0);
-            opticGroup.add(opticHousing);
-
-            const opticLens = new THREE.Mesh(
-                this._trackGeo(new THREE.CircleGeometry(0.0145, 16)),
-                m.opticGlass
-            );
-            opticLens.position.set(0, 0.030, -0.0275);
-            opticLens.rotation.y = Math.PI;
-            opticGroup.add(opticLens);
-
-            const redDotMesh = new THREE.Mesh(
-                this._trackGeo(new THREE.SphereGeometry(0.0018, 8, 8)),
-                m.reticle
-            );
-            redDotMesh.position.set(0, 0.030, -0.012);
-            opticGroup.add(redDotMesh);
 
             // 6. 弧形 30 發金屬彈匣 + 內部黃銅子彈
             this.magazineGroup = new THREE.Group();
@@ -994,7 +1050,6 @@
             this.ammoInstancedMesh.instanceMatrix.needsUpdate = true;
         }
 
-        // 支援外部或手部動畫驅動 HK Slap 拍擊拉機柄上膛
         triggerHkSlap(duration) {
             this._hkSlapActive = true;
             this._hkSlapProgress = 0;
@@ -1233,7 +1288,6 @@
 
                 const p = this._reloadProgress;
 
-                // 0.00 ~ 0.66：換彈操作與插匣；0.66 ~ 0.84：HK Slap 拍擊拉機柄；0.84 ~ 1.00：乾脆頂肩收尾
                 if (p < 0.66) {
                     const t = clamp(p / 0.66, 0, 1);
                     const arc = Math.sin(t * Math.PI);
@@ -1246,7 +1300,6 @@
                     snapAlpha = 1 - Math.exp(-36 * dt);
                 } else if (p < 0.84) {
                     const slapT = clamp((p - 0.66) / 0.18, 0, 1);
-                    // 拉機柄先後拉鎖定（0~0.45），再被左掌向下拍擊釋放前衝（0.45~1.0）
                     if (slapT < 0.45) {
                         slapOffsetZ = (slapT / 0.45) * 0.125;
                     } else {
@@ -1327,7 +1380,6 @@
             this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY, snapAlpha);
             this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ, snapAlpha);
 
-            // 射擊抖動與後座衰減
             const recoilDecay = Math.exp(-28 * dt);
             this._recoilPosZ *= recoilDecay;
             this._recoilPosY *= recoilDecay;
