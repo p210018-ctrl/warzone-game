@@ -21,15 +21,15 @@
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
         adsPosition: { x: 0.0, y: -0.165, z: -0.295 },
-        sprintPosition: { x: 0.145, y: -0.305, z: -0.245 },
-        sprintRotation: { x: 0.12, y: 0.56, z: -0.30 },
+        sprintPosition: { x: 0.145, y: -0.295, z: -0.225 },
+        sprintRotation: { x: 0.14, y: 0.58, z: -0.28 },
         sprintSpear: {
-            thrustX: 0.068,
-            thrustY: 0.074,
-            thrustZ: 0.245,
-            thrustRotX: 0.14,
-            thrustRotY: 0.22,
-            thrustRotZ: 0.16
+            thrustX: 0.125,
+            thrustY: 0.135,
+            thrustZ: 0.390,
+            thrustRotX: 0.24,
+            thrustRotY: 0.36,
+            thrustRotZ: 0.28
         },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
