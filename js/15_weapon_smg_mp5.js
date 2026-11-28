@@ -22,8 +22,8 @@
         hipPosition: { x: 0.245, y: -0.238, z: -0.33 },
         adsPosition: { x: 0.0, y: -0.156, z: -0.285 },
         sprintPosition: { x: 0.268, y: -0.262, z: -0.33 },
-        muzzleLocalOffset: { x: 0.0, y: 0.012, z: -0.585 },
-        ejectionPortOffset: { x: 0.022, y: 0.012, z: -0.045 },
+        muzzleLocalOffset: { x: 0.0, y: 0.011, z: -0.585 },
+        ejectionPortOffset: { x: 0.022, y: 0.011, z: -0.045 },
         recoilKickZ: 0.022,
         recoilKickY: 0.007,
         recoilPitch: 0.032,
@@ -175,14 +175,12 @@
             this._reloadDuration = 1.45;
             this._reloadClock = 0;
 
-            // HK Slap 專用狀態
             this._hkSlapActive = false;
             this._hkSlapProgress = 0;
             this._hkSlapDuration = 0.24;
             this._hkSlapTimer = 0;
             this._slapImpulse = 0;
 
-            // 後座與抖動狀態
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
             this._recoilPosX = 0;
@@ -448,7 +446,7 @@
             upperReceiver.position.set(0, 0.008, -0.055);
             this.weaponBodyGroup.add(upperReceiver);
 
-            // 整段上導軌 + 導軌槽齒（已移除紅點鏡）
+            // 整段上導軌 + 導軌槽齒
             const topRailSpine = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.024, 0.006, 0.40)),
                 m.rail
@@ -492,13 +490,13 @@
                 this._trackGeo(new THREE.BoxGeometry(0.012, 0.008, 0.205)),
                 m.cavity
             );
-            cockingSlotChannel.position.set(-0.018, 0.018, -0.235);
+            cockingSlotChannel.position.set(-0.018, 0.017, -0.235);
             cockingSlotChannel.rotation.z = -0.35;
             this.weaponBodyGroup.add(cockingSlotChannel);
 
             this.chargingHandleGroup = new THREE.Group();
             this.chargingHandleGroup.name = 'Mp5HkChargingHandleGroup';
-            this.chargingHandleGroup.position.set(-0.020, 0.018, -0.325);
+            this.chargingHandleGroup.position.set(-0.020, 0.017, -0.325);
             this.weaponBodyGroup.add(this.chargingHandleGroup);
 
             const handleStem = new THREE.Mesh(
@@ -537,7 +535,6 @@
             const hgW = 0.044;
             const hgH = 0.042;
 
-            // 上導軌座與齒槽
             const hgTopRail = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.024, 0.007, hgLen)),
                 m.rail
@@ -554,7 +551,6 @@
                 modHandguardGroup.add(topSlot);
             }
 
-            // 下導軌座與齒槽
             const hgBottomRail = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.024, 0.008, hgLen)),
                 m.rail
@@ -571,7 +567,6 @@
                 modHandguardGroup.add(botSlot);
             }
 
-            // 左右側導軌 + 模組化散熱孔／肋條
             for (const side of [-1, 1]) {
                 const sidePanel = new THREE.Mesh(
                     this._trackGeo(new THREE.BoxGeometry(0.006, hgH - 0.006, hgLen - 0.008)),
@@ -596,7 +591,6 @@
                     modHandguardGroup.add(sTooth);
                 }
 
-                // 下側模組化散熱孔
                 for (let v = 0; v < 5; v++) {
                     const ventHole = new THREE.Mesh(
                         this._trackGeo(new THREE.BoxGeometry(0.0075, 0.007, 0.022)),
@@ -607,7 +601,7 @@
                 }
             }
 
-            // 4. 標誌性圓筒形帶防滑紋 MP5-SD 一體式消音器
+            // 4. 標誌性圓筒形帶防滑紋 MP5-SD 一體式消音器（中心對齊 x = 0, y = 0.011）
             const sdGroup = new THREE.Group();
             sdGroup.name = 'Mp5SdIntegralSuppressorGroup';
             sdGroup.position.set(0, 0.011, -0.445);
@@ -638,7 +632,9 @@
             endCap.position.set(0, 0, -sdLen * 0.5 - 0.006);
             sdGroup.add(endCap);
 
-            // 5. 鼓式照門與前準心護翼
+            // 5. 鼓式照門與抬高對齊的前準心護翼／準心柱（x = 0 與彈匣子彈／槍口軸線對齊）
+            const sightAxisY = 0.056;
+
             const drumSightGroup = new THREE.Group();
             drumSightGroup.name = 'Mp5DrumRearSightGroup';
             drumSightGroup.position.set(0, 0.036, 0.025);
@@ -654,38 +650,58 @@
                 this._trackGeo(new THREE.CylinderGeometry(0.0085, 0.0085, 0.012, 16)).rotateZ(Math.PI / 2),
                 m.receiver
             );
-            drumWheel.position.set(0, 0.009, 0);
+            drumWheel.position.set(0, sightAxisY - 0.036, 0);
             drumSightGroup.add(drumWheel);
 
             for (const s of [-1, 1]) {
                 const ear = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.003, 0.015, 0.014)),
+                    this._trackGeo(new THREE.BoxGeometry(0.003, 0.022, 0.014)),
                     m.receiver
                 );
-                ear.position.set(s * 0.0085, 0.008, 0);
+                ear.position.set(s * 0.0085, (sightAxisY - 0.036) * 0.5 + 0.002, 0);
                 drumSightGroup.add(ear);
             }
 
+            // 前準心往上抬高，護翼中心與準心尖端對齊 sightAxisY (0.056)
             const frontHoodGroup = new THREE.Group();
             frontHoodGroup.name = 'Mp5FrontSightHoodGroup';
-            frontHoodGroup.position.set(0, 0.036, -0.465);
+            frontHoodGroup.position.set(0, 0.034, -0.465);
             this.weaponBodyGroup.add(frontHoodGroup);
 
-            const hoodRing = new THREE.Mesh(
-                this._trackGeo(new THREE.TorusGeometry(0.0085, 0.0015, 8, 20)),
+            const frontBase = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.020, 0.005, 0.014)),
                 m.receiver
             );
-            hoodRing.position.set(0, 0.008, 0);
+            frontHoodGroup.add(frontBase);
+
+            const hoodCenterLocalY = sightAxisY - 0.034; // 0.022
+            const hoodRadius = 0.0095;
+
+            const hoodRing = new THREE.Mesh(
+                this._trackGeo(new THREE.TorusGeometry(hoodRadius, 0.0016, 10, 22)),
+                m.receiver
+            );
+            hoodRing.position.set(0, hoodCenterLocalY, 0);
             frontHoodGroup.add(hoodRing);
 
+            for (const s of [-1, 1]) {
+                const strutH = Math.max(0.004, hoodCenterLocalY - hoodRadius * 0.65);
+                const strut = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.0024, strutH, 0.004)),
+                    m.receiver
+                );
+                strut.position.set(s * (hoodRadius * 0.72), strutH * 0.5 + 0.001, 0);
+                frontHoodGroup.add(strut);
+            }
+
             const hoodPost = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0022, 0.007, 0.003)),
+                this._trackGeo(new THREE.BoxGeometry(0.0022, hoodCenterLocalY, 0.0032)),
                 m.steel
             );
-            hoodPost.position.set(0, 0.004, 0);
+            hoodPost.position.set(0, hoodCenterLocalY * 0.5 + 0.001, 0);
             frontHoodGroup.add(hoodPost);
 
-            // 6. 弧形 30 發金屬彈匣 + 內部黃銅子彈
+            // 6. 弧形 30 發金屬彈匣 + 內部黃銅子彈（x = 0 與前準心、槍口中線對稱）
             this.magazineGroup = new THREE.Group();
             this.magazineGroup.name = 'Mp5CurvedMagazineGroup';
             this.magazineGroup.position.set(0, -0.105, -0.088);
@@ -1415,7 +1431,7 @@
             }
 
             if (this.chargingHandleGroup) {
-                this.chargingHandleGroup.position.set(-0.020, 0.018 + slapDropY, -0.325 + slapOffsetZ);
+                this.chargingHandleGroup.position.set(-0.020, 0.017 + slapDropY, -0.325 + slapOffsetZ);
                 this.chargingHandleGroup.rotation.z = slapTiltZ;
             }
 
