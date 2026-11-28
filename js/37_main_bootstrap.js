@@ -870,10 +870,22 @@
                     TacticalWarfare.FpReloadInspect.update(dt);
                 }
 
+                const inspectReloading = Boolean(
+                    TacticalWarfare.FpReloadInspect &&
+                    (TacticalWarfare.FpReloadInspect.isReloading || TacticalWarfare.FpReloadInspect.active)
+                );
                 const isReloading = Boolean(
-                    (TacticalWarfare.FpReloadInspect && (TacticalWarfare.FpReloadInspect.isReloading || TacticalWarfare.FpReloadInspect.active)) ||
+                    inspectReloading ||
                     (GameState && typeof GameState.get === 'function' && (GameState.get('weapons.isReloading', false) || GameState.get('isReloading', false)))
                 );
+
+                if (GameState && typeof GameState.patch === 'function') {
+                    const patchObj = { isReloading: isReloading };
+                    if (inspectReloading && typeof TacticalWarfare.FpReloadInspect.progress === 'number') {
+                        patchObj.reloadProgress = clamp(TacticalWarfare.FpReloadInspect.progress, 0, 1);
+                    }
+                    GameState.patch('weapons', patchObj, true);
+                }
 
                 const isSprinting = Boolean(
                     (inputCtrl && typeof inputCtrl.isActionActive === 'function' && inputCtrl.isActionActive('sprint')) ||
@@ -901,6 +913,9 @@
                     }
                     if (entry.id === currentWeaponId && typeof entry.mod.update === 'function') {
                         entry.mod.update(dt, bobArg);
+                        if (entry.mod.rootGroup && typeof entry.mod.rootGroup.updateMatrixWorld === 'function') {
+                            entry.mod.rootGroup.updateMatrixWorld(true);
+                        }
                     }
                 }
 
