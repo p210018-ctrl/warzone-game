@@ -965,6 +965,7 @@
                         weaponCamera: resolvedView.weaponCamera,
                         bobOffset: bobArg,
                         speedRatio: syncedMove.speedRatio,
+                        spearThrust: syncedMove.spearThrust,
                         isAiming: isAiming,
                         isSprinting: syncedMove.isSprinting,
                         isReloading: isReloading,
