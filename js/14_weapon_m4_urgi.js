@@ -20,7 +20,7 @@
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
-        adsPosition: { x: -0.001, y: -0.118, z: -0.295 },
+        adsPosition: { x: -0.001, y: -0.124, z: -0.295 },
         sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -192,6 +192,9 @@
 
             this.rootGroup = null;
             this.weaponBodyGroup = null;
+            this.rearSightGroup = null;
+            this.rearPeepRing = null;
+            this.rearMainTower = null;
             this.magazineGroup = null;
             this.magazineMesh = null;
             this.boltCarrierGroup = null;
@@ -218,9 +221,9 @@
             this._isAiming = false;
             this._isSprinting = false;
             this._reloadProgress = 0;
-            this._reloadDuration = 1.05;
+            this._reloadDuration = 1.25;
             this._isReloading = false;
-            this._reloadTremorClock = 0;
+            this._reloadClock = 0;
 
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
@@ -273,6 +276,30 @@
                 if (cur && cur.isScene) return cur;
             }
             return null;
+        }
+
+        _resolveReloadDurationFromState(fallbackDuration) {
+            const base = typeof fallbackDuration === 'number' && fallbackDuration > 0.15 ? fallbackDuration : 1.25;
+            const inspectMod = TacticalWarfare.FpReloadInspect;
+            if (inspectMod) {
+                const candidates = [
+                    inspectMod.duration,
+                    inspectMod.reloadDuration,
+                    inspectMod.totalDuration
+                ];
+                for (let i = 0; i < candidates.length; i++) {
+                    if (typeof candidates[i] === 'number' && candidates[i] > 0.15) {
+                        return candidates[i];
+                    }
+                }
+            }
+            if (GameState && typeof GameState.get === 'function') {
+                const gsDur = GameState.get('weapons.reloadDuration', null) ?? GameState.get('reloadDuration', null);
+                if (typeof gsDur === 'number' && gsDur > 0.15) {
+                    return gsDur;
+                }
+            }
+            return base;
         }
 
         init(options) {
@@ -363,11 +390,10 @@
 
             const darkSightMaps = createDetailedMetalMaps(THREE, {
                 seed: 9204,
-                baseRgb: [44, 49, 57],
-                contrastAmp: 16,
-                specularBias: 12,
-                oxidation: true,
-                oxidationCount: 8
+                baseRgb: [86, 94, 106],
+                contrastAmp: 8,
+                specularBias: 8,
+                oxidation: false
             });
 
             this._trackTex(blackMetalMaps.map);
@@ -458,15 +484,14 @@
                 envMapIntensity: 1.9
             });
 
+            // 照門改用輕薄、低噪點、微透的纖細金屬材質，避免厚重黑塊遮擋瞄準視野
             const sightMetalMat = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                map: darkSightMaps.map,
-                bumpMap: darkSightMaps.bumpMap,
-                bumpScale: 0.0025,
-                roughnessMap: darkSightMaps.roughnessMap,
-                roughness: 0.32,
-                metalness: 0.92,
-                envMapIntensity: 1.5
+                color: 0x7b8594,
+                roughness: 0.42,
+                metalness: 0.72,
+                transparent: true,
+                opacity: 0.78,
+                envMapIntensity: 1.15
             });
 
             this.muzzleCoreMat = new THREE.MeshBasicMaterial({
@@ -552,7 +577,7 @@
             for (let r = 0; r < 34; r++) {
                 const slotTooth = new THREE.Mesh(
                     this._trackGeo(new THREE.BoxGeometry(0.027, 0.003, 0.008)),
-                    m.sight
+                    m.cavity
                 );
                 slotTooth.position.set(0, 0.040, 0.052 - r * 0.016);
                 this.weaponBodyGroup.add(slotTooth);
@@ -621,7 +646,7 @@
 
             const triggerGuard = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.020, 0.006, 0.048)),
-                m.sight
+                m.cavity
             );
             triggerGuard.position.set(0, -0.046, -0.038);
             this.weaponBodyGroup.add(triggerGuard);
@@ -677,7 +702,7 @@
                 for (let s = 0; s < 10; s++) {
                     const sTooth = new THREE.Mesh(
                         this._trackGeo(new THREE.BoxGeometry(0.008, 0.011, 0.007)),
-                        m.sight
+                        m.cavity
                     );
                     sTooth.position.set(side * (hexRadius * 1.0), 0.002, 0.085 - s * 0.023);
                     handguardGroup.add(sTooth);
@@ -694,7 +719,7 @@
             for (let bToothIdx = 0; bToothIdx < 12; bToothIdx++) {
                 const bTooth = new THREE.Mesh(
                     this._trackGeo(new THREE.BoxGeometry(0.020, 0.008, 0.007)),
-                    m.sight
+                    m.cavity
                 );
                 bTooth.position.set(0, -hexRadius * 0.95, 0.11 - bToothIdx * 0.022);
                 handguardGroup.add(bTooth);
@@ -764,48 +789,52 @@
                 birdcageGroup.add(tine);
             }
 
-            const sightCenterY = 0.056;
+            // 照門往上抬高、並大幅縮薄底座與圓環壁厚，避免遮擋開鏡視野
+            const sightCenterY = 0.068;
 
             const rearSightGroup = new THREE.Group();
             rearSightGroup.name = 'M4UrgiSketchedRearSight';
             rearSightGroup.position.set(0, 0.041, 0.032);
+            this.rearSightGroup = rearSightGroup;
             this.weaponBodyGroup.add(rearSightGroup);
 
             const rearBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.034, 0.007, 0.024)),
+                this._trackGeo(new THREE.BoxGeometry(0.024, 0.0035, 0.012)),
                 m.sight
             );
             rearSightGroup.add(rearBase);
 
             const leftKnob = new THREE.Mesh(
-                this._trackGeo(new THREE.CylinderGeometry(0.0042, 0.0042, 0.006, 12)).rotateZ(Math.PI / 2),
+                this._trackGeo(new THREE.CylinderGeometry(0.0028, 0.0028, 0.003, 10)).rotateZ(Math.PI / 2),
                 m.sight
             );
-            leftKnob.position.set(-0.0195, -0.001, 0.002);
+            leftKnob.position.set(-0.014, -0.0005, 0.001);
             rearSightGroup.add(leftKnob);
 
             const rightKnob = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0075, 0.0075, 0.009)),
+                this._trackGeo(new THREE.BoxGeometry(0.0045, 0.0045, 0.005)),
                 m.sight
             );
-            rightKnob.position.set(0.020, -0.001, 0.002);
+            rightKnob.position.set(0.014, -0.0005, 0.001);
             rearSightGroup.add(rightKnob);
 
             const ringCenterLocalY = sightCenterY - 0.041;
-            const ringRadius = 0.0072;
+            const ringRadius = 0.0068;
 
             const rearMainTower = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.013, ringCenterLocalY - ringRadius * 0.6, 0.007)),
+                this._trackGeo(new THREE.BoxGeometry(0.007, ringCenterLocalY - ringRadius * 0.65, 0.0032)),
                 m.sight
             );
-            rearMainTower.position.set(0, (ringCenterLocalY - ringRadius * 0.6) * 0.5 + 0.002, -0.002);
+            rearMainTower.position.set(0, (ringCenterLocalY - ringRadius * 0.65) * 0.5 + 0.001, -0.001);
+            this.rearMainTower = rearMainTower;
             rearSightGroup.add(rearMainTower);
 
             const rearPeepRing = new THREE.Mesh(
-                this._trackGeo(new THREE.TorusGeometry(ringRadius, 0.0022, 12, 26)),
+                this._trackGeo(new THREE.TorusGeometry(ringRadius, 0.0011, 10, 24)),
                 m.sight
             );
-            rearPeepRing.position.set(0, ringCenterLocalY, -0.002);
+            rearPeepRing.position.set(0, ringCenterLocalY, -0.001);
+            this.rearPeepRing = rearPeepRing;
             rearSightGroup.add(rearPeepRing);
 
             const frontSightGroup = new THREE.Group();
@@ -814,34 +843,34 @@
             this.weaponBodyGroup.add(frontSightGroup);
 
             const frontBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.032, 0.007, 0.024)),
+                this._trackGeo(new THREE.BoxGeometry(0.024, 0.0035, 0.012)),
                 m.sight
             );
             frontSightGroup.add(frontBase);
 
             for (const side of [-1, 1]) {
                 const wingLower = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0042, 0.0085, 0.006)),
+                    this._trackGeo(new THREE.BoxGeometry(0.0024, 0.0075, 0.003)),
                     m.sight
                 );
-                wingLower.position.set(side * 0.0115, 0.0065, 0);
+                wingLower.position.set(side * 0.0095, 0.0065, 0);
                 frontSightGroup.add(wingLower);
 
                 const wingFlare = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0038, 0.0065, 0.006)),
+                    this._trackGeo(new THREE.BoxGeometry(0.0022, 0.006, 0.003)),
                     m.sight
                 );
-                wingFlare.position.set(side * 0.0132, 0.012, 0);
+                wingFlare.position.set(side * 0.0112, 0.012, 0);
                 wingFlare.rotation.z = -side * 0.42;
                 frontSightGroup.add(wingFlare);
             }
 
             const frontTipLocalY = sightCenterY - 0.041;
             const frontPostPin = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0028, frontTipLocalY, 0.005)),
+                this._trackGeo(new THREE.BoxGeometry(0.0018, frontTipLocalY, 0.0025)),
                 m.sight
             );
-            frontPostPin.position.set(0, frontTipLocalY * 0.5 + 0.002, 0);
+            frontPostPin.position.set(0, frontTipLocalY * 0.5 + 0.001, 0);
             frontSightGroup.add(frontPostPin);
 
             const stockGroup = new THREE.Group();
@@ -1388,10 +1417,8 @@
                         if (payload && payload.weaponId && payload.weaponId !== M4_URGI_SPECS.id) return;
                         this._isReloading = true;
                         this._reloadProgress = 0;
-                        this._reloadTremorClock = 0;
-                        this._reloadDuration = payload && typeof payload.duration === 'number' && payload.duration > 0
-                            ? Math.min(payload.duration, 1.15)
-                            : 1.05;
+                        this._reloadClock = 0;
+                        this._reloadDuration = this._resolveReloadDurationFromState(payload && payload.duration);
                         this._syncAmmoCountFromState(true);
                     })
                 );
@@ -1403,6 +1430,9 @@
                         if (!this._isVisible || !payload) return;
                         this._isReloading = true;
                         this._reloadProgress = clamp(payload.progress || 0, 0, 1);
+                        if (typeof payload.duration === 'number' && payload.duration > 0.15) {
+                            this._reloadDuration = payload.duration;
+                        }
                         this._syncAmmoCountFromState(true);
                     })
                 );
@@ -1418,7 +1448,7 @@
                     EventBus.on(reloadEndEvts[i], () => {
                         this._isReloading = false;
                         this._reloadProgress = 0;
-                        this._reloadTremorClock = 0;
+                        this._reloadClock = 0;
                         this._syncAmmoCountFromState(true);
                     })
                 );
@@ -1481,7 +1511,7 @@
             if (!this._isVisible) {
                 this._isReloading = false;
                 this._reloadProgress = 0;
-                this._reloadTremorClock = 0;
+                this._reloadClock = 0;
                 this._boltKickZ = 0;
                 this._boltPhase = 0;
                 this._flashTimer = 0;
@@ -1518,13 +1548,13 @@
             if (next && !this._isReloading) {
                 this._isReloading = true;
                 this._reloadProgress = 0;
-                this._reloadTremorClock = 0;
-                this._reloadDuration = 1.05;
+                this._reloadClock = 0;
+                this._reloadDuration = this._resolveReloadDurationFromState(this._reloadDuration);
                 this._syncAmmoCountFromState(true);
             } else if (!next && this._isReloading) {
                 this._isReloading = false;
                 this._reloadProgress = 0;
-                this._reloadTremorClock = 0;
+                this._reloadClock = 0;
                 this._syncAmmoCountFromState(true);
             }
         }
@@ -1558,54 +1588,59 @@
             if (stateReloading && !this._isReloading) {
                 this._isReloading = true;
                 this._reloadProgress = 0;
-                this._reloadTremorClock = 0;
-                this._reloadDuration = 1.05;
+                this._reloadClock = 0;
+                this._reloadDuration = this._resolveReloadDurationFromState(this._reloadDuration);
             }
 
-            // 乾脆俐落的換彈節奏：快甩、快插彈匣、最後急煞抵肩頂一下
+            // 同步換彈進度：若外部有提供 progress 則直接跟隨，否則依實際換彈時長推進
             let swayX = 0;
             let swayY = 0;
             let swayZ = 0;
             let swayRotX = 0;
             let swayRotY = 0;
             let swayRotZ = 0;
-            let snapAlpha = 1 - Math.exp(-24 * dt);
+            let snapAlpha = 1 - Math.exp(-32 * dt);
 
             if (this._isReloading) {
-                this._reloadTremorClock += dt;
-                this._reloadProgress = Math.min(1, this._reloadProgress + dt / Math.max(0.2, this._reloadDuration));
+                this._reloadClock += dt;
+                const inspectMod = TacticalWarfare.FpReloadInspect;
+                const externalProg = inspectMod && typeof inspectMod.progress === 'number'
+                    ? clamp(inspectMod.progress, 0, 1)
+                    : (GameState && typeof GameState.get === 'function' ? GameState.get('weapons.reloadProgress', null) : null);
 
-                const p = this._reloadProgress;
-                const tClock = this._reloadTremorClock;
-
-                if (p < 0.65) {
-                    // 前段快甩與插匣：俐落傾角 + 緊湊操作感
-                    const segT = p / 0.65;
-                    const cantCurve = Math.sin(Math.min(1, segT * 1.15) * Math.PI);
-                    const punchOsc = Math.sin(tClock * 18.0) * 0.0018 * cantCurve;
-                    swayX = -0.026 * cantCurve + punchOsc;
-                    swayY = 0.012 * cantCurve;
-                    swayZ = -0.010 * cantCurve;
-                    swayRotX = 0.16 * cantCurve;
-                    swayRotY = -0.24 * cantCurve;
-                    swayRotZ = -0.34 * cantCurve;
-                    snapAlpha = 1 - Math.exp(-28 * dt);
+                if (typeof externalProg === 'number' && !Number.isNaN(externalProg)) {
+                    this._reloadProgress = clamp(externalProg, 0, 1);
                 } else {
-                    // 後段急煞抵肩頂一下（0.65 ~ 1.0）：往後 +Z 狠頂肩口並快速回正
-                    const seatT = (p - 0.65) / 0.35;
-                    const sharpBump = Math.pow(Math.sin(Math.min(1, seatT * 1.45) * Math.PI), 0.7);
-                    swayZ += 0.046 * sharpBump;
-                    swayY += 0.009 * sharpBump;
-                    swayX += 0.006 * sharpBump;
-                    swayRotX += 0.065 * sharpBump;
-                    swayRotZ += 0.045 * sharpBump;
-                    snapAlpha = 1 - Math.exp(-36 * dt);
+                    this._reloadProgress = Math.min(1, this._reloadProgress + dt / Math.max(0.2, this._reloadDuration));
                 }
 
-                if (this._reloadProgress >= 1) {
+                const p = this._reloadProgress;
+
+                if (p < 0.84) {
+                    // 前段俐落甩槍與換匣，不做慢吞吞的來回晃動
+                    const phaseT = clamp(p / 0.84, 0, 1);
+                    const snapArc = Math.sin(phaseT * Math.PI);
+                    swayX = -0.024 * snapArc;
+                    swayY = 0.010 * snapArc;
+                    swayZ = -0.008 * snapArc;
+                    swayRotX = 0.12 * snapArc;
+                    swayRotY = -0.22 * snapArc;
+                    swayRotZ = -0.32 * snapArc;
+                    snapAlpha = 1 - Math.exp(-36 * dt);
+                } else {
+                    // 尾段（0.84 ~ 1.0）短促乾脆往肩口頂一下（+Z 急頂並迅速鎖定）
+                    const bumpT = clamp((p - 0.84) / 0.16, 0, 1);
+                    const sharpHit = Math.sin(Math.min(1, bumpT * 1.65) * Math.PI);
+                    swayZ += 0.036 * sharpHit;
+                    swayY += 0.005 * sharpHit;
+                    swayRotX += 0.045 * sharpHit;
+                    snapAlpha = 1 - Math.exp(-50 * dt);
+                }
+
+                if (this._reloadProgress >= 1 && !stateReloading) {
                     this._isReloading = false;
                     this._reloadProgress = 0;
-                    this._reloadTremorClock = 0;
+                    this._reloadClock = 0;
                     this._ammoCount = MAX_MAG_ROUNDS;
                     this._lastRenderedAmmoCount = MAX_MAG_ROUNDS;
                     this._rebuildAmmoInstances(MAX_MAG_ROUNDS);
@@ -1613,6 +1648,18 @@
             }
 
             this._syncAmmoCountFromState(false);
+
+            // 開鏡時照門圓環再往上抬一點，避免擋住目標視野
+            if (this.rearPeepRing) {
+                const baseRingY = 0.027;
+                const targetRingY = this._isAiming ? baseRingY + 0.0065 : baseRingY;
+                this.rearPeepRing.position.y = lerp(this.rearPeepRing.position.y, targetRingY, 1 - Math.exp(-28 * dt));
+            }
+            if (this.rearMainTower && this.rearPeepRing) {
+                const towerH = Math.max(0.004, this.rearPeepRing.position.y - 0.004);
+                this.rearMainTower.scale.y = towerH / 0.021;
+                this.rearMainTower.position.y = towerH * 0.5 + 0.001;
+            }
 
             let targetPos = M4_URGI_SPECS.hipPosition;
             let targetRotX = 0;
@@ -1753,6 +1800,9 @@
 
             this.rootGroup = null;
             this.weaponBodyGroup = null;
+            this.rearSightGroup = null;
+            this.rearPeepRing = null;
+            this.rearMainTower = null;
             this.magazineGroup = null;
             this.magazineMesh = null;
             this.boltCarrierGroup = null;
