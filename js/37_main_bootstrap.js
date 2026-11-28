@@ -11,10 +11,10 @@
     const GameState = TacticalWarfare.GameState;
 
     const WEAPON_MODULES = Object.freeze([
-        { id: 'M4A1', key: 'WeaponM4Urgi' },
-        { id: 'MP5', key: 'WeaponSmgMp5' },
-        { id: 'AX50', key: 'WeaponSniperAx50' },
-        { id: 'X16', key: 'WeaponPistolX16' }
+        { id: 'M4A1', keys: ['WeaponM4Urgi', 'WeaponM4A1', 'M4A1'] },
+        { id: 'MP5', keys: ['WeaponSmgMp5', 'WeaponMp5', 'MP5'] },
+        { id: 'AX50', keys: ['WeaponSniperAx50', 'WeaponAx50', 'AX50'] },
+        { id: 'X16', keys: ['WeaponPistolX16', 'WeaponX16', 'X16'] }
     ]);
 
     function clamp(val, minVal, maxVal) {
@@ -26,6 +26,17 @@
 
     function lerp(a, b, t) {
         return a + (b - a) * t;
+    }
+
+    function resolveNamespaceModule(keys) {
+        if (!TacticalWarfare || !Array.isArray(keys)) return null;
+        for (let i = 0; i < keys.length; i = i + 1) {
+            const k = keys[i];
+            if (k && TacticalWarfare[k]) {
+                return { key: k, mod: TacticalWarfare[k] };
+            }
+        }
+        return null;
     }
 
     class MainBootstrap {
@@ -148,9 +159,9 @@
             const list = [];
             for (let i = 0; i < WEAPON_MODULES.length; i = i + 1) {
                 const item = WEAPON_MODULES[i];
-                const mod = TacticalWarfare[item.key];
-                if (mod) {
-                    list.push({ id: item.id, key: item.key, mod: mod });
+                const resolved = resolveNamespaceModule(item.keys);
+                if (resolved && resolved.mod) {
+                    list.push({ id: item.id, key: resolved.key, mod: resolved.mod });
                 }
             }
             return list;
@@ -286,12 +297,17 @@
                 }
             }
 
+            const wM4 = (resolveNamespaceModule(['WeaponM4Urgi', 'WeaponM4A1', 'M4A1']) || {}).mod || null;
+            const wMp5 = (resolveNamespaceModule(['WeaponSmgMp5', 'WeaponMp5', 'MP5']) || {}).mod || null;
+            const wAx50 = (resolveNamespaceModule(['WeaponSniperAx50', 'WeaponAx50', 'AX50']) || {}).mod || null;
+            const wX16 = (resolveNamespaceModule(['WeaponPistolX16', 'WeaponX16', 'X16']) || {}).mod || null;
+
             if (TacticalWarfare.FpReloadInspect && typeof TacticalWarfare.FpReloadInspect.init === 'function') {
                 TacticalWarfare.FpReloadInspect.init({
-                    weaponM4: TacticalWarfare.WeaponM4Urgi,
-                    weaponMp5: TacticalWarfare.WeaponSmgMp5,
-                    weaponAx50: TacticalWarfare.WeaponSniperAx50,
-                    weaponX16: TacticalWarfare.WeaponPistolX16
+                    weaponM4: wM4,
+                    weaponMp5: wMp5,
+                    weaponAx50: wAx50,
+                    weaponX16: wX16
                 });
             }
 
