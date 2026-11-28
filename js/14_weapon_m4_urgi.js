@@ -23,13 +23,13 @@
         adsPosition: { x: 0.0, y: -0.165, z: -0.295 },
         sprintPosition: { x: 0.145, y: -0.275, z: -0.310 },
         sprintRotation: { x: 0.14, y: 0.46, z: -0.26 },
-        sprintSwing: {
-            posX: 0.042,
-            posY: 0.026,
-            posZ: 0.016,
-            rotX: 0.09,
-            rotY: 0.22,
-            rotZ: 0.16
+        sprintSpear: {
+            thrustX: 0.024,
+            thrustY: 0.018,
+            thrustZ: 0.078,
+            thrustRotX: 0.08,
+            thrustRotY: 0.18,
+            thrustRotZ: 0.10
         },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -349,39 +349,40 @@
 
             const moveWeight = smoothstep(0.05, 0.45, speedRatio);
             const sprintTarget = (isSprintingState && speedRatio > 0.12 && !this._isAiming && !this._isReloading) ? 1.0 : 0.0;
-            this._sprintBlend = lerp(this._sprintBlend, sprintTarget, clamp(1 - Math.exp(-8.5 * dt), 0, 1));
+            this._sprintBlend = lerp(this._sprintBlend, sprintTarget, clamp(1 - Math.exp(-6.0 * dt), 0, 1));
 
             const sp = this._sprintBlend;
             const walkWeight = moveWeight * (1 - sp);
             const sprintWeight = moveWeight * sp;
 
-            const freqHz = lerp(2.1, 2.85, sp);
+            const freqHz = lerp(1.5, 1.75, sp);
             this._swayClock += dt * freqHz * Math.PI * 2;
 
-            const waveSide = Math.sin(this._swayClock);
-            const waveArc = Math.sin(this._swayClock - Math.PI * 0.5) * 0.5 + 0.5;
+            const spearStroke = Math.sin(this._swayClock) * 0.5 + 0.5;
+            const spearWave = Math.sin(this._swayClock);
 
-            const walkPosX = waveSide * 0.0045 * walkWeight;
-            const walkRotZ = -waveSide * 0.016 * walkWeight;
+            const walkPosX = spearWave * 0.0035 * walkWeight;
+            const walkPosY = -spearStroke * 0.004 * walkWeight;
+            const walkRotZ = -spearWave * 0.012 * walkWeight;
 
-            const sw = M4_URGI_SPECS.sprintSwing;
-            const sprintPosX = waveSide * sw.posX * sprintWeight;
-            const sprintPosY = -waveArc * sw.posY * sprintWeight;
-            const sprintPosZ = waveSide * sw.posZ * sprintWeight;
+            const spSpec = M4_URGI_SPECS.sprintSpear;
+            const sprintPosX = (-spearStroke * spSpec.thrustX) * sprintWeight;
+            const sprintPosY = (-spearStroke * spSpec.thrustY) * sprintWeight;
+            const sprintPosZ = (-spearStroke * spSpec.thrustZ) * sprintWeight;
 
-            const sprintRotX = (waveArc - 0.5) * sw.rotX * sprintWeight;
-            const sprintRotY = waveSide * sw.rotY * sprintWeight;
-            const sprintRotZ = -waveSide * sw.rotZ * sprintWeight;
+            const sprintRotX = (spearStroke * spSpec.thrustRotX) * sprintWeight;
+            const sprintRotY = (spearStroke * spSpec.thrustRotY) * sprintWeight;
+            const sprintRotZ = (-spearStroke * spSpec.thrustRotZ) * sprintWeight;
 
             const dampScale = this._isAiming ? 0.22 : (this._isReloading ? 0.25 : 1.0);
             const targetX = (walkPosX + sprintPosX) * dampScale;
-            const targetY = sprintPosY * dampScale;
+            const targetY = (walkPosY + sprintPosY) * dampScale;
             const targetZ = sprintPosZ * dampScale;
             const targetRotX = sprintRotX * dampScale;
             const targetRotY = sprintRotY * dampScale;
             const targetRotZ = (walkRotZ + sprintRotZ) * dampScale;
 
-            const smoothAlpha = clamp(1 - Math.exp(-10.0 * dt), 0, 1);
+            const smoothAlpha = clamp(1 - Math.exp(-8.0 * dt), 0, 1);
             this._smoothSwayX = lerp(this._smoothSwayX, targetX, smoothAlpha);
             this._smoothSwayY = lerp(this._smoothSwayY, targetY, smoothAlpha);
             this._smoothSwayZ = lerp(this._smoothSwayZ, targetZ, smoothAlpha);
