@@ -42,6 +42,11 @@
         return a + (b - a) * t;
     }
 
+    function smoothstep(edge0, edge1, x) {
+        const t = clamp((x - edge0) / Math.max(0.0001, edge1 - edge0), 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
     function createSmokePuffTexture(THREE) {
         if (!THREE || typeof document === 'undefined') return null;
         const size = 128;
@@ -174,6 +179,7 @@
             this._reloadProgress = 0;
             this._reloadDuration = 1.45;
             this._reloadClock = 0;
+            this._walkClock = 0;
 
             this._hkSlapActive = false;
             this._hkSlapProgress = 0;
@@ -243,6 +249,57 @@
                 if (typeof gs === 'number' && gs > 0.2) return gs;
             }
             return base;
+        }
+
+        _computeWalkMotion(dt, bobX, bobY) {
+            let speedRatio = 0;
+            let isSprintingState = this._isSprinting;
+
+            if (GameState && typeof GameState.get === 'function') {
+                const gsSpeed = GameState.get('player.speedRatio', null) ?? GameState.get('speedRatio', null);
+                const gsMoving = Boolean(GameState.get('player.isMoving', false) || GameState.get('isMoving', false));
+                const gsSprint = GameState.get('player.isSprinting', null) ?? GameState.get('isSprinting', null);
+
+                if (typeof gsSprint === 'boolean') {
+                    isSprintingState = isSprintingState || gsSprint;
+                }
+                if (typeof gsSpeed === 'number' && !Number.isNaN(gsSpeed)) {
+                    speedRatio = clamp(gsSpeed, 0, 1.5);
+                } else if (gsMoving) {
+                    speedRatio = isSprintingState ? 1.18 : 0.80;
+                }
+            }
+
+            const bobMag = Math.hypot(bobX, bobY);
+            if (speedRatio <= 0.01 && bobMag > 0.00015) {
+                speedRatio = clamp(bobMag * 33.0, 0.18, isSprintingState ? 1.28 : 0.94);
+            }
+
+            const walkWeight = smoothstep(0.03, 0.35, speedRatio);
+            const cadenceHz = isSprintingState ? 11.0 : 8.0;
+            if (walkWeight > 0.005) {
+                this._walkClock += dt * cadenceHz * Math.PI * (0.65 + 0.35 * walkWeight);
+            }
+
+            const stridePhase = this._walkClock + bobX * 45.0;
+            const stepBounce = Math.abs(Math.sin(stridePhase));
+            const lateralCycle = Math.sin(stridePhase * 0.5);
+            const surgeCycle = Math.cos(stridePhase);
+
+            const sprintBoost = isSprintingState ? 1.35 : 1.0;
+            const aimDamp = this._isAiming ? 0.18 : 1.0;
+            const actionDamp = (this._isReloading || this._hkSlapActive) ? 0.22 : 1.0;
+            const amp = walkWeight * sprintBoost * aimDamp * actionDamp;
+
+            return {
+                weight: walkWeight,
+                posX: lateralCycle * 0.0080 * amp,
+                posY: -(1.0 - stepBounce) * 0.0090 * amp,
+                posZ: surgeCycle * 0.0058 * amp,
+                rotX: (stepBounce - 0.5) * 0.042 * amp,
+                rotY: lateralCycle * 0.038 * amp,
+                rotZ: -lateralCycle * 0.048 * amp
+            };
         }
 
         init(options) {
@@ -438,7 +495,6 @@
             this.weaponBodyGroup.name = 'Mp5SdBodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 機匣本體
             const upperReceiver = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.042, 0.046, 0.215)),
                 m.receiver
@@ -446,7 +502,6 @@
             upperReceiver.position.set(0, 0.008, -0.055);
             this.weaponBodyGroup.add(upperReceiver);
 
-            // 整段上導軌 + 導軌槽齒
             const topRailSpine = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.024, 0.006, 0.40)),
                 m.rail
@@ -485,7 +540,6 @@
             triggerGuard.position.set(0, -0.043, -0.036);
             this.weaponBodyGroup.add(triggerGuard);
 
-            // 2. 槍管左上方外露拉機柄導槽 + 可動 HK 拉機柄
             const cockingSlotChannel = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.012, 0.008, 0.205)),
                 m.cavity
@@ -513,7 +567,6 @@
             handleKnob.position.set(-0.012, 0.001, 0);
             this.chargingHandleGroup.add(handleKnob);
 
-            // 槍機座（拋殼口）
             this.boltCarrierGroup = new THREE.Group();
             this.boltCarrierGroup.name = 'Mp5BoltCarrierGroup';
             this.boltCarrierGroup.position.set(0.020, 0.011, -0.052);
@@ -525,7 +578,6 @@
             );
             this.boltCarrierGroup.add(boltMesh);
 
-            // 3. 模組化護木（包含上導軌、左右側導軌、下導軌與側面散熱孔）
             const modHandguardGroup = new THREE.Group();
             modHandguardGroup.name = 'Mp5ModularQuadRailHandguard';
             modHandguardGroup.position.set(0, 0.011, -0.255);
@@ -601,7 +653,6 @@
                 }
             }
 
-            // 4. 標誌性圓筒形帶防滑紋 MP5-SD 一體式消音器
             const sdGroup = new THREE.Group();
             sdGroup.name = 'Mp5SdIntegralSuppressorGroup';
             sdGroup.position.set(0, 0.013, -0.445);
@@ -632,7 +683,6 @@
             endCap.position.set(0, 0, -sdLen * 0.5 - 0.006);
             sdGroup.add(endCap);
 
-            // 5. 隨模型抬高的鼓式照門與前準心護翼／準心柱（對齊子彈與彈道軸線）
             const sightAxisY = 0.064;
 
             const drumSightGroup = new THREE.Group();
@@ -673,7 +723,7 @@
             );
             frontHoodGroup.add(frontBase);
 
-            const hoodCenterLocalY = sightAxisY - 0.035; // 0.029
+            const hoodCenterLocalY = sightAxisY - 0.035;
             const hoodRadius = 0.010;
 
             const hoodRing = new THREE.Mesh(
@@ -700,7 +750,6 @@
             hoodPost.position.set(0, hoodCenterLocalY * 0.5 + 0.001, 0);
             frontHoodGroup.add(hoodPost);
 
-            // 6. 弧形 30 發金屬彈匣 + 內部黃銅子彈
             this.magazineGroup = new THREE.Group();
             this.magazineGroup.name = 'Mp5CurvedMagazineGroup';
             this.magazineGroup.position.set(0, -0.105, -0.088);
@@ -727,7 +776,6 @@
             this.ammoInstancedMesh = new THREE.InstancedMesh(roundGeo, m.brass, MAX_MAG_ROUNDS);
             this.magazineGroup.add(this.ammoInstancedMesh);
 
-            // 7. 伸縮式金屬雙軌槍托
             const stockGroup = new THREE.Group();
             stockGroup.name = 'Mp5RetractableTwinRailStock';
             stockGroup.position.set(0, 0.006, 0.052);
@@ -750,7 +798,6 @@
             buttPlate.rotation.x = 0.12;
             stockGroup.add(buttPlate);
 
-            // 8. 槍口錨點與低調消音火光
             this.muzzleAnchor = new THREE.Object3D();
             this.muzzleAnchor.name = 'Mp5SdMuzzleAnchor';
             this.muzzleAnchor.position.set(
@@ -1386,14 +1433,15 @@
 
             const bobX = bobOffset && typeof bobOffset.x === 'number' ? bobOffset.x : 0;
             const bobY = bobOffset && typeof bobOffset.y === 'number' ? bobOffset.y : 0;
+            const walkMotion = this._computeWalkMotion(dt, bobX, bobY);
 
-            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + swayX, snapAlpha);
-            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + swayY, snapAlpha);
-            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ, snapAlpha);
+            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + swayX + walkMotion.posX, snapAlpha);
+            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + swayY + walkMotion.posY, snapAlpha);
+            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ + walkMotion.posZ, snapAlpha);
 
-            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX, snapAlpha);
-            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY, snapAlpha);
-            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ, snapAlpha);
+            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX + walkMotion.rotX, snapAlpha);
+            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY + walkMotion.rotY, snapAlpha);
+            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ + walkMotion.rotZ, snapAlpha);
 
             const recoilDecay = Math.exp(-28 * dt);
             this._recoilPosZ *= recoilDecay;
