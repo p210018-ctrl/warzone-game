@@ -218,7 +218,7 @@
             this._isAiming = false;
             this._isSprinting = false;
             this._reloadProgress = 0;
-            this._reloadDuration = 1.65;
+            this._reloadDuration = 1.05;
             this._isReloading = false;
             this._reloadTremorClock = 0;
 
@@ -535,7 +535,6 @@
             this.weaponBodyGroup.name = 'M4UrgiBodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 消光黑金屬上下機匣＋全段延伸上導軌
             const upperReceiver = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.048, 0.052, 0.22)),
                 m.receiver
@@ -566,7 +565,6 @@
             lowerReceiver.position.set(0, -0.028, -0.036);
             this.weaponBodyGroup.add(lowerReceiver);
 
-            // 快慢機撥桿與網球拍式彈匣釋放鈕
             const fireSelectorGroup = new THREE.Group();
             fireSelectorGroup.name = 'M4UrgiFireSelector';
             fireSelectorGroup.position.set(-0.024, -0.018, -0.016);
@@ -628,7 +626,6 @@
             triggerGuard.position.set(0, -0.046, -0.038);
             this.weaponBodyGroup.add(triggerGuard);
 
-            // 2. 金屬槍機片
             this.boltCarrierGroup = new THREE.Group();
             this.boltCarrierGroup.name = 'M4UrgiBoltCarrierGroup';
             this.boltCarrierGroup.position.set(0.0245, 0.011, -0.055);
@@ -647,7 +644,6 @@
             chargingHandle.position.set(0.004, 0.004, 0.064);
             this.boltCarrierGroup.add(chargingHandle);
 
-            // 3. 六邊形截面沙色護木＋左右側導軌＋下導軌
             const handguardGroup = new THREE.Group();
             handguardGroup.name = 'M4UrgiHexMlokHandguard';
             handguardGroup.position.set(0, 0.010, -0.325);
@@ -730,7 +726,6 @@
                 }
             }
 
-            // 4. 槍管與鳥籠消焰器
             const barrelMesh = new THREE.Mesh(
                 this._trackGeo(new THREE.CylinderGeometry(0.0105, 0.0125, 0.145, 16)).rotateX(Math.PI / 2),
                 m.barrel
@@ -769,7 +764,6 @@
                 birdcageGroup.add(tine);
             }
 
-            // 5. 照門與前準星
             const sightCenterY = 0.056;
 
             const rearSightGroup = new THREE.Group();
@@ -850,7 +844,6 @@
             frontPostPin.position.set(0, frontTipLocalY * 0.5 + 0.002, 0);
             frontSightGroup.add(frontPostPin);
 
-            // 6. 三角形鏤空沙色戰術槍托
             const stockGroup = new THREE.Group();
             stockGroup.name = 'M4UrgiTriangleSkeletonStock';
             stockGroup.position.set(0, 0.004, 0.062);
@@ -892,7 +885,6 @@
             buttPad.position.set(0, -0.037, 0.265);
             stockGroup.add(buttPad);
 
-            // 7. 可視化餘彈透視窗彈匣
             this.magazineGroup = new THREE.Group();
             this.magazineGroup.name = 'M4UrgiWindowMagazineGroup';
             this.magazineGroup.position.set(-0.004, -0.122, -0.086);
@@ -961,7 +953,6 @@
             windowPane.position.set(-magW * 0.5 + 0.0005, 0, 0);
             this.magazineGroup.add(windowPane);
 
-            // 8. 多層次槍口焰與動態點光源
             this.muzzleAnchor = new THREE.Object3D();
             this.muzzleAnchor.name = 'M4UrgiMuzzleAnchor';
             this.muzzleAnchor.position.set(
@@ -1399,8 +1390,8 @@
                         this._reloadProgress = 0;
                         this._reloadTremorClock = 0;
                         this._reloadDuration = payload && typeof payload.duration === 'number' && payload.duration > 0
-                            ? payload.duration
-                            : 1.65;
+                            ? Math.min(payload.duration, 1.15)
+                            : 1.05;
                         this._syncAmmoCountFromState(true);
                     })
                 );
@@ -1522,6 +1513,22 @@
             this._isSprinting = Boolean(sprinting);
         }
 
+        setReloading(reloading) {
+            const next = Boolean(reloading);
+            if (next && !this._isReloading) {
+                this._isReloading = true;
+                this._reloadProgress = 0;
+                this._reloadTremorClock = 0;
+                this._reloadDuration = 1.05;
+                this._syncAmmoCountFromState(true);
+            } else if (!next && this._isReloading) {
+                this._isReloading = false;
+                this._reloadProgress = 0;
+                this._reloadTremorClock = 0;
+                this._syncAmmoCountFromState(true);
+            }
+        }
+
         getMuzzleWorldPosition(targetVector) {
             const THREE = global.THREE;
             const out = targetVector || new THREE.Vector3();
@@ -1543,7 +1550,6 @@
 
             this.rootGroup.visible = true;
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
-            const alpha = 1 - Math.exp(-16 * dt);
 
             const stateReloading = Boolean(
                 GameState && typeof GameState.get === 'function' &&
@@ -1553,15 +1559,17 @@
                 this._isReloading = true;
                 this._reloadProgress = 0;
                 this._reloadTremorClock = 0;
+                this._reloadDuration = 1.05;
             }
 
-            // 參考影片的換彈動態：自然手部操作晃動 + 換完彈往肩窩頂一下
+            // 乾脆俐落的換彈節奏：快甩、快插彈匣、最後急煞抵肩頂一下
             let swayX = 0;
             let swayY = 0;
             let swayZ = 0;
             let swayRotX = 0;
             let swayRotY = 0;
             let swayRotZ = 0;
+            let snapAlpha = 1 - Math.exp(-24 * dt);
 
             if (this._isReloading) {
                 this._reloadTremorClock += dt;
@@ -1570,23 +1578,28 @@
                 const p = this._reloadProgress;
                 const tClock = this._reloadTremorClock;
 
-                // 換匣與操作期間的柔順手部微晃（非高頻抖動）
-                const midMask = Math.sin(clamp(p / 0.78, 0, 1) * Math.PI);
-                swayX = -0.022 * midMask + Math.sin(tClock * 9.5) * 0.0022 * midMask;
-                swayY = 0.010 * midMask + Math.cos(tClock * 11.0) * 0.0020 * midMask;
-                swayRotX = 0.14 * midMask + Math.sin(tClock * 8.5) * 0.010 * midMask;
-                swayRotY = -0.20 * midMask + Math.cos(tClock * 10.0) * 0.012 * midMask;
-                swayRotZ = -0.28 * midMask + Math.sin(tClock * 12.0) * 0.014 * midMask;
-
-                // 換完彈收尾階段（p 在 0.72 ~ 1.0）：往肩口頂一下（向後 +Z 抵肩、略微帶起並回正）
-                if (p >= 0.72) {
-                    const seatT = (p - 0.72) / 0.28;
-                    const shoulderBump = Math.sin(Math.min(1, seatT * 1.35) * Math.PI);
-                    swayZ += 0.036 * shoulderBump;
-                    swayY += 0.006 * shoulderBump;
-                    swayX += 0.005 * shoulderBump;
-                    swayRotX += 0.045 * shoulderBump;
-                    swayRotZ += 0.035 * shoulderBump;
+                if (p < 0.65) {
+                    // 前段快甩與插匣：俐落傾角 + 緊湊操作感
+                    const segT = p / 0.65;
+                    const cantCurve = Math.sin(Math.min(1, segT * 1.15) * Math.PI);
+                    const punchOsc = Math.sin(tClock * 18.0) * 0.0018 * cantCurve;
+                    swayX = -0.026 * cantCurve + punchOsc;
+                    swayY = 0.012 * cantCurve;
+                    swayZ = -0.010 * cantCurve;
+                    swayRotX = 0.16 * cantCurve;
+                    swayRotY = -0.24 * cantCurve;
+                    swayRotZ = -0.34 * cantCurve;
+                    snapAlpha = 1 - Math.exp(-28 * dt);
+                } else {
+                    // 後段急煞抵肩頂一下（0.65 ~ 1.0）：往後 +Z 狠頂肩口並快速回正
+                    const seatT = (p - 0.65) / 0.35;
+                    const sharpBump = Math.pow(Math.sin(Math.min(1, seatT * 1.45) * Math.PI), 0.7);
+                    swayZ += 0.046 * sharpBump;
+                    swayY += 0.009 * sharpBump;
+                    swayX += 0.006 * sharpBump;
+                    swayRotX += 0.065 * sharpBump;
+                    swayRotZ += 0.045 * sharpBump;
+                    snapAlpha = 1 - Math.exp(-36 * dt);
                 }
 
                 if (this._reloadProgress >= 1) {
@@ -1618,13 +1631,13 @@
             const bobX = bobOffset && typeof bobOffset.x === 'number' ? bobOffset.x : 0;
             const bobY = bobOffset && typeof bobOffset.y === 'number' ? bobOffset.y : 0;
 
-            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + swayX, alpha);
-            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + swayY, alpha);
-            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ, alpha);
+            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + swayX, snapAlpha);
+            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + swayY, snapAlpha);
+            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ, snapAlpha);
 
-            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX, alpha);
-            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY, alpha);
-            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ, alpha);
+            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX, snapAlpha);
+            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY, snapAlpha);
+            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ, snapAlpha);
 
             const recoilDecay = Math.exp(-26 * dt);
             this._recoilPosZ *= recoilDecay;
@@ -1677,20 +1690,20 @@
                 let magDropX = 0;
                 if (this._isReloading) {
                     const p = this._reloadProgress;
-                    if (p < 0.45) {
-                        const t = p / 0.45;
-                        magDropY = -t * 0.095;
-                        magDropZ = -t * 0.030;
-                        magDropX = -t * 0.014;
-                    } else if (p < 0.55) {
-                        magDropY = -0.095;
-                        magDropZ = -0.030;
-                        magDropX = -0.014;
-                    } else {
-                        const t = (1 - p) / 0.45;
-                        magDropY = -t * 0.095;
-                        magDropZ = -t * 0.030;
-                        magDropX = -t * 0.014;
+                    if (p < 0.36) {
+                        const t = p / 0.36;
+                        magDropY = -t * 0.105;
+                        magDropZ = -t * 0.032;
+                        magDropX = -t * 0.016;
+                    } else if (p < 0.44) {
+                        magDropY = -0.105;
+                        magDropZ = -0.032;
+                        magDropX = -0.016;
+                    } else if (p < 0.72) {
+                        const t = 1 - (p - 0.44) / 0.28;
+                        magDropY = -t * 0.105;
+                        magDropZ = -t * 0.032;
+                        magDropX = -t * 0.016;
                     }
                 }
                 this.magazineGroup.position.x = -0.004 + magDropX;
