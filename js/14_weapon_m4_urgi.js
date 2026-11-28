@@ -19,7 +19,7 @@
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
-        adsPosition: { x: 0.0, y: -0.096, z: -0.315 },
+        adsPosition: { x: 0.0, y: -0.097, z: -0.315 },
         sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -41,11 +41,12 @@
         return a + (b - a) * t;
     }
 
-    function createMetallicMaps(THREE, seedVal, baseRgb, contrastAmp, specularBias) {
+    function createDetailedMetalMaps(THREE, opts) {
         if (!THREE || typeof document === 'undefined') {
             return { map: null, bumpMap: null, roughnessMap: null };
         }
-        const size = 128;
+        const cfg = opts || {};
+        const size = 256;
         const cCanvas = document.createElement('canvas');
         cCanvas.width = size;
         cCanvas.height = size;
@@ -60,26 +61,27 @@
             return { map: null, bumpMap: null, roughnessMap: null };
         }
 
-        let seed = (seedVal || 6123) >>> 0;
+        let seed = (cfg.seed || 7719) >>> 0;
         const rand = () => {
             seed = (seed * 1664525 + 1013904223) >>> 0;
             return seed / 4294967296;
         };
 
+        const baseRgb = cfg.baseRgb || [42, 46, 52];
+        const amp = typeof cfg.contrastAmp === 'number' ? cfg.contrastAmp : 20;
+        const spec = typeof cfg.specularBias === 'number' ? cfg.specularBias : 14;
+
         const cImg = cCtx.createImageData(size, size);
         const rImg = rCtx.createImageData(size, size);
-        const amp = typeof contrastAmp === 'number' ? contrastAmp : 20;
-        const spec = typeof specularBias === 'number' ? specularBias : 0;
 
         for (let y = 0; y < size; y++) {
-            const fineBrush = Math.sin(y * 1.35) * 6.5 + Math.cos(y * 3.1) * 3.5 + (rand() - 0.5) * amp;
+            const brush = Math.sin(y * 1.6) * 6.0 + Math.cos(y * 3.7) * 3.0 + (rand() - 0.5) * amp;
             for (let x = 0; x < size; x++) {
-                const crossGrain = Math.sin(x * 0.45 + y * 0.25) * 3.5 + (rand() - 0.5) * (amp * 0.75);
-                const delta = fineBrush + crossGrain;
-
-                const r = clamp(baseRgb[0] + delta, 10, 252);
-                const g = clamp(baseRgb[1] + delta, 10, 252);
-                const b = clamp(baseRgb[2] + delta, 10, 252);
+                const grain = Math.sin(x * 0.42 + y * 0.21) * 3.2 + (rand() - 0.5) * (amp * 0.7);
+                const delta = brush + grain;
+                const r = clamp(baseRgb[0] + delta, 12, 250);
+                const g = clamp(baseRgb[1] + delta, 12, 250);
+                const b = clamp(baseRgb[2] + delta, 12, 250);
 
                 const o = (y * size + x) * 4;
                 cImg.data[o] = r;
@@ -87,7 +89,7 @@
                 cImg.data[o + 2] = b;
                 cImg.data[o + 3] = 255;
 
-                const roughVal = clamp(82 - delta * 2.5 - spec, 20, 195);
+                const roughVal = clamp(82 - delta * 2.4 - spec, 20, 196);
                 rImg.data[o] = roughVal;
                 rImg.data[o + 1] = roughVal;
                 rImg.data[o + 2] = roughVal;
@@ -98,6 +100,51 @@
         cCtx.putImageData(cImg, 0, 0);
         rCtx.putImageData(rImg, 0, 0);
 
+        // 白色不規則模糊氧化斑塊
+        if (cfg.oxidation !== false) {
+            cCtx.save();
+            cCtx.filter = 'blur(4.5px)';
+            const patchCount = cfg.oxidationCount || 14;
+            for (let i = 0; i < patchCount; i++) {
+                const px = rand() * size;
+                const py = rand() * size;
+                const rad = 10 + rand() * 24;
+                const grad = cCtx.createRadialGradient(px, py, 1, px, py, rad);
+                grad.addColorStop(0, 'rgba(242, 245, 250, 0.36)');
+                grad.addColorStop(0.55, 'rgba(218, 224, 232, 0.18)');
+                grad.addColorStop(1, 'rgba(218, 224, 232, 0.0)');
+                cCtx.fillStyle = grad;
+                cCtx.beginPath();
+                cCtx.ellipse(px, py, rad * (0.7 + rand() * 0.8), rad * (0.45 + rand() * 0.6), rand() * Math.PI, 0, Math.PI * 2);
+                cCtx.fill();
+            }
+            cCtx.restore();
+
+            rCtx.save();
+            rCtx.filter = 'blur(4px)';
+            rCtx.fillStyle = 'rgba(215, 215, 215, 0.35)';
+            for (let j = 0; j < patchCount; j++) {
+                const rx = rand() * size;
+                const ry = rand() * size;
+                const rRad = 9 + rand() * 20;
+                rCtx.beginPath();
+                rCtx.arc(rx, ry, rRad, 0, Math.PI * 2);
+                rCtx.fill();
+            }
+            rCtx.restore();
+        }
+
+        // 金屬刻字細節
+        if (cfg.engravingText) {
+            cCtx.save();
+            cCtx.fillStyle = cfg.engravingColor || 'rgba(225, 230, 238, 0.58)';
+            cCtx.font = 'bold 15px monospace';
+            cCtx.fillText(cfg.engravingText, 16, 56);
+            cCtx.font = '11px monospace';
+            cCtx.fillText('CAL. 5.56x45MM  SN-88412', 16, 154);
+            cCtx.restore();
+        }
+
         const mapTex = new THREE.CanvasTexture(cCanvas);
         const roughTex = new THREE.CanvasTexture(rCanvas);
         if (THREE.SRGBColorSpace) {
@@ -105,8 +152,8 @@
         }
         mapTex.wrapS = mapTex.wrapT = THREE.RepeatWrapping;
         roughTex.wrapS = roughTex.wrapT = THREE.RepeatWrapping;
-        mapTex.repeat.set(3, 3);
-        roughTex.repeat.set(3, 3);
+        mapTex.repeat.set(2, 2);
+        roughTex.repeat.set(2, 2);
 
         return { map: mapTex, bumpMap: roughTex, roughnessMap: roughTex };
     }
@@ -255,10 +302,43 @@
         _buildMaterials() {
             const THREE = global.THREE;
 
-            const blackMetalMaps = createMetallicMaps(THREE, 9201, [38, 42, 48], 22, 16);
-            const sandMetalMaps = createMetallicMaps(THREE, 9202, [186, 148, 92], 20, 14);
-            const boltSteelMaps = createMetallicMaps(THREE, 9203, [185, 192, 202], 14, 18);
-            const darkSightMaps = createMetallicMaps(THREE, 9204, [44, 49, 57], 16, 12);
+            const blackMetalMaps = createDetailedMetalMaps(THREE, {
+                seed: 9201,
+                baseRgb: [38, 42, 48],
+                contrastAmp: 22,
+                specularBias: 16,
+                oxidation: true,
+                oxidationCount: 16,
+                engravingText: 'M4A1 URGI // MK18 MOD-1'
+            });
+
+            const sandMetalMaps = createDetailedMetalMaps(THREE, {
+                seed: 9202,
+                baseRgb: [186, 148, 92],
+                contrastAmp: 20,
+                specularBias: 14,
+                oxidation: true,
+                oxidationCount: 12,
+                engravingText: 'URGI DDC RAIL'
+            });
+
+            const boltSteelMaps = createDetailedMetalMaps(THREE, {
+                seed: 9203,
+                baseRgb: [185, 192, 202],
+                contrastAmp: 14,
+                specularBias: 18,
+                oxidation: true,
+                oxidationCount: 6
+            });
+
+            const darkSightMaps = createDetailedMetalMaps(THREE, {
+                seed: 9204,
+                baseRgb: [44, 49, 57],
+                contrastAmp: 16,
+                specularBias: 12,
+                oxidation: true,
+                oxidationCount: 8
+            });
 
             this._trackTex(blackMetalMaps.map);
             this._trackTex(blackMetalMaps.roughnessMap);
@@ -348,7 +428,6 @@
                 envMapIntensity: 1.9
             });
 
-            // 照門與準星改用沉穩深灰／暗鋼色，避免亮白造成視覺出戲
             const sightMetalMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: darkSightMaps.map,
@@ -426,7 +505,7 @@
             this.weaponBodyGroup.name = 'M4UrgiBodyGroup';
             this.rootGroup.add(this.weaponBodyGroup);
 
-            // 1. 消光黑金屬上下機匣＋皮卡汀尼導軌齒
+            // 1. 消光黑金屬上下機匣＋全段延伸上導軌（一路延伸到前準星後方）
             const upperReceiver = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.048, 0.052, 0.22)),
                 m.receiver
@@ -434,19 +513,19 @@
             upperReceiver.position.set(0, 0.008, -0.05);
             this.weaponBodyGroup.add(upperReceiver);
 
-            const upperRailBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.026, 0.006, 0.215)),
+            const fullTopRailBase = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.026, 0.006, 0.56)),
                 m.receiver
             );
-            upperRailBase.position.set(0, 0.036, -0.05);
-            this.weaponBodyGroup.add(upperRailBase);
+            fullTopRailBase.position.set(0, 0.036, -0.22);
+            this.weaponBodyGroup.add(fullTopRailBase);
 
-            for (let r = 0; r < 14; r++) {
+            for (let r = 0; r < 34; r++) {
                 const slotTooth = new THREE.Mesh(
                     this._trackGeo(new THREE.BoxGeometry(0.027, 0.003, 0.008)),
                     m.sight
                 );
-                slotTooth.position.set(0, 0.040, 0.045 - r * 0.0145);
+                slotTooth.position.set(0, 0.040, 0.052 - r * 0.016);
                 this.weaponBodyGroup.add(slotTooth);
             }
 
@@ -456,6 +535,47 @@
             );
             lowerReceiver.position.set(0, -0.028, -0.036);
             this.weaponBodyGroup.add(lowerReceiver);
+
+            // 快慢機撥桿（Selector Switch）與網球拍式彈匣釋放鈕（Paddle Mag Catch）
+            const fireSelectorGroup = new THREE.Group();
+            fireSelectorGroup.name = 'M4UrgiFireSelector';
+            fireSelectorGroup.position.set(-0.024, -0.018, -0.016);
+            this.weaponBodyGroup.add(fireSelectorGroup);
+
+            const selectorHub = new THREE.Mesh(
+                this._trackGeo(new THREE.CylinderGeometry(0.0055, 0.0055, 0.008, 12)).rotateZ(Math.PI / 2),
+                m.bolt
+            );
+            fireSelectorGroup.add(selectorHub);
+
+            const selectorLever = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.0035, 0.016, 0.006)),
+                m.bolt
+            );
+            selectorLever.position.set(-0.002, -0.006, 0.002);
+            selectorLever.rotation.x = 0.45;
+            fireSelectorGroup.add(selectorLever);
+
+            // 網球拍形狀彈匣釋放撥片（圓頭拍面 + 細頸柄）
+            const paddleGroup = new THREE.Group();
+            paddleGroup.name = 'M4UrgiTennisRacketMagRelease';
+            paddleGroup.position.set(-0.024, -0.034, -0.064);
+            this.weaponBodyGroup.add(paddleGroup);
+
+            const paddleNeck = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.004, 0.012, 0.005)),
+                m.bolt
+            );
+            paddleNeck.position.set(-0.002, -0.004, 0);
+            paddleGroup.add(paddleNeck);
+
+            const paddleHead = new THREE.Mesh(
+                this._trackGeo(new THREE.CylinderGeometry(0.0085, 0.0085, 0.004, 16)).rotateZ(Math.PI / 2),
+                m.bolt
+            );
+            paddleHead.position.set(-0.002, -0.013, 0);
+            paddleHead.scale.set(1, 1.15, 0.85);
+            paddleGroup.add(paddleHead);
 
             const magwellCollar = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.050, 0.026, 0.082)),
@@ -498,7 +618,7 @@
             chargingHandle.position.set(0.004, 0.004, 0.064);
             this.boltCarrierGroup.add(chargingHandle);
 
-            // 3. 六邊形截面沙色護木（6 邊形柱體＋深色內腔＋M-LOK 槽孔與導軌細節）
+            // 3. 六邊形截面沙色護木＋左右側導軌＋下導軌
             const handguardGroup = new THREE.Group();
             handguardGroup.name = 'M4UrgiHexMlokHandguard';
             handguardGroup.position.set(0, 0.010, -0.325);
@@ -521,13 +641,40 @@
             hexInnerMesh.scale.set(1.04, 0.94, 1.0);
             handguardGroup.add(hexInnerMesh);
 
-            // 護木頂部導軌條與六邊形側壁 M-LOK 鏤空槽孔
-            const hgTopRail = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.024, 0.006, hgLen)),
+            // 側導軌（左右各一）與下導軌（底部）
+            for (const side of [-1, 1]) {
+                const sideRail = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.007, 0.013, 0.24)),
+                    m.sand
+                );
+                sideRail.position.set(side * (hexRadius * 0.98), 0.002, -0.02);
+                handguardGroup.add(sideRail);
+
+                for (let s = 0; s < 10; s++) {
+                    const sTooth = new THREE.Mesh(
+                        this._trackGeo(new THREE.BoxGeometry(0.008, 0.011, 0.007)),
+                        m.sight
+                    );
+                    sTooth.position.set(side * (hexRadius * 1.0), 0.002, 0.085 - s * 0.023);
+                    handguardGroup.add(sTooth);
+                }
+            }
+
+            const bottomRail = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.022, 0.007, 0.28)),
                 m.sand
             );
-            hgTopRail.position.set(0, hexRadius * 0.92, 0);
-            handguardGroup.add(hgTopRail);
+            bottomRail.position.set(0, -hexRadius * 0.92, -0.01);
+            handguardGroup.add(bottomRail);
+
+            for (let bToothIdx = 0; bToothIdx < 12; bToothIdx++) {
+                const bTooth = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.020, 0.008, 0.007)),
+                    m.sight
+                );
+                bTooth.position.set(0, -hexRadius * 0.95, 0.11 - bToothIdx * 0.022);
+                handguardGroup.add(bTooth);
+            }
 
             const bayCount = 5;
             const bayZStart = 0.125;
@@ -546,22 +693,13 @@
                     const holeZ = bz - bayStep * 0.5;
                     for (const side of [-1, 1]) {
                         const sideSlot = new THREE.Mesh(
-                            this._trackGeo(new THREE.BoxGeometry(0.007, 0.011, 0.034)),
+                            this._trackGeo(new THREE.BoxGeometry(0.007, 0.010, 0.032)),
                             m.cavity
                         );
-                        sideSlot.position.set(side * (hexRadius * 0.96), 0.002, holeZ);
+                        sideSlot.position.set(side * (hexRadius * 0.96), -0.008, holeZ);
                         handguardGroup.add(sideSlot);
                     }
                 }
-            }
-
-            for (const side of [-1, 1]) {
-                const clampScrew = new THREE.Mesh(
-                    this._trackGeo(new THREE.CylinderGeometry(0.0032, 0.0032, 0.006, 8)).rotateZ(Math.PI / 2),
-                    m.bolt
-                );
-                clampScrew.position.set(side * (hexRadius * 0.98), 0.005, 0.155);
-                handguardGroup.add(clampScrew);
             }
 
             // 4. 槍管與鳥籠消焰器
@@ -603,50 +741,61 @@
                 birdcageGroup.add(tine);
             }
 
-            // 5. 深灰金屬折疊前後照門與準星
+            // 5. V/Y 字形照門與參考圖棒棒糖式前準星
             const rearSightGroup = new THREE.Group();
-            rearSightGroup.name = 'M4UrgiFoldingRearSight';
+            rearSightGroup.name = 'M4UrgiVyRearSight';
             rearSightGroup.position.set(0, 0.041, 0.032);
             this.weaponBodyGroup.add(rearSightGroup);
 
             const rearBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.032, 0.0065, 0.024)),
+                this._trackGeo(new THREE.BoxGeometry(0.032, 0.006, 0.022)),
                 m.sight
             );
             rearSightGroup.add(rearBase);
 
-            for (const side of [-1, 1]) {
-                const post = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.005, 0.015, 0.006)),
-                    m.sight
-                );
-                post.position.set(side * 0.010, 0.0095, -0.004);
-                rearSightGroup.add(post);
-            }
-            const rearTopBar = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.025, 0.004, 0.006)),
+            // Y 形中心立柱 + V 形向外展開雙翼（中間留出乾淨瞄準視線）
+            const yStem = new THREE.Mesh(
+                this._trackGeo(new THREE.BoxGeometry(0.0045, 0.007, 0.006)),
                 m.sight
             );
-            rearTopBar.position.set(0, 0.016, -0.004);
-            rearSightGroup.add(rearTopBar);
+            yStem.position.set(0, 0.005, -0.003);
+            rearSightGroup.add(yStem);
 
+            for (const side of [-1, 1]) {
+                const vWing = new THREE.Mesh(
+                    this._trackGeo(new THREE.BoxGeometry(0.0045, 0.013, 0.006)),
+                    m.sight
+                );
+                vWing.position.set(side * 0.0075, 0.012, -0.003);
+                vWing.rotation.z = -side * 0.58;
+                rearSightGroup.add(vWing);
+            }
+
+            // 棒棒糖形狀前準星（細桿 + 頂部圓環）
             const frontSightGroup = new THREE.Group();
-            frontSightGroup.name = 'M4UrgiFoldingFrontSight';
+            frontSightGroup.name = 'M4UrgiLollipopFrontSight';
             frontSightGroup.position.set(0, 0.041, -0.48);
             this.weaponBodyGroup.add(frontSightGroup);
 
             const frontBase = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.032, 0.0065, 0.024)),
+                this._trackGeo(new THREE.BoxGeometry(0.030, 0.006, 0.022)),
                 m.sight
             );
             frontSightGroup.add(frontBase);
 
-            const frontPost = new THREE.Mesh(
-                this._trackGeo(new THREE.CylinderGeometry(0.0022, 0.0026, 0.015, 10)),
+            const lollipopStick = new THREE.Mesh(
+                this._trackGeo(new THREE.CylinderGeometry(0.0018, 0.0022, 0.011, 10)),
                 m.sight
             );
-            frontPost.position.set(0, 0.0095, 0);
-            frontSightGroup.add(frontPost);
+            lollipopStick.position.set(0, 0.0075, 0);
+            frontSightGroup.add(lollipopStick);
+
+            const lollipopRing = new THREE.Mesh(
+                this._trackGeo(new THREE.TorusGeometry(0.0062, 0.0018, 10, 20)),
+                m.sight
+            );
+            lollipopRing.position.set(0, 0.017, 0);
+            frontSightGroup.add(lollipopRing);
 
             // 6. 三角形鏤空沙色戰術槍托
             const stockGroup = new THREE.Group();
@@ -1153,7 +1302,6 @@
         }
 
         triggerFireKick() {
-            // 較克制且帶有不規則微擾的後座力，避免過度往後撞或單調平移
             const randBiasX = (Math.random() - 0.5) * 0.008;
             const randBiasY = (Math.random() - 0.35) * 0.007;
             const randYaw = (Math.random() - 0.5) * 2 * M4_URGI_SPECS.recoilYaw;
