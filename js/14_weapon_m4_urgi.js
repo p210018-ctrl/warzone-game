@@ -16,7 +16,6 @@
     const MAX_SMOKE_PUFFS = 24;
     const WEAPON_MODEL_SCALE = 1.95;
 
-    // 校正舉鏡視線，使「照門圓環中心 → 前準星尖端 → 準星中心」形成三點一線
     const M4_URGI_SPECS = Object.freeze({
         id: 'M4A1',
         displayName: 'M4A1 URGI',
@@ -41,47 +40,6 @@
 
     function lerp(a, b, t) {
         return a + (b - a) * t;
-    }
-
-    function createEnvReflectionTexture(THREE) {
-        if (!THREE || typeof document === 'undefined') return null;
-        const w = 256;
-        const h = 128;
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
-
-        const grad = ctx.createLinearGradient(0, 0, 0, h);
-        grad.addColorStop(0.0, '#dce8f5');
-        grad.addColorStop(0.32, '#8fa6be');
-        grad.addColorStop(0.52, '#3d4854');
-        grad.addColorStop(0.75, '#1d2229');
-        grad.addColorStop(1.0, '#12151a');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, w, h);
-
-        // 模擬室內/天空高亮光源反射帶
-        ctx.save();
-        ctx.filter = 'blur(8px)';
-        ctx.fillStyle = 'rgba(255, 250, 240, 0.85)';
-        ctx.beginPath();
-        ctx.ellipse(w * 0.28, h * 0.22, 34, 10, 0.15, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = 'rgba(200, 224, 255, 0.65)';
-        ctx.beginPath();
-        ctx.ellipse(w * 0.72, h * 0.28, 42, 12, -0.1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        const tex = new THREE.CanvasTexture(canvas);
-        tex.mapping = THREE.EquirectangularReflectionMapping;
-        if (THREE.SRGBColorSpace) {
-            tex.colorSpace = THREE.SRGBColorSpace;
-        }
-        return tex;
     }
 
     function createSmokePuffTexture(THREE) {
@@ -136,21 +94,21 @@
             return seed / 4294967296;
         };
 
-        const baseRgb = cfg.baseRgb || [46, 51, 58];
-        const amp = typeof cfg.contrastAmp === 'number' ? cfg.contrastAmp : 18;
-        const spec = typeof cfg.specularBias === 'number' ? cfg.specularBias : 22;
+        const baseRgb = cfg.baseRgb || [38, 42, 48];
+        const amp = typeof cfg.contrastAmp === 'number' ? cfg.contrastAmp : 20;
+        const spec = typeof cfg.specularBias === 'number' ? cfg.specularBias : 14;
 
         const cImg = cCtx.createImageData(size, size);
         const rImg = rCtx.createImageData(size, size);
 
         for (let y = 0; y < size; y++) {
-            const brush = Math.sin(y * 1.6) * 6.5 + Math.cos(y * 3.7) * 3.2 + (rand() - 0.5) * amp;
+            const brush = Math.sin(y * 1.6) * 6.0 + Math.cos(y * 3.7) * 3.0 + (rand() - 0.5) * amp;
             for (let x = 0; x < size; x++) {
-                const grain = Math.sin(x * 0.42 + y * 0.21) * 3.4 + (rand() - 0.5) * (amp * 0.7);
+                const grain = Math.sin(x * 0.42 + y * 0.21) * 3.2 + (rand() - 0.5) * (amp * 0.7);
                 const delta = brush + grain;
-                const r = clamp(baseRgb[0] + delta, 16, 252);
-                const g = clamp(baseRgb[1] + delta, 16, 252);
-                const b = clamp(baseRgb[2] + delta, 16, 252);
+                const r = clamp(baseRgb[0] + delta, 12, 250);
+                const g = clamp(baseRgb[1] + delta, 12, 250);
+                const b = clamp(baseRgb[2] + delta, 12, 250);
 
                 const o = (y * size + x) * 4;
                 cImg.data[o] = r;
@@ -158,8 +116,7 @@
                 cImg.data[o + 2] = b;
                 cImg.data[o + 3] = 255;
 
-                // 較低粗糙度以呈現更強的金屬反光與高光邊緣
-                const roughVal = clamp(64 - delta * 2.2 - spec, 16, 165);
+                const roughVal = clamp(82 - delta * 2.4 - spec, 20, 196);
                 rImg.data[o] = roughVal;
                 rImg.data[o + 1] = roughVal;
                 rImg.data[o + 2] = roughVal;
@@ -253,7 +210,6 @@
             this._shells = [];
             this._smokeSprites = [];
             this._smokeTex = null;
-            this._envTex = null;
 
             this._geometries = [];
             this._materials = null;
@@ -264,6 +220,7 @@
             this._reloadProgress = 0;
             this._reloadDuration = 1.65;
             this._isReloading = false;
+            this._reloadTremorClock = 0;
 
             this._recoilPosZ = 0;
             this._recoilPosY = 0;
@@ -373,14 +330,13 @@
         _buildMaterials() {
             const THREE = global.THREE;
 
-            this._envTex = this._trackTex(createEnvReflectionTexture(THREE));
             this._smokeTex = this._trackTex(createSmokePuffTexture(THREE));
 
             const blackMetalMaps = createDetailedMetalMaps(THREE, {
                 seed: 9201,
-                baseRgb: [46, 51, 58],
-                contrastAmp: 20,
-                specularBias: 24,
+                baseRgb: [38, 42, 48],
+                contrastAmp: 22,
+                specularBias: 16,
                 oxidation: true,
                 oxidationCount: 16,
                 engravingText: 'M4A1 URGI // MK18 MOD-1'
@@ -388,9 +344,9 @@
 
             const sandMetalMaps = createDetailedMetalMaps(THREE, {
                 seed: 9202,
-                baseRgb: [194, 155, 96],
-                contrastAmp: 18,
-                specularBias: 20,
+                baseRgb: [186, 148, 92],
+                contrastAmp: 20,
+                specularBias: 14,
                 oxidation: true,
                 oxidationCount: 12,
                 engravingText: 'URGI DDC RAIL'
@@ -398,18 +354,18 @@
 
             const boltSteelMaps = createDetailedMetalMaps(THREE, {
                 seed: 9203,
-                baseRgb: [196, 204, 214],
+                baseRgb: [185, 192, 202],
                 contrastAmp: 14,
-                specularBias: 26,
+                specularBias: 18,
                 oxidation: true,
                 oxidationCount: 6
             });
 
             const darkSightMaps = createDetailedMetalMaps(THREE, {
                 seed: 9204,
-                baseRgb: [50, 56, 65],
+                baseRgb: [44, 49, 57],
                 contrastAmp: 16,
-                specularBias: 20,
+                specularBias: 12,
                 oxidation: true,
                 oxidationCount: 8
             });
@@ -427,67 +383,61 @@
                 color: 0xffffff,
                 map: blackMetalMaps.map,
                 bumpMap: blackMetalMaps.bumpMap,
-                bumpScale: 0.0035,
+                bumpScale: 0.004,
                 roughnessMap: blackMetalMaps.roughnessMap,
-                roughness: 0.22,
-                metalness: 0.96,
-                envMap: this._envTex,
-                envMapIntensity: 2.35
+                roughness: 0.28,
+                metalness: 0.94,
+                envMapIntensity: 1.6
             });
 
             const sandMlokMetalMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: sandMetalMaps.map,
                 bumpMap: sandMetalMaps.bumpMap,
-                bumpScale: 0.0032,
+                bumpScale: 0.0038,
                 roughnessMap: sandMetalMaps.roughnessMap,
-                roughness: 0.21,
-                metalness: 0.93,
-                envMap: this._envTex,
-                envMapIntensity: 2.2
+                roughness: 0.27,
+                metalness: 0.90,
+                envMapIntensity: 1.5
             });
 
             const deepCavityMat = new THREE.MeshStandardMaterial({
-                color: 0x0d1015,
-                roughness: 0.30,
-                metalness: 0.90,
-                envMap: this._envTex,
-                envMapIntensity: 1.6
+                color: 0x0b0e12,
+                roughness: 0.36,
+                metalness: 0.88,
+                envMapIntensity: 1.2
             });
 
             const boltCarrierMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: boltSteelMaps.map,
                 bumpMap: boltSteelMaps.bumpMap,
-                bumpScale: 0.0022,
+                bumpScale: 0.0025,
                 roughnessMap: boltSteelMaps.roughnessMap,
-                roughness: 0.16,
-                metalness: 0.98,
-                envMap: this._envTex,
-                envMapIntensity: 2.6
+                roughness: 0.22,
+                metalness: 0.95,
+                envMapIntensity: 1.7
             });
 
             const barrelMat = new THREE.MeshStandardMaterial({
-                color: 0x2e3540,
+                color: 0x262b33,
                 map: blackMetalMaps.map,
                 bumpMap: blackMetalMaps.bumpMap,
-                bumpScale: 0.0028,
+                bumpScale: 0.003,
                 roughnessMap: blackMetalMaps.roughnessMap,
-                roughness: 0.15,
-                metalness: 0.98,
-                envMap: this._envTex,
-                envMapIntensity: 2.5
+                roughness: 0.19,
+                metalness: 0.97,
+                envMapIntensity: 1.8
             });
 
             const pmagBodyMat = new THREE.MeshStandardMaterial({
-                color: 0x20252d,
+                color: 0x1a1e24,
                 map: blackMetalMaps.map,
                 bumpMap: blackMetalMaps.bumpMap,
                 bumpScale: 0.0025,
-                roughness: 0.28,
-                metalness: 0.78,
-                envMap: this._envTex,
-                envMapIntensity: 1.8
+                roughness: 0.34,
+                metalness: 0.68,
+                envMapIntensity: 1.3
             });
 
             const windowGlassMat = new THREE.MeshPhysicalMaterial({
@@ -505,8 +455,7 @@
                 emissiveIntensity: 0.25,
                 roughness: 0.14,
                 metalness: 0.96,
-                envMap: this._envTex,
-                envMapIntensity: 2.2
+                envMapIntensity: 1.9
             });
 
             const sightMetalMat = new THREE.MeshStandardMaterial({
@@ -515,10 +464,9 @@
                 bumpMap: darkSightMaps.bumpMap,
                 bumpScale: 0.0025,
                 roughnessMap: darkSightMaps.roughnessMap,
-                roughness: 0.22,
-                metalness: 0.95,
-                envMap: this._envTex,
-                envMapIntensity: 2.2
+                roughness: 0.32,
+                metalness: 0.92,
+                envMapIntensity: 1.5
             });
 
             this.muzzleCoreMat = new THREE.MeshBasicMaterial({
@@ -549,8 +497,7 @@
                 color: 0xffc832,
                 roughness: 0.15,
                 metalness: 0.97,
-                envMap: this._envTex,
-                envMapIntensity: 2.2
+                envMapIntensity: 1.9
             });
 
             this._materials = {
@@ -822,7 +769,7 @@
                 birdcageGroup.add(tine);
             }
 
-            // 5. 依手繪草圖重塑照門與前準星，並對齊「照門圓環中心 → 前準星尖端 → 瞄準線」三點一線[cite: 21]
+            // 5. 照門與前準星
             const sightCenterY = 0.056;
 
             const rearSightGroup = new THREE.Group();
@@ -830,7 +777,6 @@
             rearSightGroup.position.set(0, 0.041, 0.032);
             this.weaponBodyGroup.add(rearSightGroup);
 
-            // 照門寬底座 + 側邊旋鈕突出（手繪右圖）[cite: 21]
             const rearBase = new THREE.Mesh(
                 this._trackGeo(new THREE.BoxGeometry(0.034, 0.007, 0.024)),
                 m.sight
@@ -851,7 +797,6 @@
             rightKnob.position.set(0.020, -0.001, 0.002);
             rearSightGroup.add(rightKnob);
 
-            // 照門主立柱與上方窺孔圓環（圓心高度對齊 sightCenterY）
             const ringCenterLocalY = sightCenterY - 0.041;
             const ringRadius = 0.0072;
 
@@ -869,7 +814,6 @@
             rearPeepRing.position.set(0, ringCenterLocalY, -0.002);
             rearSightGroup.add(rearPeepRing);
 
-            // 前準星（依手繪左圖：底座 + 左右向外撇護翼 + 中間準星尖柱，尖端對齊 sightCenterY）[cite: 21]
             const frontSightGroup = new THREE.Group();
             frontSightGroup.name = 'M4UrgiSketchedFrontSight';
             frontSightGroup.position.set(0, 0.041, -0.48);
@@ -889,7 +833,6 @@
                 wingLower.position.set(side * 0.0115, 0.0065, 0);
                 frontSightGroup.add(wingLower);
 
-                // 頂部向外微微撇出的護翼尖端（手繪左圖）[cite: 21]
                 const wingFlare = new THREE.Mesh(
                     this._trackGeo(new THREE.BoxGeometry(0.0038, 0.0065, 0.006)),
                     m.sight
@@ -1114,7 +1057,6 @@
             }
             this.shellsInstancedMesh.instanceMatrix.needsUpdate = true;
 
-            // 柔和擴散的開火煙霧粒子
             this._smokeSprites = [];
             if (typeof THREE.Sprite === 'function' && typeof THREE.SpriteMaterial === 'function') {
                 for (let k = 0; k < MAX_SMOKE_PUFFS; k++) {
@@ -1224,7 +1166,6 @@
                 }
             }
 
-            // 生成柔和擴散的開火煙霧團
             let smokeSpawned = 0;
             for (let sIdx = 0; sIdx < this._smokeSprites.length && smokeSpawned < 4; sIdx++) {
                 const puff = this._smokeSprites[sIdx];
@@ -1456,6 +1397,7 @@
                         if (payload && payload.weaponId && payload.weaponId !== M4_URGI_SPECS.id) return;
                         this._isReloading = true;
                         this._reloadProgress = 0;
+                        this._reloadTremorClock = 0;
                         this._reloadDuration = payload && typeof payload.duration === 'number' && payload.duration > 0
                             ? payload.duration
                             : 1.65;
@@ -1485,6 +1427,7 @@
                     EventBus.on(reloadEndEvts[i], () => {
                         this._isReloading = false;
                         this._reloadProgress = 0;
+                        this._reloadTremorClock = 0;
                         this._syncAmmoCountFromState(true);
                     })
                 );
@@ -1547,6 +1490,7 @@
             if (!this._isVisible) {
                 this._isReloading = false;
                 this._reloadProgress = 0;
+                this._reloadTremorClock = 0;
                 this._boltKickZ = 0;
                 this._boltPhase = 0;
                 this._flashTimer = 0;
@@ -1601,11 +1545,46 @@
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const alpha = 1 - Math.exp(-16 * dt);
 
+            // 若外部系統已開始換彈狀態，同步啟動換彈手抖配合
+            const stateReloading = Boolean(
+                GameState && typeof GameState.get === 'function' &&
+                (GameState.get('weapons.isReloading', false) || GameState.get('isReloading', false))
+            );
+            if (stateReloading && !this._isReloading) {
+                this._isReloading = true;
+                this._reloadProgress = 0;
+                this._reloadTremorClock = 0;
+            }
+
+            // 換彈期間加入手抖微震與防穿模偏移
+            let tremorX = 0;
+            let tremorY = 0;
+            let tremorRotX = 0;
+            let tremorRotY = 0;
+            let tremorRotZ = 0;
+            let antiClipOffsetX = 0;
+            let antiClipOffsetY = 0;
+
             if (this._isReloading) {
+                this._reloadTremorClock += dt;
                 this._reloadProgress = Math.min(1, this._reloadProgress + dt / Math.max(0.2, this._reloadDuration));
+
+                const env = Math.sin(this._reloadProgress * Math.PI);
+                const tClock = this._reloadTremorClock;
+                tremorX = (Math.sin(tClock * 47.0) * 0.0032 + (Math.random() - 0.5) * 0.0024) * env;
+                tremorY = (Math.cos(tClock * 53.0) * 0.0030 + (Math.random() - 0.5) * 0.0022) * env;
+                tremorRotX = Math.sin(tClock * 43.0) * 0.016 * env;
+                tremorRotY = Math.cos(tClock * 39.0) * 0.018 * env;
+                tremorRotZ = Math.sin(tClock * 59.0) * 0.022 * env;
+
+                // 換彈時往左側與下方微拉，避開手臂與機匣穿模
+                antiClipOffsetX = -0.024 * env;
+                antiClipOffsetY = 0.012 * env;
+
                 if (this._reloadProgress >= 1) {
                     this._isReloading = false;
                     this._reloadProgress = 0;
+                    this._reloadTremorClock = 0;
                     this._ammoCount = MAX_MAG_ROUNDS;
                     this._lastRenderedAmmoCount = MAX_MAG_ROUNDS;
                     this._rebuildAmmoInstances(MAX_MAG_ROUNDS);
@@ -1620,9 +1599,9 @@
             let targetRotZ = 0;
 
             if (this._isReloading) {
-                targetRotX = 0.18;
-                targetRotY = -0.16;
-                targetRotZ = -0.28;
+                targetRotX = 0.16;
+                targetRotY = -0.22;
+                targetRotZ = -0.32;
             } else if (this._isSprinting && !this._isAiming) {
                 targetPos = M4_URGI_SPECS.sprintPosition;
                 targetRotX = -0.08;
@@ -1635,13 +1614,13 @@
             const bobX = bobOffset && typeof bobOffset.x === 'number' ? bobOffset.x : 0;
             const bobY = bobOffset && typeof bobOffset.y === 'number' ? bobOffset.y : 0;
 
-            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX, alpha);
-            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY, alpha);
+            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + antiClipOffsetX + tremorX, alpha);
+            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + antiClipOffsetY + tremorY, alpha);
             this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z, alpha);
 
-            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX, alpha);
-            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY, alpha);
-            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ, alpha);
+            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + tremorRotX, alpha);
+            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + tremorRotY, alpha);
+            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + tremorRotZ, alpha);
 
             const recoilDecay = Math.exp(-26 * dt);
             this._recoilPosZ *= recoilDecay;
@@ -1691,21 +1670,26 @@
             if (this.magazineGroup) {
                 let magDropY = 0;
                 let magDropZ = 0;
+                let magDropX = 0;
                 if (this._isReloading) {
                     const p = this._reloadProgress;
                     if (p < 0.45) {
                         const t = p / 0.45;
-                        magDropY = -t * 0.085;
-                        magDropZ = -t * 0.025;
+                        magDropY = -t * 0.095;
+                        magDropZ = -t * 0.030;
+                        magDropX = -t * 0.014;
                     } else if (p < 0.55) {
-                        magDropY = -0.085;
-                        magDropZ = -0.025;
+                        magDropY = -0.095;
+                        magDropZ = -0.030;
+                        magDropX = -0.014;
                     } else {
                         const t = (1 - p) / 0.45;
-                        magDropY = -t * 0.085;
-                        magDropZ = -t * 0.025;
+                        magDropY = -t * 0.095;
+                        magDropZ = -t * 0.030;
+                        magDropX = -t * 0.014;
                     }
                 }
+                this.magazineGroup.position.x = -0.004 + magDropX;
                 this.magazineGroup.position.y = -0.122 + magDropY;
                 this.magazineGroup.position.z = -0.086 + magDropZ;
             }
@@ -1767,7 +1751,6 @@
             this._sparks = [];
             this._shells = [];
             this._smokeTex = null;
-            this._envTex = null;
 
             for (let i = 0; i < this._geometries.length; i++) {
                 const g = this._geometries[i];
