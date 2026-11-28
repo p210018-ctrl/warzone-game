@@ -1039,4 +1039,3 @@
     TacticalWarfare.MainBootstrap = mainBootstrapInstance;
     TacticalWarfare.registerModule('37_main_bootstrap', moduleExport);
 })(window);
-```[cite: 10]
