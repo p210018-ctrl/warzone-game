@@ -120,6 +120,30 @@
             }
         }
 
+        _syncPlayerMovementState(moveRes, isSprinting, bobArg) {
+            if (!GameState || typeof GameState.patch !== 'function') return;
+
+            let speedRatio = 0;
+            if (moveRes && typeof moveRes.speedRatio === 'number' && !Number.isNaN(moveRes.speedRatio)) {
+                speedRatio = clamp(moveRes.speedRatio, 0, 1.5);
+            } else if (moveRes && moveRes.velocity && typeof moveRes.velocity.x === 'number' && typeof moveRes.velocity.z === 'number') {
+                const horizSpeed = Math.hypot(moveRes.velocity.x, moveRes.velocity.z);
+                speedRatio = clamp(horizSpeed / (isSprinting ? 7.5 : 4.8), 0, 1.5);
+            } else if (bobArg) {
+                const bobMag = Math.hypot(bobArg.x || 0, bobArg.y || 0);
+                if (bobMag > 0.00015) {
+                    speedRatio = clamp(bobMag * 33.0, 0.15, isSprinting ? 1.25 : 0.92);
+                }
+            }
+
+            const isMoving = Boolean((moveRes && moveRes.isMoving) || speedRatio > 0.05);
+            GameState.patch('player', {
+                speedRatio: speedRatio,
+                isMoving: isMoving,
+                isSprinting: Boolean(isSprinting)
+            }, true);
+        }
+
         _getWeaponEntries() {
             const list = [];
             for (let i = 0; i < WEAPON_MODULES.length; i = i + 1) {
@@ -256,6 +280,7 @@
                 if (typeof entry.mod.init === 'function') {
                     entry.mod.init({
                         parentGroup: weaponCamera || camera,
+                        scene: scene,
                         visible: entry.id === this._activeWeaponId
                     });
                 }
@@ -839,11 +864,13 @@
                     (moveRes && moveRes.isSprinting)
                 );
 
+                const bobArg = moveRes && moveRes.bobOffset ? moveRes.bobOffset : null;
+                this._syncPlayerMovementState(moveRes, isSprinting, bobArg);
+
                 if (TacticalWarfare.WeaponController && typeof TacticalWarfare.WeaponController.update === 'function') {
                     TacticalWarfare.WeaponController.update(dt, moveRes);
                 }
 
-                const bobArg = moveRes && moveRes.bobOffset ? moveRes.bobOffset : null;
                 const weaponEntries = this._getWeaponEntries();
                 for (let i = 0; i < weaponEntries.length; i = i + 1) {
                     const entry = weaponEntries[i];
