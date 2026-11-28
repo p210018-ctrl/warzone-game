@@ -962,10 +962,6 @@
         const regrip = pulseWindow(0.77, 0.88, 1.00, p);
         const activeMask = snapStep(0.00, 0.035, p) * (1.0 - snapStep(0.90, 1.00, p));
 
-        const snapBurst =
-            pulseWindow(0.16, 0.23, 0.32, p) * 0.65 +
-            pulseWindow(0.64, 0.72, 0.82, p) * 0.95;
-
         return {
             prog: p,
             releaseTap: releaseTap,
@@ -973,30 +969,24 @@
             magFetch: magFetch,
             magSeat: magSeat,
             regrip: regrip,
-            activeMask: activeMask,
-            snapBurst: snapBurst
+            activeMask: activeMask
         };
     }
 
-    function computeFollowFeedback(elapsed, isReloading, reloadPhases, triggerPull) {
-        let reloadAmp = 0;
-        if (isReloading && reloadPhases && reloadPhases.snapBurst > 0.01) {
-            reloadAmp = reloadPhases.snapBurst * 0.65;
-        }
-        const fireAmp = triggerPull > 0.02 ? Math.pow(clampNum(triggerPull, 0, 1), 1.3) * 0.35 : 0;
-        const totalAmp = reloadAmp + fireAmp;
-        if (totalAmp <= 0.005) {
-            return { x: 0, y: 0, z: 0, rotZ: 0 };
-        }
+    // 輕柔跟隨槍身的微幅擺動，絕不加高頻抖動
+    function computeGentleFollowSway(elapsed, triggerPull) {
+        const fireSoft = triggerPull > 0.02 ? Math.pow(clampNum(triggerPull, 0, 1), 1.5) : 0;
+        const idleBreath = Math.sin(elapsed * 2.1);
+        const idleSide = Math.cos(elapsed * 1.45);
         return {
-            x: Math.sin(elapsed * 32.0) * 0.0022 * totalAmp,
-            y: Math.cos(elapsed * 36.0) * 0.0025 * totalAmp,
-            z: Math.sin(elapsed * 30.0) * 0.0018 * totalAmp,
-            rotZ: Math.sin(elapsed * 34.0) * 0.018 * totalAmp
+            x: idleSide * 0.0005,
+            y: idleBreath * 0.0007 - fireSoft * 0.0022,
+            z: fireSoft * 0.0030,
+            rotZ: idleSide * 0.004 + fireSoft * 0.012
         };
     }
 
-    function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading, aimBlend, reloadPhases, shake) {
+    function applyArmLimbAngles(handObj, sideSign, elbowBend, isReloading, aimBlend, reloadPhases, sway) {
         if (!handObj || !handObj.forearmPivot || !handObj.elbowPivot || !handObj.upperArmPivot) return;
 
         const aim = clampNum(typeof aimBlend === 'number' ? aimBlend : 0.0, 0.0, 1.0);
@@ -1007,10 +997,9 @@
             magFetch: 0,
             magSeat: 0,
             regrip: 0,
-            activeMask: 0,
-            snapBurst: 0
+            activeMask: 0
         };
-        const sh = shake || { x: 0, y: 0, z: 0, rotZ: 0 };
+        const sw = sway || { x: 0, y: 0, z: 0, rotZ: 0 };
         const straightFactor = lerpNum(0.24, 0.18, aim);
 
         if (sideSign < 0) {
@@ -1019,7 +1008,7 @@
                 + rp.magDrop * 0.25
                 - rp.magFetch * 0.09
                 - rp.magSeat * 0.14
-                + sh.rotZ * 0.6;
+                + sw.rotZ * 0.4;
             const fY = lerpNum(-0.68, -0.56, aim)
                 + rp.magDrop * 0.24
                 - rp.magFetch * 0.18
@@ -1028,7 +1017,7 @@
                 - rp.magDrop * 0.14
                 + rp.magFetch * 0.10
                 + rp.magSeat * 0.10
-                + sh.rotZ * 0.6;
+                + sw.rotZ * 0.4;
 
             const eX = lerpNum(0.06 * straightFactor, 0.04 * straightFactor, aim)
                 + rp.magDrop * 0.18
@@ -1099,8 +1088,7 @@
             magFetch: 0,
             magSeat: 0,
             regrip: 0,
-            activeMask: 0,
-            snapBurst: 0
+            activeMask: 0
         };
 
         if (sideSign < 0) {
@@ -1450,11 +1438,11 @@
                     0.05
                 );
                 this.elapsedTimeSeconds += dt;
-                this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - dt * 12.5);
+                this.triggerPullAmount = Math.max(0.0, this.triggerPullAmount - dt * 10.0);
 
                 const isAimingNow = detectAimingState(isCtx, ctxOrScene, weaponMod, weaponObj);
                 const aimTarget = isAimingNow ? 1.0 : 0.0;
-                const aimStep = clampNum(dt * 20.0, 0.0, 1.0);
+                const aimStep = clampNum(dt * 16.0, 0.0, 1.0);
                 this.aimBlend = lerpNum(this.aimBlend, aimTarget, aimStep);
 
                 let reloading = Boolean(isCtx && isCtx.isReloading);
@@ -1488,25 +1476,20 @@
                     reloadPhases = computeReloadPhases(prog);
                 }
 
-                const followShake = computeFollowFeedback(
-                    this.elapsedTimeSeconds,
-                    this.isReloadingActive,
-                    reloadPhases,
-                    this.triggerPullAmount
-                );
+                const sway = computeGentleFollowSway(this.elapsedTimeSeconds, this.triggerPullAmount);
 
                 if (weaponObj && weaponObj.parent && this.parentGroup && typeof weaponObj.localToWorld === 'function') {
                     weaponObj.updateMatrixWorld(true);
                     this.parentGroup.updateMatrixWorld(true);
 
-                    let rx = lerpNum(spec.rightGripLocal.x, spec.rightGripLocal.x * 0.85, aim) + followShake.x;
-                    let ry = lerpNum(spec.rightGripLocal.y, spec.rightGripLocal.y + 0.004, aim) + followShake.y;
-                    let rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z + 0.008, aim) + followShake.z;
+                    let rx = lerpNum(spec.rightGripLocal.x, spec.rightGripLocal.x * 0.85, aim) + sway.x;
+                    let ry = lerpNum(spec.rightGripLocal.y, spec.rightGripLocal.y + 0.004, aim) + sway.y;
+                    let rz = lerpNum(spec.rightGripLocal.z, spec.rightGripLocal.z + 0.008, aim) + sway.z;
 
                     if (this.isReloadingActive && reloadPhases) {
-                        rx += reloadPhases.activeMask * 0.009 - reloadPhases.magSeat * 0.007;
-                        ry += reloadPhases.activeMask * 0.016 + reloadPhases.magSeat * 0.014;
-                        rz += reloadPhases.activeMask * 0.011;
+                        rx += reloadPhases.activeMask * 0.008 - reloadPhases.magSeat * 0.006;
+                        ry += reloadPhases.activeMask * 0.014 + reloadPhases.magSeat * 0.012;
+                        rz += reloadPhases.activeMask * 0.010;
                     }
 
                     this.tempRightPos.set(rx, ry, rz);
@@ -1550,9 +1533,9 @@
                         targetY = lerpNum(targetY, wellY + 0.012, reloadPhases.magSeat);
                         targetZ = lerpNum(targetZ, wellZ, reloadPhases.magSeat);
 
-                        lx = targetX + followShake.x;
-                        ly = targetY + followShake.y;
-                        lz = targetZ + followShake.z;
+                        lx = targetX + sway.x;
+                        ly = targetY + sway.y;
+                        lz = targetZ + sway.z;
                     }
 
                     this.tempLeftPos.set(lx, ly, lz);
@@ -1569,7 +1552,7 @@
                     rightHand.palmPosePivot.rotation.set(
                         0.0,
                         0.0,
-                        Math.PI * 0.5 + this.triggerPullAmount * 0.06 + followShake.rotZ
+                        Math.PI * 0.5 + this.triggerPullAmount * 0.04 + sway.rotZ
                     );
 
                     leftHand.wristAnchor.quaternion.identity();
@@ -1590,7 +1573,7 @@
                         ? baseLZ - reloadPhases.magDrop * 0.22 + reloadPhases.magFetch * 0.24 - reloadPhases.magSeat * 0.16
                         : baseLZ;
 
-                    leftHand.palmPosePivot.rotation.set(relLX, relLY, relLZ + followShake.rotZ);
+                    leftHand.palmPosePivot.rotation.set(relLX, relLY, relLZ + sway.rotZ);
                 } else {
                     rightHand.wristAnchor.position.set(0.12, -0.18, -0.24);
                     rightHand.palmPosePivot.rotation.set(0.0, 0.0, Math.PI * 0.5);
@@ -1598,8 +1581,8 @@
                     leftHand.palmPosePivot.rotation.set(0.24, -0.56, -0.24);
                 }
 
-                applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim, reloadPhases, followShake);
-                applyArmLimbAngles(leftHand, -1, spec.leftElbowBend, this.isReloadingActive, aim, reloadPhases, followShake);
+                applyArmLimbAngles(rightHand, 1, spec.rightElbowBend, this.isReloadingActive, aim, reloadPhases, sway);
+                applyArmLimbAngles(leftHand, -1, spec.leftElbowBend, this.isReloadingActive, aim, reloadPhases, sway);
 
                 applyIndividualFingerPose(rightHand, 1, this.triggerPullAmount, this.isReloadingActive, reloadPhases);
                 applyIndividualFingerPose(leftHand, -1, 0.0, this.isReloadingActive, reloadPhases);
