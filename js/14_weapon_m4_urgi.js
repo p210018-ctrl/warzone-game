@@ -1545,7 +1545,6 @@
             const dt = clamp(typeof deltaTime === 'number' ? deltaTime : 0.016, 0.0001, 0.1);
             const alpha = 1 - Math.exp(-16 * dt);
 
-            // 若外部系統已開始換彈狀態，同步啟動換彈手抖配合
             const stateReloading = Boolean(
                 GameState && typeof GameState.get === 'function' &&
                 (GameState.get('weapons.isReloading', false) || GameState.get('isReloading', false))
@@ -1556,30 +1555,39 @@
                 this._reloadTremorClock = 0;
             }
 
-            // 換彈期間加入手抖微震與防穿模偏移
-            let tremorX = 0;
-            let tremorY = 0;
-            let tremorRotX = 0;
-            let tremorRotY = 0;
-            let tremorRotZ = 0;
-            let antiClipOffsetX = 0;
-            let antiClipOffsetY = 0;
+            // 參考影片的換彈動態：自然手部操作晃動 + 換完彈往肩窩頂一下
+            let swayX = 0;
+            let swayY = 0;
+            let swayZ = 0;
+            let swayRotX = 0;
+            let swayRotY = 0;
+            let swayRotZ = 0;
 
             if (this._isReloading) {
                 this._reloadTremorClock += dt;
                 this._reloadProgress = Math.min(1, this._reloadProgress + dt / Math.max(0.2, this._reloadDuration));
 
-                const env = Math.sin(this._reloadProgress * Math.PI);
+                const p = this._reloadProgress;
                 const tClock = this._reloadTremorClock;
-                tremorX = (Math.sin(tClock * 47.0) * 0.0032 + (Math.random() - 0.5) * 0.0024) * env;
-                tremorY = (Math.cos(tClock * 53.0) * 0.0030 + (Math.random() - 0.5) * 0.0022) * env;
-                tremorRotX = Math.sin(tClock * 43.0) * 0.016 * env;
-                tremorRotY = Math.cos(tClock * 39.0) * 0.018 * env;
-                tremorRotZ = Math.sin(tClock * 59.0) * 0.022 * env;
 
-                // 換彈時往左側與下方微拉，避開手臂與機匣穿模
-                antiClipOffsetX = -0.024 * env;
-                antiClipOffsetY = 0.012 * env;
+                // 換匣與操作期間的柔順手部微晃（非高頻抖動）
+                const midMask = Math.sin(clamp(p / 0.78, 0, 1) * Math.PI);
+                swayX = -0.022 * midMask + Math.sin(tClock * 9.5) * 0.0022 * midMask;
+                swayY = 0.010 * midMask + Math.cos(tClock * 11.0) * 0.0020 * midMask;
+                swayRotX = 0.14 * midMask + Math.sin(tClock * 8.5) * 0.010 * midMask;
+                swayRotY = -0.20 * midMask + Math.cos(tClock * 10.0) * 0.012 * midMask;
+                swayRotZ = -0.28 * midMask + Math.sin(tClock * 12.0) * 0.014 * midMask;
+
+                // 換完彈收尾階段（p 在 0.72 ~ 1.0）：往肩口頂一下（向後 +Z 抵肩、略微帶起並回正）
+                if (p >= 0.72) {
+                    const seatT = (p - 0.72) / 0.28;
+                    const shoulderBump = Math.sin(Math.min(1, seatT * 1.35) * Math.PI);
+                    swayZ += 0.036 * shoulderBump;
+                    swayY += 0.006 * shoulderBump;
+                    swayX += 0.005 * shoulderBump;
+                    swayRotX += 0.045 * shoulderBump;
+                    swayRotZ += 0.035 * shoulderBump;
+                }
 
                 if (this._reloadProgress >= 1) {
                     this._isReloading = false;
@@ -1598,29 +1606,25 @@
             let targetRotY = 0;
             let targetRotZ = 0;
 
-            if (this._isReloading) {
-                targetRotX = 0.16;
-                targetRotY = -0.22;
-                targetRotZ = -0.32;
-            } else if (this._isSprinting && !this._isAiming) {
+            if (this._isSprinting && !this._isAiming && !this._isReloading) {
                 targetPos = M4_URGI_SPECS.sprintPosition;
                 targetRotX = -0.08;
                 targetRotY = 0.14;
                 targetRotZ = -0.08;
-            } else if (this._isAiming) {
+            } else if (this._isAiming && !this._isReloading) {
                 targetPos = M4_URGI_SPECS.adsPosition;
             }
 
             const bobX = bobOffset && typeof bobOffset.x === 'number' ? bobOffset.x : 0;
             const bobY = bobOffset && typeof bobOffset.y === 'number' ? bobOffset.y : 0;
 
-            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + antiClipOffsetX + tremorX, alpha);
-            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + antiClipOffsetY + tremorY, alpha);
-            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z, alpha);
+            this.rootGroup.position.x = lerp(this.rootGroup.position.x, targetPos.x + bobX + swayX, alpha);
+            this.rootGroup.position.y = lerp(this.rootGroup.position.y, targetPos.y + bobY + swayY, alpha);
+            this.rootGroup.position.z = lerp(this.rootGroup.position.z, targetPos.z + swayZ, alpha);
 
-            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + tremorRotX, alpha);
-            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + tremorRotY, alpha);
-            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + tremorRotZ, alpha);
+            this.rootGroup.rotation.x = lerp(this.rootGroup.rotation.x, targetRotX + swayRotX, alpha);
+            this.rootGroup.rotation.y = lerp(this.rootGroup.rotation.y, targetRotY + swayRotY, alpha);
+            this.rootGroup.rotation.z = lerp(this.rootGroup.rotation.z, targetRotZ + swayRotZ, alpha);
 
             const recoilDecay = Math.exp(-26 * dt);
             this._recoilPosZ *= recoilDecay;
