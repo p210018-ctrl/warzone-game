@@ -853,6 +853,9 @@
                     if (typeof entry.mod.setSprinting === 'function') {
                         entry.mod.setSprinting(isSprinting);
                     }
+                    if (typeof entry.mod.setReloading === 'function') {
+                        entry.mod.setReloading(isReloading);
+                    }
                     if (entry.id === currentWeaponId && typeof entry.mod.update === 'function') {
                         entry.mod.update(dt, bobArg);
                     }
