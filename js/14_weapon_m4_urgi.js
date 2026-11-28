@@ -20,7 +20,7 @@
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
-        adsPosition: { x: -0.001, y: -0.124, z: -0.295 },
+        adsPosition: { x: 0.0, y: -0.149, z: -0.295 },
         sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -484,7 +484,6 @@
                 envMapIntensity: 1.9
             });
 
-            // 照門改用輕薄、低噪點、微透的纖細金屬材質，避免厚重黑塊遮擋瞄準視野
             const sightMetalMat = new THREE.MeshStandardMaterial({
                 color: 0x7b8594,
                 roughness: 0.42,
@@ -789,7 +788,7 @@
                 birdcageGroup.add(tine);
             }
 
-            // 照門往上抬高、並大幅縮薄底座與圓環壁厚，避免遮擋開鏡視野
+            // 後照門圓環中心固定於 sightCenterY = 0.068；前準心護翼與準心柱直接往上對齊此中心
             const sightCenterY = 0.068;
 
             const rearSightGroup = new THREE.Group();
@@ -837,6 +836,7 @@
             this.rearPeepRing = rearPeepRing;
             rearSightGroup.add(rearPeepRing);
 
+            // 前準心組：底座在 y = 0.041，護翼頂端與準心柱尖端精準對齊後照門圓環中心 (y = 0.068)
             const frontSightGroup = new THREE.Group();
             frontSightGroup.name = 'M4UrgiSketchedFrontSight';
             frontSightGroup.position.set(0, 0.041, -0.48);
@@ -848,29 +848,32 @@
             );
             frontSightGroup.add(frontBase);
 
+            const frontTotalSpanY = sightCenterY - 0.041; // 0.027
+            const wingLowerH = frontTotalSpanY * 0.58;
+            const wingFlareH = frontTotalSpanY * 0.34;
+
             for (const side of [-1, 1]) {
                 const wingLower = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0024, 0.0075, 0.003)),
+                    this._trackGeo(new THREE.BoxGeometry(0.0024, wingLowerH, 0.003)),
                     m.sight
                 );
-                wingLower.position.set(side * 0.0095, 0.0065, 0);
+                wingLower.position.set(side * 0.0095, 0.0015 + wingLowerH * 0.5, 0);
                 frontSightGroup.add(wingLower);
 
                 const wingFlare = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0022, 0.006, 0.003)),
+                    this._trackGeo(new THREE.BoxGeometry(0.0022, wingFlareH, 0.003)),
                     m.sight
                 );
-                wingFlare.position.set(side * 0.0112, 0.012, 0);
-                wingFlare.rotation.z = -side * 0.42;
+                wingFlare.position.set(side * 0.0110, 0.0015 + wingLowerH + wingFlareH * 0.42, 0);
+                wingFlare.rotation.z = -side * 0.36;
                 frontSightGroup.add(wingFlare);
             }
 
-            const frontTipLocalY = sightCenterY - 0.041;
             const frontPostPin = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0018, frontTipLocalY, 0.0025)),
+                this._trackGeo(new THREE.BoxGeometry(0.0018, frontTotalSpanY, 0.0025)),
                 m.sight
             );
-            frontPostPin.position.set(0, frontTipLocalY * 0.5 + 0.001, 0);
+            frontPostPin.position.set(0, frontTotalSpanY * 0.5 + 0.001, 0);
             frontSightGroup.add(frontPostPin);
 
             const stockGroup = new THREE.Group();
@@ -1592,7 +1595,6 @@
                 this._reloadDuration = this._resolveReloadDurationFromState(this._reloadDuration);
             }
 
-            // 同步換彈進度：若外部有提供 progress 則直接跟隨，否則依實際換彈時長推進
             let swayX = 0;
             let swayY = 0;
             let swayZ = 0;
@@ -1617,7 +1619,6 @@
                 const p = this._reloadProgress;
 
                 if (p < 0.84) {
-                    // 前段俐落甩槍與換匣，不做慢吞吞的來回晃動
                     const phaseT = clamp(p / 0.84, 0, 1);
                     const snapArc = Math.sin(phaseT * Math.PI);
                     swayX = -0.024 * snapArc;
@@ -1628,7 +1629,6 @@
                     swayRotZ = -0.32 * snapArc;
                     snapAlpha = 1 - Math.exp(-36 * dt);
                 } else {
-                    // 尾段（0.84 ~ 1.0）短促乾脆往肩口頂一下（+Z 急頂並迅速鎖定）
                     const bumpT = clamp((p - 0.84) / 0.16, 0, 1);
                     const sharpHit = Math.sin(Math.min(1, bumpT * 1.65) * Math.PI);
                     swayZ += 0.036 * sharpHit;
@@ -1649,16 +1649,13 @@
 
             this._syncAmmoCountFromState(false);
 
-            // 開鏡時照門圓環再往上抬一點，避免擋住目標視野
+            // 保持後照門圓環高度固定（不再隨開鏡上下偏移），避免與前準心錯開
             if (this.rearPeepRing) {
-                const baseRingY = 0.027;
-                const targetRingY = this._isAiming ? baseRingY + 0.0065 : baseRingY;
-                this.rearPeepRing.position.y = lerp(this.rearPeepRing.position.y, targetRingY, 1 - Math.exp(-28 * dt));
+                this.rearPeepRing.position.y = 0.027;
             }
-            if (this.rearMainTower && this.rearPeepRing) {
-                const towerH = Math.max(0.004, this.rearPeepRing.position.y - 0.004);
-                this.rearMainTower.scale.y = towerH / 0.021;
-                this.rearMainTower.position.y = towerH * 0.5 + 0.001;
+            if (this.rearMainTower) {
+                this.rearMainTower.scale.y = 1.0;
+                this.rearMainTower.position.y = 0.0122;
             }
 
             let targetPos = M4_URGI_SPECS.hipPosition;
