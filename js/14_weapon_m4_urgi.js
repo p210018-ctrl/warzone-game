@@ -20,7 +20,7 @@
         id: 'M4A1',
         displayName: 'M4A1 URGI',
         hipPosition: { x: 0.255, y: -0.248, z: -0.34 },
-        adsPosition: { x: 0.0, y: -0.153, z: -0.295 },
+        adsPosition: { x: 0.0, y: -0.165, z: -0.295 },
         sprintPosition: { x: 0.275, y: -0.272, z: -0.34 },
         muzzleLocalOffset: { x: 0.0, y: 0.014, z: -0.645 },
         ejectionPortOffset: { x: 0.027, y: 0.014, z: -0.045 },
@@ -474,7 +474,7 @@
                 envMapIntensity: 1.9
             });
 
-            // 照門改回純黑、完全不透明的金屬材質（transparent: false, opacity: 1）
+            // 照門維持純黑、完全不透明的纖細金屬材質
             const sightMetalMat = new THREE.MeshStandardMaterial({
                 color: 0x12151a,
                 roughness: 0.36,
@@ -779,8 +779,8 @@
                 birdcageGroup.add(tine);
             }
 
-            // 照門中心再往上抬高一點點（sightCenterY = 0.072），前準心與後照門同步對齊
-            const sightCenterY = 0.072;
+            // 照門中心再往上抬高（sightCenterY = 0.084），前準心護翼與準心柱同步對齊圓環中心
+            const sightCenterY = 0.084;
 
             const rearSightGroup = new THREE.Group();
             rearSightGroup.name = 'M4UrgiSketchedRearSight';
@@ -808,11 +808,11 @@
             rightKnob.position.set(0.014, -0.0005, 0.001);
             rearSightGroup.add(rightKnob);
 
-            const ringCenterLocalY = sightCenterY - 0.041; // 0.031
+            const ringCenterLocalY = sightCenterY - 0.041; // 0.043
             const ringRadius = 0.0068;
 
             const rearMainTower = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0065, ringCenterLocalY - ringRadius * 0.65, 0.003)),
+                this._trackGeo(new THREE.BoxGeometry(0.0062, ringCenterLocalY - ringRadius * 0.65, 0.0028)),
                 m.sight
             );
             rearMainTower.position.set(0, (ringCenterLocalY - ringRadius * 0.65) * 0.5 + 0.001, -0.001);
@@ -820,7 +820,7 @@
             rearSightGroup.add(rearMainTower);
 
             const rearPeepRing = new THREE.Mesh(
-                this._trackGeo(new THREE.TorusGeometry(ringRadius, 0.0011, 10, 24)),
+                this._trackGeo(new THREE.TorusGeometry(ringRadius, 0.00105, 10, 24)),
                 m.sight
             );
             rearPeepRing.position.set(0, ringCenterLocalY, -0.001);
@@ -838,20 +838,20 @@
             );
             frontSightGroup.add(frontBase);
 
-            const frontTotalSpanY = sightCenterY - 0.041; // 0.031
+            const frontTotalSpanY = sightCenterY - 0.041; // 0.043
             const wingLowerH = frontTotalSpanY * 0.58;
             const wingFlareH = frontTotalSpanY * 0.34;
 
             for (const side of [-1, 1]) {
                 const wingLower = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0024, wingLowerH, 0.003)),
+                    this._trackGeo(new THREE.BoxGeometry(0.0022, wingLowerH, 0.0028)),
                     m.sight
                 );
                 wingLower.position.set(side * 0.0095, 0.0015 + wingLowerH * 0.5, 0);
                 frontSightGroup.add(wingLower);
 
                 const wingFlare = new THREE.Mesh(
-                    this._trackGeo(new THREE.BoxGeometry(0.0022, wingFlareH, 0.003)),
+                    this._trackGeo(new THREE.BoxGeometry(0.0020, wingFlareH, 0.0028)),
                     m.sight
                 );
                 wingFlare.position.set(side * 0.0110, 0.0015 + wingLowerH + wingFlareH * 0.42, 0);
@@ -860,7 +860,7 @@
             }
 
             const frontPostPin = new THREE.Mesh(
-                this._trackGeo(new THREE.BoxGeometry(0.0018, frontTotalSpanY, 0.0025)),
+                this._trackGeo(new THREE.BoxGeometry(0.0016, frontTotalSpanY, 0.0022)),
                 m.sight
             );
             frontPostPin.position.set(0, frontTotalSpanY * 0.5 + 0.001, 0);
@@ -1640,11 +1640,11 @@
             this._syncAmmoCountFromState(false);
 
             if (this.rearPeepRing) {
-                this.rearPeepRing.position.y = 0.031;
+                this.rearPeepRing.position.y = 0.043;
             }
             if (this.rearMainTower) {
                 this.rearMainTower.scale.y = 1.0;
-                this.rearMainTower.position.y = 0.0142;
+                this.rearMainTower.position.y = 0.0202;
             }
 
             let targetPos = M4_URGI_SPECS.hipPosition;
